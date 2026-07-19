@@ -153,6 +153,7 @@ summary:focus-visible {
 
 .camera-panel,
 .diagnostics-panel,
+.p1-panel,
 .test-checklist-panel {
   min-width: 0;
   border: 1px solid var(--line);
@@ -173,6 +174,171 @@ summary:focus-visible {
 .test-checklist-panel {
   grid-column: 1 / -1;
   padding: 20px;
+}
+
+.p1-panel {
+  grid-column: 1 / -1;
+  padding: 20px;
+}
+
+.p1-heading {
+  align-items: center;
+}
+
+.p1-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.p1-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(3, 10, 13, 0.55);
+}
+
+.p1-card-heading,
+.p1-footer,
+.p1-observation-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.p1-card-heading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.p1-card-heading span,
+.p1-instruction span {
+  color: var(--muted);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.p1-card-heading strong {
+  color: var(--cyan);
+}
+
+.p1-support-copy {
+  margin: 16px 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+
+.p1-mini-metrics,
+.p1-counters {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.p1-mini-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.p1-mini-metrics div,
+.p1-counters div {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(157, 216, 211, 0.1);
+  border-radius: 10px;
+  background: rgba(7, 17, 21, 0.72);
+}
+
+.p1-mini-metrics dt,
+.p1-counters dt {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 0.67rem;
+  text-transform: uppercase;
+}
+
+.p1-mini-metrics dd,
+.p1-counters dd {
+  overflow: hidden;
+  margin: 0;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p1-instruction {
+  display: grid;
+  min-height: 76px;
+  margin: 14px 0;
+  padding: 13px 14px;
+  border-left: 3px solid var(--warning);
+  border-radius: 4px 12px 12px 4px;
+  background: rgba(255, 197, 109, 0.08);
+  gap: 7px;
+}
+
+.p1-instruction strong {
+  font-size: 1rem;
+}
+
+.p1-next {
+  width: 100%;
+}
+
+.p1-observation-row {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding: 13px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.p1-observation-row > span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.p1-footer {
+  align-items: flex-start;
+  margin-top: 14px;
+}
+
+.p1-counters {
+  grid-template-columns: repeat(4, minmax(90px, 1fr));
+  flex: 1;
+}
+
+.p1-export-block {
+  display: grid;
+  max-width: 320px;
+  justify-items: end;
+  gap: 8px;
+}
+
+.p1-replay-block {
+  display: grid;
+  max-width: 300px;
+  gap: 8px;
+}
+
+.p1-replay-block .button {
+  text-align: center;
+}
+
+.p1-replay-block .export-status {
+  margin: 0;
+}
+
+.p1-export-block .export-status {
+  margin: 0;
+  text-align: right;
 }
 
 .checklist-heading {
@@ -865,6 +1031,10 @@ details[open] summary {
   .preview-shell {
     min-height: min(54vw, 480px);
   }
+
+  .p1-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 660px) {
@@ -887,8 +1057,33 @@ details[open] summary {
 
   .camera-panel,
   .diagnostics-panel,
+  .p1-panel,
   .test-checklist-panel {
     padding: 14px;
+  }
+
+  .p1-card-heading,
+  .p1-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .p1-mini-metrics,
+  .p1-counters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .p1-export-block {
+    max-width: none;
+    justify-items: stretch;
+  }
+
+  .p1-replay-block {
+    max-width: none;
+  }
+
+  .p1-export-block .export-status {
+    text-align: left;
   }
 
   .preview-shell {

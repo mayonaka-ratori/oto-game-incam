@@ -1,6 +1,6 @@
 # Oto Motion Technical Lab
 
-Phase 1のカメラ許可・二手追跡・計測画面である。プロジェクトの現在地と仕様の正本は[docs/README.md](./docs/README.md)、追跡パイプラインの作業計画は[docs/08_phase1_tracking_pipeline_implementation_plan.md](./docs/08_phase1_tracking_pipeline_implementation_plan.md)を参照する。
+Phase 1のカメラ許可・二手追跡・音声時刻・単体ジェスチャー・計測画面である。プロジェクトの現在地と仕様の正本は[docs/README.md](./docs/README.md)、実機確認前までの実装結果は[docs/10_phase1_ai_preparation_implementation.md](./docs/10_phase1_ai_preparation_implementation.md)を参照する。
 
 ## 必要環境
 
@@ -39,6 +39,8 @@ npm run test:e2e
 合成二手fixtureでオーバーレイだけを確認する場合は`/?tracking=mock`を使用できる。通常URLでは固定したMediaPipe実装を専用Worker内で実行する。
 
 画面下部の「かんたん実機確認」では、非エンジニア向けの確認項目をチェックし、端末情報・回答・その時点の追跡計測値をJSONとして保存できる。JSONにカメラ映像や音声は含めない。
+
+「単体ジェスチャー制御試験」では、Web Audioクロックを有効にし、正本の順序で30試行を進める。派生ランドマーク、gesture eventTime、成功・拒否理由、手動分類、技術指標をP1セッションJSONとして保存できる。合成入力やPCブラウザだけではP1合格にせず、対象実機の結果を必ず記録する。
 
 実機から確認する場合は、有効なHTTPSでproduction buildを配信する。LAN内の平文HTTPはスマートフォンのカメラAPIでsecure contextとして扱われないため、実機試験には使用しない。
 

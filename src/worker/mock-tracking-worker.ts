@@ -9,8 +9,23 @@ export interface TrackingWorkerEndpoint extends EventTarget {
   terminate(): void;
 }
 
+export type MockTrackingScenario =
+  | "two"
+  | "one-left"
+  | "none"
+  | "loss-cycle"
+  | "slow"
+  | "frame-error";
+
 export class MockTrackingWorker extends EventTarget implements TrackingWorkerEndpoint {
+  readonly #scenario: MockTrackingScenario;
   #terminated = false;
+  #frameCount = 0;
+
+  constructor(scenario: MockTrackingScenario = "two") {
+    super();
+    this.#scenario = scenario;
+  }
 
   postMessage(message: MainToTrackingWorkerMessage): void {
     if (this.#terminated) return;
@@ -29,7 +44,19 @@ export class MockTrackingWorker extends EventTarget implements TrackingWorkerEnd
         return;
       case "FRAME": {
         const received = performance.now();
+        this.#frameCount += 1;
         message.image.close();
+        if (this.#scenario === "frame-error" && this.#frameCount % 3 === 0) {
+          queueMicrotask(() => this.#emit({
+            type: "FRAME_ERROR",
+            frameId: message.frameId,
+            code: "inference-failed",
+            recoverable: true,
+            detail: "Synthetic recoverable inference failure.",
+          }));
+          return;
+        }
+        const hands = this.#handsForFrame();
         window.setTimeout(() => {
           const started = received + 0.2;
           this.#emit({
@@ -41,10 +68,10 @@ export class MockTrackingWorker extends EventTarget implements TrackingWorkerEnd
               workerReceivedTimeMs: received,
               inferenceStartedTimeMs: started,
               inferenceCompletedTimeMs: started + 7.5,
-              hands: [syntheticHand(0, "left", 0.3), syntheticHand(1, "right", 0.7)],
+              hands,
             },
           });
-        }, 8);
+        }, this.#scenario === "slow" ? 80 : 8);
         return;
       }
       case "DISPOSE":
@@ -60,6 +87,25 @@ export class MockTrackingWorker extends EventTarget implements TrackingWorkerEnd
 
   #emit(data: TrackingWorkerToMainMessage): void {
     if (!this.#terminated) this.dispatchEvent(new MessageEvent("message", { data }));
+  }
+
+  #handsForFrame(): readonly DetectedHand[] {
+    switch (this.#scenario) {
+      case "one-left":
+        return [syntheticHand(0, "left", 0.3)];
+      case "none":
+        return [];
+      case "loss-cycle": {
+        const phase = Math.floor((this.#frameCount - 1) / 20) % 3;
+        if (phase === 1) return [syntheticHand(0, "left", 0.3)];
+        if (phase === 2) return [];
+        return [syntheticHand(0, "left", 0.3), syntheticHand(1, "right", 0.7)];
+      }
+      case "two":
+      case "slow":
+      case "frame-error":
+        return [syntheticHand(0, "left", 0.3), syntheticHand(1, "right", 0.7)];
+    }
   }
 }
 

@@ -326,8 +326,8 @@ const template = `
       <div class="brand-block">
         <span class="brand-mark" aria-hidden="true">O</span>
         <div>
-          <p class="eyebrow">PHASE 1 · STEP 1.1</p>
-          <h1>Camera Diagnostics</h1>
+          <p class="eyebrow">PHASE 1 · MEASUREMENT LAB</p>
+          <h1>Tracking, Timing & Gesture Lab</h1>
         </div>
       </div>
       <div class="privacy-note"><span aria-hidden="true">◆</span> 映像・音声は保存しません</div>
@@ -493,13 +493,86 @@ const template = `
           </details>
         </div>
 
-        <p class="scope-note">生映像は保存・送信しません。detectionIndexはフレーム内番号で、安定した手IDではありません。gesture eventTimeは次工程です。</p>
+        <p class="scope-note">生映像は保存・送信しません。MediaPipeのdetectionIndexは安定ID層へ変換してからジェスチャー判定へ渡します。</p>
+      </section>
+
+      <section class="p1-panel" aria-labelledby="p1-heading">
+        <div class="section-heading p1-heading">
+          <div>
+            <p class="section-index">03 / P1-CONTROLLED</p>
+            <h2 id="p1-heading">単体ジェスチャー制御試験</h2>
+          </div>
+          <span id="p1-progress" class="check-progress">0 / 30</span>
+        </div>
+        <p class="check-intro">正本の順序で、エアタップ10回、リボンスワイプ10回、クラップ／ニアクラップ10回を記録します。実機未確認のため、この画面だけでPass判定はしません。</p>
+
+        <div class="p1-grid">
+          <article class="p1-card">
+            <div class="p1-card-heading">
+              <div><span>WEB AUDIO CLOCK</span><strong id="p1-audio-state">未開始</strong></div>
+              <button id="p1-enable-audio" class="button button--quiet" type="button">音を有効にする</button>
+            </div>
+            <p id="p1-audio-status" class="p1-support-copy">画面操作後にだけAudioContextを開始します。BluetoothはP1対象外です。</p>
+            <dl class="p1-mini-metrics">
+              <div><dt>Mapping</dt><dd id="p1-audio-source">—</dd></div>
+              <div><dt>Audio time</dt><dd id="p1-audio-time">—</dd></div>
+              <div><dt>baseLatency</dt><dd id="p1-base-latency">—</dd></div>
+              <div><dt>outputLatency</dt><dd id="p1-output-latency">—</dd></div>
+            </dl>
+          </article>
+
+          <article class="p1-card p1-trial-card">
+            <div class="p1-card-heading">
+              <div><span>SESSION</span><strong id="p1-state">未開始</strong></div>
+              <button id="p1-start-session" class="button button--primary" type="button">新しいP1セッション</button>
+            </div>
+            <dl class="p1-mini-metrics">
+              <div><dt>sessionId</dt><dd id="p1-session-id">—</dd></div>
+              <div><dt>Trial</dt><dd id="p1-trial-number">—</dd></div>
+              <div><dt>Gesture</dt><dd id="p1-gesture">—</dd></div>
+              <div><dt>Last result</dt><dd id="p1-last-result">—</dd></div>
+            </dl>
+            <div class="p1-instruction" aria-live="polite">
+              <span>NEXT ACTION</span>
+              <strong id="p1-instruction">セッションを開始してください</strong>
+            </div>
+            <button id="p1-next-trial" class="button button--primary p1-next" type="button" disabled>次の試行を開始</button>
+          </article>
+        </div>
+
+        <div class="p1-observation-row" aria-label="試行結果の手動分類">
+          <span>自動成立しなかった場合:</span>
+          <button class="button button--quiet" type="button" data-p1-outcome="player-miss" disabled>player miss</button>
+          <button class="button button--quiet" type="button" data-p1-outcome="machine-miss" disabled>machine miss</button>
+          <button class="button button--quiet" type="button" data-p1-outcome="tracking-loss" disabled>tracking loss</button>
+          <button class="button button--quiet" type="button" data-p1-outcome="unclassified" disabled>unclassified</button>
+          <button id="p1-false-trigger" class="button button--danger" type="button">false triggerを記録</button>
+        </div>
+
+        <div class="p1-footer">
+          <dl class="p1-counters">
+            <div><dt>Events</dt><dd id="p1-event-count">0</dd></div>
+            <div><dt>Rejections</dt><dd id="p1-rejection-count">0</dd></div>
+            <div><dt>False triggers</dt><dd id="p1-false-trigger-count">0</dd></div>
+            <div><dt>ID conflicts</dt><dd id="p1-id-conflicts">0</dd></div>
+          </dl>
+          <div class="p1-replay-block">
+            <label class="button button--quiet" for="p1-replay-file">ランドマークリプレイを読込</label>
+            <input id="p1-replay-file" type="file" accept="application/json,.json" hidden>
+            <button id="p1-replay-run" class="button button--quiet" type="button" disabled>現在の試行条件で評価</button>
+            <p id="p1-replay-status" class="export-status" role="status"></p>
+          </div>
+          <div class="p1-export-block">
+            <button id="p1-export" class="button button--quiet" type="button" disabled>P1セッションJSONを保存</button>
+            <p id="p1-export-status" class="export-status" role="status"></p>
+          </div>
+        </div>
       </section>
 
       <section class="test-checklist-panel" aria-labelledby="device-check-heading">
         <div class="section-heading checklist-heading">
           <div>
-            <p class="section-index">03 / DEVICE CHECK</p>
+            <p class="section-index">04 / DEVICE CHECK</p>
             <h2 id="device-check-heading">かんたん実機確認</h2>
           </div>
           <span id="device-check-progress" class="check-progress">0 / 11 完了</span>

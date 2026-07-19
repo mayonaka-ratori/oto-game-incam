@@ -4,6 +4,7 @@
 - 現在のプロダクトフェーズ: **Phase 1 — Tracking & Latency Lab**
 - 現在の技術ステージ: **Technical Stage T0 — Measurement Lab**
 - 現在のステップ: **1.1 — TypeScript / Viteの最小Webアプリ、カメラ許可、計測画面を作る**
+- 実装先行状況: **追跡Worker、音声クロック、安定二手ID、派生ランドマークリプレイ、3ジェスチャー状態機械、P1-Controlled実施画面まで自動検証済み。対象実機確認待ち**
 - 次の判断: iPhone 15とGoogle Pixel 10 Pro XLで、二手追跡・ジェスチャー時刻・主観的な同期感がPOC技術ゲートを通るか
 
 Codexで作業を継続する場合、リポジトリ直下の [`AGENTS.md`](../AGENTS.md) が自動引き継ぎの入口となる。そこから本書を読み、現在地と依頼に関係する正本だけを確認して作業を始める。
@@ -19,6 +20,8 @@ Codexで作業を継続する場合、リポジトリ直下の [`AGENTS.md`](../
 - Web Audioクロックと追跡フレーム時刻の対応
 - エアタップ、リボンスワイプ、クラップ／ニアクラップの単体試験
 - 端末・環境・誤認識・遅延感を残せる計測ログ
+
+実機確認できない期間に先行した実装と、未実施の実機項目は[Phase 1 AI先行実装結果](./10_phase1_ai_preparation_implementation.md)にまとめる。この実装済みという事実だけでP1-ControlledをPass扱いにはしない。
 
 現在の出口条件:
 

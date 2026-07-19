@@ -12,6 +12,8 @@ import {
 import { FrameMetricsCollector, type FrameMetricsSnapshot } from "../metrics/frame-metrics";
 import type { TrackingMetricsSnapshot } from "../metrics/tracking-metrics";
 import { DEFAULT_OVERLAY_LAYERS, OverlayRenderer } from "../rendering/overlay-renderer";
+import { Phase1LabController } from "../poc/phase1-lab-controller";
+import type { Phase1TechnicalSummary } from "../poc/phase1-session";
 import { LabView } from "../ui/lab-view";
 import { TrackingWorkerClient } from "../worker/tracking-worker-client";
 import {
@@ -31,6 +33,7 @@ export class LabController {
   #tracking: TrackingMetricsSnapshot | null = null;
   #trackingClient: TrackingWorkerClient | null = null;
   readonly #overlayRenderer: OverlayRenderer;
+  readonly #phase1Controller: Phase1LabController;
   #previewVisible = true;
   #disposed = false;
 
@@ -45,6 +48,11 @@ export class LabController {
     });
     this.#overlayRenderer = new OverlayRenderer(this.#view.video, this.#view.overlay);
     this.#overlayRenderer.setLayers(DEFAULT_OVERLAY_LAYERS);
+    this.#phase1Controller = new Phase1LabController(root, {
+      getProvider: () => this.#tracking?.provider ?? null,
+      getTechnicalSummary: () => this.#phase1TechnicalSummary(),
+      onGuideChange: (trial) => this.#overlayRenderer.setP1Guide(trial),
+    });
     new DeviceChecklistController(root, () => this.#technicalSnapshot());
 
     const issues = getBlockingSupportIssues(this.#support);
@@ -85,6 +93,7 @@ export class LabController {
       const trackingClient = new TrackingWorkerClient((update) => {
         this.#tracking = update.metrics;
         this.#overlayRenderer.setFrame(update.frame);
+        if (update.frame !== null) this.#phase1Controller.processFrame(update.frame);
         this.#render();
       });
       this.#trackingClient = trackingClient;
@@ -171,6 +180,7 @@ export class LabController {
     this.#disposed = true;
     this.#metricsCollector?.stop();
     this.#trackingClient?.stop();
+    void this.#phase1Controller.dispose();
     this.#overlayRenderer.dispose();
     this.#camera.stop();
     window.removeEventListener("resize", this.#handleViewportChange);
@@ -196,6 +206,18 @@ export class LabController {
       completedFrames: scheduler?.completed ?? null,
       replacedFrames: scheduler?.replaced ?? null,
       trackingError: this.#tracking?.fatalError ?? null,
+    };
+  }
+
+  #phase1TechnicalSummary(): Phase1TechnicalSummary {
+    return {
+      inferenceP50Ms: this.#tracking?.inferenceP50 ?? null,
+      inferenceP95Ms: this.#tracking?.inferenceP95 ?? null,
+      trackingHz: this.#tracking?.outputHz ?? null,
+      frameAgeP95Ms: this.#tracking?.frameAgeP95 ?? null,
+      oneHandCoverage: this.#tracking?.oneHandCoverage ?? null,
+      twoHandCoverage: this.#tracking?.twoHandCoverage ?? null,
+      idConflictCount: 0,
     };
   }
 }

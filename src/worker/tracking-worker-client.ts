@@ -3,7 +3,11 @@ import type { FrameSource } from "../camera/frame-source";
 import { LatestFrameScheduler } from "../camera/latest-frame-scheduler";
 import { TrackingMetricsCollector, type TrackingMetricsSnapshot } from "../metrics/tracking-metrics";
 import type { HandTrackingFrame } from "../tracking/tracking-types";
-import { MockTrackingWorker, type TrackingWorkerEndpoint } from "./mock-tracking-worker";
+import {
+  MockTrackingWorker,
+  type MockTrackingScenario,
+  type TrackingWorkerEndpoint,
+} from "./mock-tracking-worker";
 import type {
   MainToTrackingWorkerMessage,
   TrackingWorkerToMainMessage,
@@ -179,8 +183,19 @@ export class TrackingWorkerClient {
 }
 
 function createWorkerEndpoint(): TrackingWorkerEndpoint {
-  if (new URLSearchParams(window.location.search).get("tracking") === "mock") {
-    return new MockTrackingWorker();
+  const parameters = new URLSearchParams(window.location.search);
+  if (parameters.get("tracking") === "mock") {
+    const requested = parameters.get("trackingScenario");
+    const scenarios: readonly MockTrackingScenario[] = [
+      "two",
+      "one-left",
+      "none",
+      "loss-cycle",
+      "slow",
+      "frame-error",
+    ];
+    const scenario = scenarios.find((candidate) => candidate === requested) ?? "two";
+    return new MockTrackingWorker(scenario);
   }
   return new Worker(new URL("./tracking-worker.ts", import.meta.url), { type: "module" });
 }

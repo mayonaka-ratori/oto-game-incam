@@ -2,7 +2,7 @@
 
 - 作成日: 2026-07-19
 - 対象: **合意した次工程2〜4 — HandTrackingProvider / latest-frame-only Worker / 二手カーソル・21点表示**
-- ステータス: 実装着手前
+- ステータス: 自動検証完了（PC実カメラ／対象実機確認待ち）
 - 文書種別: 作業計画。仕様の正本ではない
 - 前提成果物: commit `d971b9c`のStep 1.1カメラ診断画面
 
@@ -270,38 +270,38 @@ MediaPipe WebのHand Landmarker結果から直接得られるのはhandedness分
 
 ### 工程2 — HandTrackingProviderとMediaPipe
 
-- [ ] `@mediapipe/tasks-vision@0.10.35`を固定導入する。
-- [ ] 公式fullモデルの出典、ライセンス、SHA-256を記録する。
-- [ ] WASM／modelの同一オリジン配信とbuild前検証を作る。
-- [ ] provider共通型とライフサイクルを定義する。
-- [ ] MediaPipe結果をプロジェクト型へ正規化するadapterを実装する。
-- [ ] `numHands = 2`、VIDEO mode、既定thresholdsで初期化する。
-- [ ] GPU初期化失敗時のCPUフォールバックと理由コードを実装する。
-- [ ] fixtureを使ったadapter単体テストを追加する。
+- [x] `@mediapipe/tasks-vision@0.10.35`を固定導入する。
+- [x] 公式fullモデルの出典、ライセンス、SHA-256を記録する。
+- [x] WASM／modelの同一オリジン配信とbuild前検証を作る。
+- [x] provider共通型とライフサイクルを定義する。
+- [x] MediaPipe結果をプロジェクト型へ正規化するadapterを実装する。
+- [x] `numHands = 2`、VIDEO mode、既定thresholdsで初期化する。
+- [x] GPU初期化失敗時のCPUフォールバックと理由コードを実装する。
+- [x] fixtureを使ったadapter単体テストを追加する。
 
 ### 工程3 — latest-frame-only Worker
 
-- [ ] Main／Workerの通信型を定義する。
-- [ ] Worker内でproviderを初期化、推論、closeする。
-- [ ] TrackProcessor経路を`FrameSource`として分離する。
-- [ ] rVFC＋ImageBitmap経路を`FrameSource`として分離する。
-- [ ] in-flight 1＋pending最新1のスケジューラを実装する。
-- [ ] 置換、停止、例外時に全transferableをcloseする。
-- [ ] 単調増加timestampとframeIdの順序保護を実装する。
-- [ ] Worker／推論／frame ageの計測を追加する。
-- [ ] fake frameでqueue非増加、置換、closeを単体テストする。
+- [x] Main／Workerの通信型を定義する。
+- [x] Worker内でproviderを初期化、推論、closeする。
+- [x] TrackProcessor経路を`FrameSource`として分離する。
+- [x] rVFC＋ImageBitmap経路を`FrameSource`として分離する。
+- [x] in-flight 1＋pending最新1のスケジューラを実装する。
+- [x] 置換、停止、例外時に全transferableをcloseする。
+- [x] 単調増加timestampとframeIdの順序保護を実装する。
+- [x] Worker／推論／frame ageの計測を追加する。
+- [x] fake frameでqueue非増加、置換、closeを単体テストする。
 
 ### 工程4 — 二手カーソルと21点表示
 
-- [ ] Canvas overlayと座標変換を実装する。
-- [ ] cover／mirror／DPR／resizeの変換テストを追加する。
-- [ ] 21点、接続線、左右ラベル、暫定カーソルを描画する。
-- [ ] preview／landmarks／connections／cursor／labelsの切り替えを追加する。
-- [ ] 一手／両手喪失状態をUIへ接続する。
-- [ ] 追跡メトリクスを診断パネルへ追加する。
-- [ ] mock providerで二手表示をブラウザ自動テストする。
+- [x] Canvas overlayと座標変換を実装する。
+- [x] cover／mirror／DPR／resizeの変換テストを追加する。
+- [x] 21点、接続線、左右ラベル、暫定カーソルを描画する。
+- [x] preview／landmarks／connections／cursor／labelsの切り替えを追加する。
+- [x] 一手／両手喪失状態をUIへ接続する。
+- [x] 追跡メトリクスを診断パネルへ追加する。
+- [x] mock providerで二手表示をブラウザ自動テストする。
 - [ ] PC実カメラで鏡像、左右、追従、停止／再開を確認する。
-- [ ] 実画面を横長・844×390・縦長で表示して確認する。
+- [x] 実画面を横長・844×390・縦長で表示して確認する（自動ブラウザ）。
 
 ### 統合後 — 最初の実機チェックポイント
 
@@ -375,19 +375,19 @@ tests/
 
 次をすべて満たした時点で、この3工程を完了とする。
 
-- [ ] MediaPipe固有の型がprovider境界より下流へ漏れていない。
-- [ ] package、WASM、modelが固定され、同一オリジンから再現可能に配信される。
-- [ ] 二手・VIDEO modeの推論が専用Worker内で動く。
-- [ ] メインスレッドで`detectForVideo()`を呼んでいない。
-- [ ] in-flightとpendingが各1件を超えず、長時間でもqueueが増えない。
-- [ ] 破棄・置換・停止・例外時に`VideoFrame`／`ImageBitmap`がcloseされる。
+- [x] MediaPipe固有の型がprovider境界より下流へ漏れていない。
+- [x] package、WASM、modelが固定され、同一オリジンから再現可能に配信される。
+- [x] 二手・VIDEO modeの推論が専用Worker内で動く。
+- [x] メインスレッドで`detectForVideo()`を呼んでいない。
+- [x] in-flightとpendingが各1件を超えず、長時間でもqueueが増えない（10,000フレーム合成負荷）。
+- [x] 破棄・置換・停止・例外時に`VideoFrame`／`ImageBitmap`がcloseされる。
 - [ ] 21点とカーソルがcover／mirror後の映像位置へ一致する。
-- [ ] 左右、未知、一手喪失、両手喪失が色だけでなく文言でも分かる。
-- [ ] カメラFPSと追跡出力Hz、推論時間とframe ageを区別して表示できる。
-- [ ] lint、型検査、単体テスト、build、ブラウザテストが成功する。
+- [x] 左右、未知、一手喪失、両手喪失が色だけでなく文言でも分かる。
+- [x] カメラFPSと追跡出力Hz、推論時間とframe ageを区別して表示できる。
+- [x] lint、型検査、単体テスト、build、ブラウザテストが成功する。
 - [ ] PC実カメラの確認が完了する。
 - [ ] iPhone 15とPixel 10 Pro XLで初回実機結果を記録できる。
-- [ ] 生映像を録画、アップロード、永続保存していない。
+- [x] 生映像を録画、アップロード、永続保存していない。
 
 実機で一方の経路が動かない場合も、推測でPassにしない。Web固有問題、入力経路問題、MediaPipe初期化問題、性能問題を分け、次に変更するものを一つだけ決める。
 

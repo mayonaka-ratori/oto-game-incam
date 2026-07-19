@@ -40,3 +40,13 @@ export function mapVideoLandmark(
     y: landmark.y * transform.videoHeight * transform.scale + transform.offsetY,
   };
 }
+
+export function mapPreviewLandmark(
+  transform: VideoCoverTransform,
+  landmark: Pick<Landmark2D, "x" | "y">,
+): { readonly x: number; readonly y: number } {
+  return mapVideoLandmark(transform, {
+    x: transform.mirror ? 1 - landmark.x : landmark.x,
+    y: landmark.y,
+  });
+}

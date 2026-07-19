@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 test("starts, measures, hides, and releases the camera", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Camera Diagnostics" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tracking, Timing & Gesture Lab" })).toBeVisible();
   await expect(page.getByText("映像・音声は保存しません")).toBeVisible();
 
   const startButton = page.getByRole("button", { name: "カメラを開始" });
@@ -44,6 +44,11 @@ test("fits the camera controls in a phone landscape viewport", async ({ page }) 
   await expect(page.getByRole("button", { name: "カメラを開始" })).toBeInViewport();
   await expect(page.getByRole("heading", { name: "Live diagnostics" })).toBeVisible();
   await expect(page.locator("#orientation-notice")).toBeHidden();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator("#orientation-notice")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "単体ジェスチャー制御試験" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test("renders two mock hands and exposes tracking queue diagnostics", async ({ page }) => {
@@ -69,6 +74,27 @@ test("renders two mock hands and exposes tracking queue diagnostics", async ({ p
     if (context === null) return false;
     return context.getImageData(0, 0, canvas.width, canvas.height).data.every((value, index) => index % 4 !== 3 || value === 0);
   })).toBe(true);
+});
+
+for (const scenario of [
+  { query: "one-left", state: "TRACKING LOSS · 片手のみ検出（MISSではありません）", hands: "1" },
+  { query: "none", state: "TRACKING LOSS · 両手を検出できません（MISSではありません）", hands: "0" },
+] as const) {
+  test(`renders the ${scenario.query} tracking state`, async ({ page }) => {
+    await page.goto(`/?tracking=mock&trackingScenario=${scenario.query}`);
+    await page.getByRole("button", { name: "カメラを開始" }).click();
+    await expect(page.getByText(scenario.state)).toBeVisible();
+    await expect(page.locator("#tracking-hands")).toHaveText(scenario.hands);
+  });
+}
+
+test("recovers from synthetic per-frame inference errors without growing the queue", async ({ page }) => {
+  await page.goto("/?tracking=mock&trackingScenario=frame-error");
+  await page.getByRole("button", { name: "カメラを開始" }).click();
+  await expect.poll(async () => Number(await page.locator("#tracking-inflight").textContent())).toBeLessThanOrEqual(1);
+  await expect.poll(async () => Number(await page.locator("#tracking-pending").textContent())).toBeLessThanOrEqual(1);
+  await expect.poll(async () => Number(await page.locator("#tracking-errored").textContent())).toBeGreaterThan(0);
+  await expect(page.locator("#tracking-init")).toHaveText("ready");
 });
 
 test("initializes MediaPipe in the Worker and processes a camera frame", async ({ page }) => {
@@ -137,4 +163,37 @@ test("downloads a non-engineer device checklist as JSON", async ({ page }) => {
   expect(report.session).toMatchObject({ testerId: "tester-a", device: "iPhone 15" });
   expect(report.privacy.includesCameraFrames).toBe(false);
   await expect(page.locator("#device-check-export-status")).toContainText("JSONを保存しました");
+});
+
+test("runs and exports a P1 controlled trial without raw media", async ({ page }) => {
+  await page.goto("/?tracking=mock");
+  await page.getByRole("button", { name: "カメラを開始" }).click();
+  await expect(page.locator("#tracking-init")).toHaveText("ready");
+  await page.getByRole("button", { name: "音を有効にする" }).click();
+  await expect(page.locator("#p1-audio-state")).toHaveText(/running|suspended/);
+  await page.getByRole("button", { name: "新しいP1セッション" }).click();
+  await expect(page.locator("#p1-progress")).toHaveText("0 / 30");
+  await page.getByRole("button", { name: "次の試行を開始" }).click();
+  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 30");
+  await page.getByRole("button", { name: "tracking loss" }).click();
+  await expect(page.locator("#p1-progress")).toHaveText("1 / 30");
+  await page.getByRole("button", { name: "false triggerを記録" }).click();
+  await expect(page.locator("#p1-false-trigger-count")).toHaveText("1");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "P1セッションJSONを保存" }).click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  const report = JSON.parse(await readFile(path!, "utf8")) as {
+    schema: string;
+    privacy: { includesCameraFrames: boolean; includesAudio: boolean };
+    protocol: { completed: number; falseTriggers: unknown[] };
+    replay: { frames: unknown[] };
+  };
+  expect(report.schema).toBe("oto-motion-p1-controlled");
+  expect(report.privacy).toEqual(expect.objectContaining({ includesCameraFrames: false, includesAudio: false }));
+  expect(report.protocol.completed).toBe(1);
+  expect(report.protocol.falseTriggers).toHaveLength(1);
+  expect(report.replay.frames.length).toBeGreaterThan(0);
 });
