@@ -573,67 +573,101 @@ const template = `
         <div class="section-heading checklist-heading">
           <div>
             <p class="section-index">04 / DEVICE CHECK</p>
-            <h2 id="device-check-heading">かんたん実機確認</h2>
+            <h2 id="device-check-heading">実機確認レポート</h2>
           </div>
-          <span id="device-check-progress" class="check-progress">0 / 11 完了</span>
+          <span id="device-check-progress" class="check-progress">0 / 25確認 · 問題 0</span>
         </div>
-        <p class="check-intro">専門知識は不要です。実際にできた項目だけチェックし、最後にJSONを保存して担当者へ送ってください。映像はJSONに入りません。</p>
+        <p class="check-intro">上から順に進め、各項目を「未確認／問題なし／問題あり／対象外」で管理します。途中でJSONを保存し、同じJSONを読み込んで続きから再開できます。生映像・生音声はJSONに入りません。</p>
 
         <form id="device-check-form" class="device-check-form">
-          <fieldset class="session-fields">
-            <legend>今回の確認について</legend>
-            <label>
-              <span>確認番号</span>
-              <input id="device-check-session" name="sessionId" type="text" required>
-            </label>
-            <label>
-              <span>確認した人（ニックネームで可）</span>
-              <input name="testerId" type="text" autocomplete="off" required placeholder="例: tester-a">
-            </label>
-            <label>
-              <span>使った端末</span>
-              <select name="device" required>
-                <option value="">選んでください</option>
-                <option value="iPhone 15">iPhone 15</option>
-                <option value="Google Pixel 10 Pro XL">Google Pixel 10 Pro XL</option>
-                <option value="other">その他</option>
-              </select>
-            </label>
-            <label>
-              <span>OS・ブラウザのバージョン</span>
-              <input name="osBrowser" type="text" required placeholder="例: iOS 20 / Safari">
-            </label>
-            <label>
-              <span>カメラまでの距離（cm）</span>
-              <input name="distanceCm" type="number" min="30" max="300" inputmode="numeric" placeholder="例: 80">
-            </label>
-            <label class="field-wide">
-              <span>照明・背景・服装</span>
-              <input name="environment" type="text" placeholder="例: 明るい室内、白い壁、黒い長袖">
-            </label>
-          </fieldset>
+          <div class="report-toolbar" aria-label="レポートの読み込み">
+            <div>
+              <strong>途中から再開</strong>
+              <span>以前保存した実機確認JSONを読み込みます。</span>
+            </div>
+            <label class="button button--quiet" for="device-check-import">実機確認JSONを読込</label>
+            <input id="device-check-import" type="file" accept="application/json,.json" hidden>
+            <label class="button button--quiet" for="device-check-p1-import">P1セッション結果を取込</label>
+            <input id="device-check-p1-import" type="file" accept="application/json,.json" hidden>
+          </div>
 
-          <div id="device-check-list" class="device-check-list"></div>
+          <details class="report-section" open>
+            <summary><span>1</span> セッション条件</summary>
+            <fieldset class="session-fields report-fields">
+              <legend>条件を変えた試験は別sessionIdにしてください</legend>
+              <label><span>sessionId</span><input id="device-check-session" name="sessionId" type="text" required></label>
+              <label><span>確認した人（匿名ID）</span><input name="testerId" type="text" autocomplete="off" required placeholder="例: tester-a"></label>
+              <label><span>参加者種別</span><select name="participantType"><option value="creator">creator</option><option value="target">target</option><option value="other" selected>other</option></select></label>
+              <label><span>端末</span><select name="device" required><option value="">選択</option><option value="iPhone 15">iPhone 15</option><option value="Google Pixel 10 Pro XL">Google Pixel 10 Pro XL</option><option value="other">その他</option></select></label>
+              <label><span>OS名</span><input name="osName" type="text" required placeholder="例: iOS"></label>
+              <label><span>OS完全バージョン</span><input name="osVersion" type="text" required placeholder="例: 20.0.1"></label>
+              <label><span>ブラウザ名</span><input name="browserName" type="text" required placeholder="例: Safari"></label>
+              <label><span>ブラウザ完全バージョン</span><input name="browserVersion" type="text" required></label>
+              <label><span>アプリ／build</span><input name="appVersion" type="text" placeholder="画面または担当者指定の値"></label>
+              <label><span>カメラ距離（cm）</span><input name="distanceCm" type="number" min="30" max="300" inputmode="numeric" placeholder="80"></label>
+              <label><span>向き</span><select name="orientation"><option value="landscape">横向き</option><option value="portrait">縦向き比較</option></select></label>
+              <label><span>本体音量段階</span><input name="speakerVolume" type="text" placeholder="例: 8/16"></label>
+              <label><span>照明</span><input name="lighting" type="text" placeholder="例: 正面から一般室内光"></label>
+              <label><span>背景</span><input name="background" type="text" placeholder="例: 白い壁、柄なし"></label>
+              <label><span>袖・服装</span><input name="sleeves" type="text" placeholder="例: 黒い長袖"></label>
+            </fieldset>
+          </details>
 
-          <fieldset class="result-fields">
-            <legend>結果</legend>
-            <label>
-              <span>全体として</span>
-              <select name="overall" required>
-                <option value="pending">判断保留</option>
-                <option value="pass">問題なし</option>
-                <option value="issue">問題あり</option>
-              </select>
-            </label>
-            <label class="field-wide">
-              <span>気になったこと</span>
-              <textarea name="notes" rows="4" placeholder="点が消えた場面、遅く感じた動き、表示の分かりにくさなど"></textarea>
-            </label>
-          </fieldset>
+          <details class="report-section" open>
+            <summary><span>2</span> セットアップ・カメラ・二手追跡</summary>
+            <p class="report-help">「問題あり」を選んだ項目は、最後のメモに発生時刻や見え方を残してください。tracking lossはplayer missにしません。</p>
+            <div id="device-check-list" class="device-check-list device-check-list--managed"></div>
+          </details>
+
+          <details class="report-section" open>
+            <summary><span>3</span> P1-Controlled結果</summary>
+            <p class="report-help">上の制御試験画面で30試行を行い、P1セッションJSONを取り込むと自動入力できます。未分類を除外して成功率を良く見せないでください。</p>
+            <div class="controlled-table-wrap">
+              <table class="controlled-table">
+                <thead><tr><th>Gesture</th><th>success</th><th>player miss</th><th>machine miss</th><th>false trigger</th><th>tracking loss</th><th>unclassified</th><th>offset</th></tr></thead>
+                <tbody>
+                  <tr><th>Air tap</th><td><input name="airTapSuccess" type="number" min="0" max="10"></td><td><input name="airTapPlayerMiss" type="number" min="0" max="10"></td><td><input name="airTapMachineMiss" type="number" min="0" max="10"></td><td><input name="airTapFalseTrigger" type="number" min="0"></td><td><input name="airTapTrackingLoss" type="number" min="0" max="10"></td><td><input name="airTapUnclassified" type="number" min="0" max="10"></td><td><input name="airTapOffsetSummary" type="text" placeholder="p50 / p95"></td></tr>
+                  <tr><th>Ribbon swipe</th><td><input name="ribbonSwipeSuccess" type="number" min="0" max="10"></td><td><input name="ribbonSwipePlayerMiss" type="number" min="0" max="10"></td><td><input name="ribbonSwipeMachineMiss" type="number" min="0" max="10"></td><td><input name="ribbonSwipeFalseTrigger" type="number" min="0"></td><td><input name="ribbonSwipeTrackingLoss" type="number" min="0" max="10"></td><td><input name="ribbonSwipeUnclassified" type="number" min="0" max="10"></td><td><input name="ribbonSwipeOffsetSummary" type="text" placeholder="p50 / p95"></td></tr>
+                  <tr><th>Clap / near</th><td><input name="clapNearClapSuccess" type="number" min="0" max="10"></td><td><input name="clapNearClapPlayerMiss" type="number" min="0" max="10"></td><td><input name="clapNearClapMachineMiss" type="number" min="0" max="10"></td><td><input name="clapNearClapFalseTrigger" type="number" min="0"></td><td><input name="clapNearClapTrackingLoss" type="number" min="0" max="10"></td><td><input name="clapNearClapUnclassified" type="number" min="0" max="10"></td><td><input name="clapNearClapOffsetSummary" type="text" placeholder="p50 / p95"></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p id="device-check-controlled-status" class="report-validation" role="status">Air tap: 未入力 · Ribbon swipe: 未入力 · Clap / near: 未入力</p>
+          </details>
+
+          <details class="report-section">
+            <summary><span>4</span> 同期感・分かりやすさ・疲労</summary>
+            <fieldset class="result-fields report-fields">
+              <legend>プレイ直後に、誘導せず回答を記録します</legend>
+              <label><span>音と動きの合い方（1〜5）</span><input name="syncRating" type="number" min="1" max="5"></label>
+              <label><span>ずれの感じ方</span><select name="latencySense"><option value="unsure">判断できない</option><option value="none">感じない</option><option value="late">遅い</option><option value="early">早い</option><option value="variable">ばらつく</option></select></label>
+              <label><span>もう一度遊びたい？</span><select name="retryIntent"><option value="unsure">判断保留</option><option value="yes">はい</option><option value="no">いいえ</option></select></label>
+              <label><span>肩の疲労（0〜10）</span><input name="shoulderFatigue" type="number" min="0" max="10"></label>
+              <label><span>手首の疲労（0〜10）</span><input name="wristFatigue" type="number" min="0" max="10"></label>
+              <label><span>目の疲労（0〜10）</span><input name="eyeFatigue" type="number" min="0" max="10"></label>
+              <label><span>頭の疲労（0〜10）</span><input name="headFatigue" type="number" min="0" max="10"></label>
+              <label class="field-wide"><span>何をすべきか分からなかった場面</span><textarea name="unclearMoments" rows="2"></textarea></label>
+              <label class="field-wide"><span>分かって動いたのに無視された場面</span><textarea name="ignoredMoments" rows="2"></textarea></label>
+              <label class="field-wide"><span>一番印象に残った動作</span><input name="memorableAction" type="text"></label>
+              <label class="field-wide"><span>痛み・不快感</span><textarea name="painOrDiscomfort" rows="2"></textarea></label>
+            </fieldset>
+          </details>
+
+          <details class="report-section" open>
+            <summary><span>5</span> 判定と次の一手</summary>
+            <fieldset class="result-fields report-fields">
+              <legend>Passを急がず、Learnなら次に変えるものを一つだけ記録します</legend>
+              <label><span>P1-Controlled</span><select name="p1Decision"><option value="pending">未判定</option><option value="pass">Pass</option><option value="learn">Learn</option><option value="pivot">Pivot</option></select></label>
+              <label><span>次に変えるもの（一つ）</span><input name="nextChange" type="text" placeholder="例: clap triggerDistance"></label>
+              <label class="field-wide"><span>判定・変更理由</span><textarea name="decisionReason" rows="3"></textarea></label>
+              <label class="field-wide"><span>次セッションで固定する条件</span><textarea name="nextFixedConditions" rows="2"></textarea></label>
+              <label class="field-wide"><span>補足メモ</span><textarea name="notes" rows="4" placeholder="問題の発生時刻、端末固有の挙動、再現手順など"></textarea></label>
+            </fieldset>
+          </details>
 
           <div class="export-row">
-            <p>チェックしていない項目も「未完了」としてJSONへ残ります。</p>
-            <button class="button button--primary export-button" type="submit">確認結果をJSONで保存</button>
+            <p>未確認・問題あり・対象外もそのままJSONへ残ります。保存したJSONをこの画面へ読み戻せます。</p>
+            <button class="button button--primary export-button" type="submit">実機確認JSONを保存</button>
           </div>
           <p id="device-check-export-status" class="export-status" role="status" hidden></p>
         </form>

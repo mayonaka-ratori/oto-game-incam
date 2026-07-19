@@ -139,30 +139,41 @@ test("continues rVFC tracking while the raw preview is hidden", async ({ page })
   await expect.poll(completedCount).toBeGreaterThan(beforeHide);
 });
 
-test("downloads a non-engineer device checklist as JSON", async ({ page }) => {
+test("manages, exports, and resumes the device check as JSON", async ({ page }) => {
   await page.goto("/?tracking=mock");
-  await page.getByLabel("確認した人（ニックネームで可）").fill("tester-a");
-  await page.getByLabel("使った端末").selectOption("iPhone 15");
-  await page.getByLabel("OS・ブラウザのバージョン").fill("iOS / Safari");
-  await page.getByLabel("端末を横向きでスタンドに置いた").check();
-  await page.getByLabel("両手に点とカーソルが表示された").check();
-  await expect(page.locator("#device-check-progress")).toHaveText("2 / 11 完了");
+  await page.getByLabel("確認した人（匿名ID）").fill("tester-a");
+  await page.locator('[name="device"]').selectOption("iPhone 15");
+  await page.getByLabel("OS名").fill("iOS");
+  await page.getByLabel("OS完全バージョン").fill("20.0");
+  await page.getByLabel("ブラウザ名").fill("Safari");
+  await page.getByLabel("ブラウザ完全バージョン").fill("20.0");
+  await page.getByLabel("端末を横向きでスタンドに置いたの結果").selectOption("pass");
+  await page.getByLabel("両手に21点とカーソルが表示されたの結果").selectOption("issue");
+  await expect(page.locator("#device-check-progress")).toHaveText("2 / 25確認 · 問題 1");
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "確認結果をJSONで保存" }).click();
+  await page.getByRole("button", { name: "実機確認JSONを保存" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^oto-motion-device-check-.+\.json$/);
   const path = await download.path();
   expect(path).not.toBeNull();
   const report = JSON.parse(await readFile(path!, "utf8")) as {
-    progress: { completed: number; total: number };
+    schemaVersion: string;
+    progress: { completed: number; total: number; issue: number };
     privacy: { includesCameraFrames: boolean };
     session: { testerId: string; device: string };
   };
-  expect(report.progress).toEqual({ completed: 2, total: 11 });
+  expect(report.schemaVersion).toBe("2.0");
+  expect(report.progress).toMatchObject({ completed: 2, total: 25, issue: 1 });
   expect(report.session).toMatchObject({ testerId: "tester-a", device: "iPhone 15" });
   expect(report.privacy.includesCameraFrames).toBe(false);
   await expect(page.locator("#device-check-export-status")).toContainText("JSONを保存しました");
+
+  await page.getByLabel("確認した人（匿名ID）").fill("changed");
+  await page.locator("#device-check-import").setInputFiles(path!);
+  await expect(page.getByLabel("確認した人（匿名ID）")).toHaveValue("tester-a");
+  await expect(page.getByLabel("両手に21点とカーソルが表示されたの結果")).toHaveValue("issue");
+  await expect(page.locator("#device-check-export-status")).toContainText("再開できます");
 });
 
 test("runs and exports a P1 controlled trial without raw media", async ({ page }) => {
@@ -196,4 +207,8 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
   expect(report.protocol.completed).toBe(1);
   expect(report.protocol.falseTriggers).toHaveLength(1);
   expect(report.replay.frames.length).toBeGreaterThan(0);
+
+  await page.locator("#device-check-p1-import").setInputFiles(path!);
+  await expect(page.locator('[name="airTapTrackingLoss"]')).toHaveValue("1");
+  await expect(page.locator("#device-check-export-status")).toContainText("3ジェスチャーの件数");
 });

@@ -36,6 +36,7 @@ export interface Phase1GestureSummary {
   readonly success: number;
   readonly playerMiss: number;
   readonly machineMiss: number;
+  readonly falseTrigger: number;
   readonly trackingLoss: number;
   readonly unclassified: number;
   readonly offsetP50Ms: number | null;
@@ -93,6 +94,7 @@ function summarizeGesture(protocol: P1RunnerSnapshot, gesture: P1Gesture): Phase
     success: count("success"),
     playerMiss: count("player-miss"),
     machineMiss: count("machine-miss"),
+    falseTrigger: protocol.falseTriggers.filter((event) => event.gestureType === gesture).length,
     trackingLoss: count("tracking-loss"),
     unclassified: count("unclassified"),
     offsetP50Ms: percentile(offsets, 0.5),
