@@ -495,6 +495,76 @@ const template = `
 
         <p class="scope-note">生映像は保存・送信しません。detectionIndexはフレーム内番号で、安定した手IDではありません。gesture eventTimeは次工程です。</p>
       </section>
+
+      <section class="test-checklist-panel" aria-labelledby="device-check-heading">
+        <div class="section-heading checklist-heading">
+          <div>
+            <p class="section-index">03 / DEVICE CHECK</p>
+            <h2 id="device-check-heading">かんたん実機確認</h2>
+          </div>
+          <span id="device-check-progress" class="check-progress">0 / 11 完了</span>
+        </div>
+        <p class="check-intro">専門知識は不要です。実際にできた項目だけチェックし、最後にJSONを保存して担当者へ送ってください。映像はJSONに入りません。</p>
+
+        <form id="device-check-form" class="device-check-form">
+          <fieldset class="session-fields">
+            <legend>今回の確認について</legend>
+            <label>
+              <span>確認番号</span>
+              <input id="device-check-session" name="sessionId" type="text" required>
+            </label>
+            <label>
+              <span>確認した人（ニックネームで可）</span>
+              <input name="testerId" type="text" autocomplete="off" required placeholder="例: tester-a">
+            </label>
+            <label>
+              <span>使った端末</span>
+              <select name="device" required>
+                <option value="">選んでください</option>
+                <option value="iPhone 15">iPhone 15</option>
+                <option value="Google Pixel 10 Pro XL">Google Pixel 10 Pro XL</option>
+                <option value="other">その他</option>
+              </select>
+            </label>
+            <label>
+              <span>OS・ブラウザのバージョン</span>
+              <input name="osBrowser" type="text" required placeholder="例: iOS 20 / Safari">
+            </label>
+            <label>
+              <span>カメラまでの距離（cm）</span>
+              <input name="distanceCm" type="number" min="30" max="300" inputmode="numeric" placeholder="例: 80">
+            </label>
+            <label class="field-wide">
+              <span>照明・背景・服装</span>
+              <input name="environment" type="text" placeholder="例: 明るい室内、白い壁、黒い長袖">
+            </label>
+          </fieldset>
+
+          <div id="device-check-list" class="device-check-list"></div>
+
+          <fieldset class="result-fields">
+            <legend>結果</legend>
+            <label>
+              <span>全体として</span>
+              <select name="overall" required>
+                <option value="pending">判断保留</option>
+                <option value="pass">問題なし</option>
+                <option value="issue">問題あり</option>
+              </select>
+            </label>
+            <label class="field-wide">
+              <span>気になったこと</span>
+              <textarea name="notes" rows="4" placeholder="点が消えた場面、遅く感じた動き、表示の分かりにくさなど"></textarea>
+            </label>
+          </fieldset>
+
+          <div class="export-row">
+            <p>チェックしていない項目も「未完了」としてJSONへ残ります。</p>
+            <button class="button button--primary export-button" type="submit">確認結果をJSONで保存</button>
+          </div>
+          <p id="device-check-export-status" class="export-status" role="status" hidden></p>
+        </form>
+      </section>
     </main>
   </div>
 `;

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 
 test("starts, measures, hides, and releases the camera", async ({ page }) => {
   await page.goto("/");
@@ -110,4 +111,30 @@ test("continues rVFC tracking while the raw preview is hidden", async ({ page })
   await page.getByRole("button", { name: "プレビューを隠す" }).click();
   await expect(page.getByText("プレビューは非表示です。計測は継続しています。")).toBeVisible();
   await expect.poll(completedCount).toBeGreaterThan(beforeHide);
+});
+
+test("downloads a non-engineer device checklist as JSON", async ({ page }) => {
+  await page.goto("/?tracking=mock");
+  await page.getByLabel("確認した人（ニックネームで可）").fill("tester-a");
+  await page.getByLabel("使った端末").selectOption("iPhone 15");
+  await page.getByLabel("OS・ブラウザのバージョン").fill("iOS / Safari");
+  await page.getByLabel("端末を横向きでスタンドに置いた").check();
+  await page.getByLabel("両手に点とカーソルが表示された").check();
+  await expect(page.locator("#device-check-progress")).toHaveText("2 / 11 完了");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "確認結果をJSONで保存" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^oto-motion-device-check-.+\.json$/);
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  const report = JSON.parse(await readFile(path!, "utf8")) as {
+    progress: { completed: number; total: number };
+    privacy: { includesCameraFrames: boolean };
+    session: { testerId: string; device: string };
+  };
+  expect(report.progress).toEqual({ completed: 2, total: 11 });
+  expect(report.session).toMatchObject({ testerId: "tester-a", device: "iPhone 15" });
+  expect(report.privacy.includesCameraFrames).toBe(false);
+  await expect(page.locator("#device-check-export-status")).toContainText("JSONを保存しました");
 });

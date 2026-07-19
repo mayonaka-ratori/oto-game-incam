@@ -14,6 +14,10 @@ import type { TrackingMetricsSnapshot } from "../metrics/tracking-metrics";
 import { DEFAULT_OVERLAY_LAYERS, OverlayRenderer } from "../rendering/overlay-renderer";
 import { LabView } from "../ui/lab-view";
 import { TrackingWorkerClient } from "../worker/tracking-worker-client";
+import {
+  DeviceChecklistController,
+  type DeviceCheckTechnicalSnapshot,
+} from "../testing/device-checklist";
 import { initialLabState, transitionLabState, type LabState } from "./lab-state";
 
 export class LabController {
@@ -41,6 +45,7 @@ export class LabController {
     });
     this.#overlayRenderer = new OverlayRenderer(this.#view.video, this.#view.overlay);
     this.#overlayRenderer.setLayers(DEFAULT_OVERLAY_LAYERS);
+    new DeviceChecklistController(root, () => this.#technicalSnapshot());
 
     const issues = getBlockingSupportIssues(this.#support);
     this.#state = transitionLabState(
@@ -173,4 +178,24 @@ export class LabController {
     window.removeEventListener("pagehide", this.#dispose);
     document.removeEventListener("visibilitychange", this.#render);
   };
+
+  #technicalSnapshot(): DeviceCheckTechnicalSnapshot {
+    const scheduler = this.#tracking?.scheduler;
+    return {
+      pageUrl: window.location.href,
+      userAgent: navigator.userAgent,
+      viewport: `${window.innerWidth} × ${window.innerHeight}`,
+      devicePixelRatio: window.devicePixelRatio,
+      cameraFps: this.#metrics?.cameraFps ?? null,
+      trackingHz: this.#tracking?.outputHz ?? null,
+      inferenceP95Ms: this.#tracking?.inferenceP95 ?? null,
+      frameAgeP95Ms: this.#tracking?.frameAgeP95 ?? null,
+      frameSource: this.#tracking?.frameSource ?? null,
+      delegate: this.#tracking?.provider?.delegate ?? null,
+      capturedFrames: scheduler?.captured ?? null,
+      completedFrames: scheduler?.completed ?? null,
+      replacedFrames: scheduler?.replaced ?? null,
+      trackingError: this.#tracking?.fatalError ?? null,
+    };
+  }
 }

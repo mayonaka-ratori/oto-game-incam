@@ -152,7 +152,8 @@ summary:focus-visible {
 }
 
 .camera-panel,
-.diagnostics-panel {
+.diagnostics-panel,
+.test-checklist-panel {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -167,6 +168,187 @@ summary:focus-visible {
 
 .diagnostics-panel {
   padding: 20px;
+}
+
+.test-checklist-panel {
+  grid-column: 1 / -1;
+  padding: 20px;
+}
+
+.checklist-heading {
+  align-items: center;
+}
+
+.check-progress {
+  padding: 7px 10px;
+  border: 1px solid rgba(98, 242, 220, 0.3);
+  border-radius: 999px;
+  color: var(--cyan);
+  background: var(--cyan-dim);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.check-intro {
+  max-width: 54rem;
+  margin: -2px 0 18px;
+  color: #b7c9c9;
+  font-size: 0.82rem;
+  line-height: 1.7;
+}
+
+.device-check-form {
+  display: grid;
+  gap: 16px;
+}
+
+.session-fields,
+.result-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.session-fields legend,
+.result-fields legend {
+  padding: 0 7px;
+  color: var(--muted);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.68rem;
+}
+
+.session-fields label,
+.result-fields label {
+  display: grid;
+  gap: 7px;
+  color: #c6d6d5;
+  font-size: 0.72rem;
+}
+
+.field-wide {
+  grid-column: span 2;
+}
+
+.session-fields input,
+.session-fields select,
+.result-fields select,
+.result-fields textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  color: var(--text);
+  background: #071014;
+  font: inherit;
+}
+
+.result-fields textarea {
+  resize: vertical;
+}
+
+.session-fields input:focus-visible,
+.session-fields select:focus-visible,
+.result-fields select:focus-visible,
+.result-fields textarea:focus-visible,
+.check-item input:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.device-check-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.check-group {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(10, 19, 24, 0.72);
+}
+
+.check-group h3 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.check-item {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 9px;
+  align-items: start;
+  padding: 11px 4px;
+  border-bottom: 1px solid rgba(157, 216, 211, 0.09);
+  cursor: pointer;
+}
+
+.check-item:last-child {
+  border-bottom: 0;
+}
+
+.check-item input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--cyan);
+}
+
+.check-item span,
+.check-item strong,
+.check-item small {
+  display: block;
+}
+
+.check-item strong {
+  color: #dbe8e7;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.check-item small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.67rem;
+  line-height: 1.5;
+}
+
+.check-item:has(input:checked) strong {
+  color: var(--cyan);
+}
+
+.export-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.export-row p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.export-button {
+  flex: 0 0 auto;
+}
+
+.export-status {
+  margin: 0;
+  padding: 11px 13px;
+  border: 1px solid rgba(98, 242, 220, 0.3);
+  border-radius: 9px;
+  color: var(--cyan);
+  background: var(--cyan-dim);
+  font-size: 0.76rem;
 }
 
 .section-heading {
@@ -704,7 +886,8 @@ details[open] summary {
   }
 
   .camera-panel,
-  .diagnostics-panel {
+  .diagnostics-panel,
+  .test-checklist-panel {
     padding: 14px;
   }
 
@@ -727,6 +910,21 @@ details[open] summary {
 
   .settings-columns {
     grid-template-columns: 1fr;
+  }
+
+  .session-fields,
+  .result-fields,
+  .device-check-list {
+    grid-template-columns: 1fr;
+  }
+
+  .field-wide {
+    grid-column: auto;
+  }
+
+  .export-row {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

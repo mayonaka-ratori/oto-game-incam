@@ -38,6 +38,8 @@ npm run test:e2e
 
 合成二手fixtureでオーバーレイだけを確認する場合は`/?tracking=mock`を使用できる。通常URLでは固定したMediaPipe実装を専用Worker内で実行する。
 
+画面下部の「かんたん実機確認」では、非エンジニア向けの確認項目をチェックし、端末情報・回答・その時点の追跡計測値をJSONとして保存できる。JSONにカメラ映像や音声は含めない。
+
 実機から確認する場合は、有効なHTTPSでproduction buildを配信する。LAN内の平文HTTPはスマートフォンのカメラAPIでsecure contextとして扱われないため、実機試験には使用しない。
 
 ## データ方針
