@@ -238,10 +238,85 @@ summary:focus-visible {
   transform: scaleX(-1);
 }
 
+.preview-shell[data-preview-visible="false"] video {
+  filter: brightness(0);
+}
+
+.tracking-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.tracking-state {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 6;
+  max-width: calc(100% - 24px);
+  padding: 6px 9px;
+  border: 1px solid rgba(98, 242, 220, 0.32);
+  border-radius: 7px;
+  color: var(--cyan);
+  background: rgba(3, 8, 10, 0.82);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.04em;
+}
+
+.tracking-state[data-state="one-hand-lost"],
+.tracking-state[data-state="both-hands-lost"],
+.tracking-state[data-state="performance-low"] {
+  border-color: rgba(255, 197, 109, 0.38);
+  color: var(--warning);
+}
+
+.tracking-state[data-state="error"] {
+  border-color: rgba(255, 131, 126, 0.42);
+  color: var(--danger);
+}
+
+.overlay-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 10px 0 0;
+  padding: 9px 12px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: #b7c9c9;
+  background: rgba(10, 19, 24, 0.65);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.66rem;
+}
+
+.overlay-controls legend {
+  padding: 0 6px;
+  color: var(--muted);
+}
+
+.overlay-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.overlay-controls input {
+  accent-color: var(--cyan);
+}
+
 .camera-placeholder {
-  max-width: 28rem;
-  padding: 24px;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px max(24px, calc((100% - 28rem) / 2));
   color: #789294;
+  background: radial-gradient(circle at center, rgba(45, 91, 92, 0.16), transparent 48%);
   font-size: 0.88rem;
   line-height: 1.7;
   text-align: center;

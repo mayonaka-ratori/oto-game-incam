@@ -4,7 +4,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "coverage/**", "playwright-report/**", "test-results/**"],
+    ignores: ["dist/**", "coverage/**", "playwright-report/**", "test-results/**", "public/mediapipe/**"],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
@@ -17,5 +17,10 @@ export default tseslint.config(
       },
     },
   },
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
 );
-

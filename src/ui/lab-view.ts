@@ -2,11 +2,14 @@ import { CAMERA_CONSTRAINTS, type CameraSession } from "../camera/camera-control
 import type { CameraSupportSnapshot } from "../camera/camera-support";
 import type { LabState } from "../app/lab-state";
 import type { FrameMetricsSnapshot } from "../metrics/frame-metrics";
+import type { TrackingMetricsSnapshot } from "../metrics/tracking-metrics";
+import type { OverlayLayers } from "../rendering/overlay-renderer";
 
 export interface LabViewCallbacks {
   readonly onStart: () => void;
   readonly onStop: () => void;
   readonly onTogglePreview: () => void;
+  readonly onOverlayLayersChange: (layers: OverlayLayers) => void;
 }
 
 export interface LabViewModel {
@@ -15,10 +18,12 @@ export interface LabViewModel {
   readonly session: CameraSession | null;
   readonly metrics: FrameMetricsSnapshot | null;
   readonly previewVisible: boolean;
+  readonly tracking: TrackingMetricsSnapshot | null;
 }
 
 export class LabView {
   readonly video: HTMLVideoElement;
+  readonly overlay: HTMLCanvasElement;
   readonly #root: HTMLElement;
   readonly #startButton: HTMLButtonElement;
   readonly #stopButton: HTMLButtonElement;
@@ -31,12 +36,15 @@ export class LabView {
   readonly #previewShell: HTMLElement;
   readonly #cameraPlaceholder: HTMLElement;
   readonly #orientationNotice: HTMLElement;
+  readonly #trackingState: HTMLElement;
+  readonly #overlayInputs: readonly HTMLInputElement[];
 
   constructor(root: HTMLElement, callbacks: LabViewCallbacks) {
     this.#root = root;
     root.innerHTML = template;
 
     this.video = requiredElement(root, "#camera-preview", HTMLVideoElement);
+    this.overlay = requiredElement(root, "#tracking-overlay", HTMLCanvasElement);
     this.#startButton = requiredElement(root, "#start-camera", HTMLButtonElement);
     this.#stopButton = requiredElement(root, "#stop-camera", HTMLButtonElement);
     this.#previewButton = requiredElement(root, "#toggle-preview", HTMLButtonElement);
@@ -48,10 +56,15 @@ export class LabView {
     this.#previewShell = requiredElement(root, "#preview-shell", HTMLElement);
     this.#cameraPlaceholder = requiredElement(root, "#camera-placeholder", HTMLElement);
     this.#orientationNotice = requiredElement(root, "#orientation-notice", HTMLElement);
+    this.#trackingState = requiredElement(root, "#tracking-state", HTMLElement);
+    this.#overlayInputs = [...root.querySelectorAll<HTMLInputElement>("[data-overlay-layer]")];
 
     this.#startButton.addEventListener("click", callbacks.onStart);
     this.#stopButton.addEventListener("click", callbacks.onStop);
     this.#previewButton.addEventListener("click", callbacks.onTogglePreview);
+    for (const input of this.#overlayInputs) {
+      input.addEventListener("change", () => callbacks.onOverlayLayersChange(readOverlayLayers(this.#overlayInputs)));
+    }
   }
 
   render(model: LabViewModel): void {
@@ -76,20 +89,58 @@ export class LabView {
 
     this.#previewShell.dataset.active = String(active);
     this.#previewShell.dataset.previewVisible = String(model.previewVisible);
-    this.video.hidden = !active || !model.previewVisible;
+    // Keep the active video renderable so requestVideoFrameCallback continues
+    // even when the raw preview is covered by the placeholder.
+    this.video.hidden = !active;
+    this.overlay.hidden = !active;
     this.#cameraPlaceholder.hidden = active && model.previewVisible;
     this.#cameraPlaceholder.textContent = active
       ? "プレビューは非表示です。計測は継続しています。"
       : "カメラ開始後、ここにインカメ映像を表示します。";
 
     this.#orientationNotice.hidden = !isPortraitViewport();
+    renderTrackingState(this.#trackingState, model.tracking, active);
 
     renderRequestedSettings(this.#root);
     renderActualSettings(this.#root, model.session);
     renderEnvironment(this.#root, model.support, model.metrics);
     renderSupport(this.#root, model.support);
     renderMetrics(this.#root, model.metrics);
+    renderTrackingMetrics(this.#root, model.tracking);
   }
+}
+
+function readOverlayLayers(inputs: readonly HTMLInputElement[]): OverlayLayers {
+  const enabled = (name: string) => inputs.find((input) => input.dataset.overlayLayer === name)?.checked === true;
+  return {
+    landmarks: enabled("landmarks"),
+    connections: enabled("connections"),
+    cursor: enabled("cursor"),
+    labels: enabled("labels"),
+  };
+}
+
+function renderTrackingState(
+  element: HTMLElement,
+  tracking: TrackingMetricsSnapshot | null,
+  active: boolean,
+): void {
+  const state = active
+    ? tracking?.initializationStatus === "error"
+      ? "error"
+      : (tracking?.state ?? "framing")
+    : "framing";
+  const copy = {
+    framing: "TRACKING · 準備中 / 手を枠内へ",
+    ready: "TRACKING · 両手を検出",
+    "one-hand-lost": "TRACKING LOSS · 片手のみ検出（MISSではありません）",
+    "both-hands-lost": "TRACKING LOSS · 両手を検出できません（MISSではありません）",
+    "performance-low": "PERFORMANCE LOW · 追跡出力を確認",
+    error: "TRACKING ERROR · Worker diagnosticsを確認",
+  }[state];
+  element.textContent = copy;
+  element.dataset.state = state;
+  element.hidden = !active;
 }
 
 function renderRequestedSettings(root: HTMLElement): void {
@@ -153,6 +204,41 @@ function renderMetrics(root: HTMLElement, metrics: FrameMetricsSnapshot | null):
   setText(root, "metric-display-fps", formatValue(metrics?.displayFps, 1));
   setText(root, "metric-frame-count", metrics?.cameraFrames.toLocaleString("ja-JP") ?? "—");
   setText(root, "metric-elapsed", formatDuration(metrics?.elapsedMs));
+}
+
+function renderTrackingMetrics(root: HTMLElement, tracking: TrackingMetricsSnapshot | null): void {
+  const scheduler = tracking?.scheduler;
+  setText(root, "metric-tracking-hz", formatValue(tracking?.outputHz, 1));
+  setText(root, "metric-inference-p50", formatValue(tracking?.inferenceP50, 1, " ms"));
+  setText(root, "metric-inference-p95", formatValue(tracking?.inferenceP95, 1, " ms"));
+  setText(root, "metric-frame-age-p95", formatValue(tracking?.frameAgeP95, 1, " ms"));
+  setText(root, "tracking-init", tracking?.initializationStatus ?? "—");
+  setText(root, "tracking-init-time", formatValue(tracking?.initializationTimeMs, 1, " ms"));
+  setText(root, "tracking-delegate", tracking?.provider?.delegate ?? "—");
+  setText(root, "tracking-fallback", tracking?.provider?.fallbackReason ?? "—");
+  setText(root, "tracking-source", tracking?.frameSource ?? "—");
+  setText(root, "tracking-inflight", scheduler?.inFlight.toString() ?? "—");
+  setText(root, "tracking-pending", scheduler?.pending.toString() ?? "—");
+  setText(root, "tracking-counts", scheduler === undefined ? "—" : `${scheduler.captured} / ${scheduler.sent} / ${scheduler.completed}`);
+  setText(root, "tracking-replaced", scheduler?.replaced.toString() ?? "—");
+  setText(root, "tracking-errored", scheduler?.errored.toString() ?? "—");
+  setText(root, "tracking-callback-worker", formatValue(tracking?.callbackToWorkerP50, 1, " ms"));
+  setText(root, "tracking-worker-wait", formatValue(tracking?.workerWaitP50, 1, " ms"));
+  setText(root, "tracking-inference-max", formatValue(tracking?.inferenceMax, 1, " ms"));
+  setText(root, "tracking-frame-age-p50", formatValue(tracking?.frameAgeP50, 1, " ms"));
+  setText(root, "tracking-hands", tracking?.handCount?.toString() ?? "—");
+  setText(root, "tracking-first-acquisition", formatValue(tracking?.firstAcquisitionMs, 0, " ms"));
+  setText(root, "tracking-one-coverage", formatPercent(tracking?.oneHandCoverage));
+  setText(root, "tracking-two-coverage", formatPercent(tracking?.twoHandCoverage));
+  setText(root, "tracking-left-missing", formatValue(tracking?.leftMissingMs, 0, " ms"));
+  setText(root, "tracking-right-missing", formatValue(tracking?.rightMissingMs, 0, " ms"));
+  const hands = tracking?.latestFrame?.hands ?? [];
+  setText(root, "tracking-handedness", hands.length === 0 ? "—" : hands.map((hand) => `${hand.handedness} ${hand.handednessScore.toFixed(2)}`).join(" · "));
+  setText(root, "tracking-error", tracking?.fatalError ?? "—");
+}
+
+function formatPercent(value: number | null | undefined): string {
+  return value === null || value === undefined ? "—" : `${(value * 100).toFixed(1)}%`;
 }
 
 function stateLabel(kind: LabState["kind"]): string {
@@ -263,6 +349,7 @@ const template = `
 
         <div id="preview-shell" class="preview-shell" data-active="false" data-preview-visible="true">
           <video id="camera-preview" aria-label="インカメの開発用プレビュー" autoplay muted playsinline hidden></video>
+          <canvas id="tracking-overlay" class="tracking-overlay" aria-label="二手ランドマーク表示" hidden></canvas>
           <div id="camera-placeholder" class="camera-placeholder">
             カメラ開始後、ここにインカメ映像を表示します。
           </div>
@@ -274,7 +361,16 @@ const template = `
             <span class="guide-center"></span>
           </div>
           <span class="preview-label">DEV PREVIEW · MIRRORED</span>
+          <span id="tracking-state" class="tracking-state" data-state="framing" role="status" hidden></span>
         </div>
+
+        <fieldset class="overlay-controls">
+          <legend>Developer overlay</legend>
+          <label><input type="checkbox" data-overlay-layer="landmarks" checked> 21 points</label>
+          <label><input type="checkbox" data-overlay-layer="connections" checked> connections</label>
+          <label><input type="checkbox" data-overlay-layer="cursor" checked> cursor</label>
+          <label><input type="checkbox" data-overlay-layer="labels" checked> L / R labels</label>
+        </fieldset>
 
         <div id="state-card" class="state-card" data-state="checking" aria-live="polite">
           <div class="state-copy">
@@ -307,6 +403,10 @@ const template = `
           <article class="metric-card"><span>DISPLAY FPS</span><strong id="metric-display-fps">—</strong></article>
           <article class="metric-card"><span>FRAMES</span><strong id="metric-frame-count">—</strong></article>
           <article class="metric-card"><span>ELAPSED</span><strong id="metric-elapsed">—</strong></article>
+          <article class="metric-card metric-card--primary"><span>TRACKING HZ</span><strong id="metric-tracking-hz">—</strong></article>
+          <article class="metric-card"><span>INFERENCE p50</span><strong id="metric-inference-p50">—</strong></article>
+          <article class="metric-card"><span>INFERENCE p95</span><strong id="metric-inference-p95">—</strong></article>
+          <article class="metric-card"><span>FRAME AGE p95</span><strong id="metric-frame-age-p95">—</strong></article>
         </div>
 
         <div class="data-sections">
@@ -337,6 +437,39 @@ const template = `
           </details>
 
           <details>
+            <summary>Tracking Worker</summary>
+            <dl class="data-list">
+              <div><dt>Initialization</dt><dd id="tracking-init">—</dd></div>
+              <div><dt>Init time</dt><dd id="tracking-init-time">—</dd></div>
+              <div><dt>Delegate</dt><dd id="tracking-delegate">—</dd></div>
+              <div><dt>Fallback reason</dt><dd id="tracking-fallback">—</dd></div>
+              <div><dt>Frame source</dt><dd id="tracking-source">—</dd></div>
+              <div><dt>In-flight / pending</dt><dd><span id="tracking-inflight">—</span> / <span id="tracking-pending">—</span></dd></div>
+              <div><dt>Captured / sent / completed</dt><dd id="tracking-counts">—</dd></div>
+              <div><dt>Replaced</dt><dd id="tracking-replaced">—</dd></div>
+              <div><dt>Errored</dt><dd id="tracking-errored">—</dd></div>
+              <div><dt>Callback → Worker p50</dt><dd id="tracking-callback-worker">—</dd></div>
+              <div><dt>Worker wait p50</dt><dd id="tracking-worker-wait">—</dd></div>
+              <div><dt>Inference max</dt><dd id="tracking-inference-max">—</dd></div>
+              <div><dt>Frame age p50</dt><dd id="tracking-frame-age-p50">—</dd></div>
+              <div><dt>Fatal error</dt><dd id="tracking-error">—</dd></div>
+            </dl>
+          </details>
+
+          <details>
+            <summary>Hand tracking</summary>
+            <dl class="data-list">
+              <div><dt>Hands</dt><dd id="tracking-hands">—</dd></div>
+              <div><dt>First acquisition</dt><dd id="tracking-first-acquisition">—</dd></div>
+              <div><dt>≥1 hand coverage</dt><dd id="tracking-one-coverage">—</dd></div>
+              <div><dt>2 hand coverage</dt><dd id="tracking-two-coverage">—</dd></div>
+              <div><dt>Left missing</dt><dd id="tracking-left-missing">—</dd></div>
+              <div><dt>Right missing</dt><dd id="tracking-right-missing">—</dd></div>
+              <div><dt>Handedness</dt><dd id="tracking-handedness">—</dd></div>
+            </dl>
+          </details>
+
+          <details>
             <summary>Environment</summary>
             <dl class="data-list">
               <div><dt>Secure context</dt><dd id="environment-secure">—</dd></div>
@@ -360,9 +493,8 @@ const template = `
           </details>
         </div>
 
-        <p class="scope-note">Tracking Worker、ランドマーク、gesture eventTimeは次ステップで追加します。</p>
+        <p class="scope-note">生映像は保存・送信しません。detectionIndexはフレーム内番号で、安定した手IDではありません。gesture eventTimeは次工程です。</p>
       </section>
     </main>
   </div>
 `;
-

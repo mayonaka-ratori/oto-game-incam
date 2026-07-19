@@ -10,7 +10,10 @@ import {
   type CameraSupportSnapshot,
 } from "../camera/camera-support";
 import { FrameMetricsCollector, type FrameMetricsSnapshot } from "../metrics/frame-metrics";
+import type { TrackingMetricsSnapshot } from "../metrics/tracking-metrics";
+import { DEFAULT_OVERLAY_LAYERS, OverlayRenderer } from "../rendering/overlay-renderer";
 import { LabView } from "../ui/lab-view";
+import { TrackingWorkerClient } from "../worker/tracking-worker-client";
 import { initialLabState, transitionLabState, type LabState } from "./lab-state";
 
 export class LabController {
@@ -21,6 +24,9 @@ export class LabController {
   #session: CameraSession | null = null;
   #metrics: FrameMetricsSnapshot | null = null;
   #metricsCollector: FrameMetricsCollector | null = null;
+  #tracking: TrackingMetricsSnapshot | null = null;
+  #trackingClient: TrackingWorkerClient | null = null;
+  readonly #overlayRenderer: OverlayRenderer;
   #previewVisible = true;
   #disposed = false;
 
@@ -31,7 +37,10 @@ export class LabController {
       onStart: () => void this.#startCamera(),
       onStop: () => this.#stopCamera(),
       onTogglePreview: () => this.#togglePreview(),
+      onOverlayLayersChange: (layers) => this.#overlayRenderer.setLayers(layers),
     });
+    this.#overlayRenderer = new OverlayRenderer(this.#view.video, this.#view.overlay);
+    this.#overlayRenderer.setLayers(DEFAULT_OVERLAY_LAYERS);
 
     const issues = getBlockingSupportIssues(this.#support);
     this.#state = transitionLabState(
@@ -67,6 +76,18 @@ export class LabController {
       });
       this.#metricsCollector.start();
       this.#state = transitionLabState(this.#state, { type: "CAMERA_STARTED" });
+      this.#render();
+      const trackingClient = new TrackingWorkerClient((update) => {
+        this.#tracking = update.metrics;
+        this.#overlayRenderer.setFrame(update.frame);
+        this.#render();
+      });
+      this.#trackingClient = trackingClient;
+      try {
+        await trackingClient.start(this.#session.track, this.#view.video);
+      } catch {
+        // The tracking diagnostics already contain the classified initialization error.
+      }
     } catch (error) {
       if (this.#disposed) {
         return;
@@ -86,6 +107,10 @@ export class LabController {
     this.#metricsCollector?.stop();
     this.#metricsCollector = null;
     this.#metrics = null;
+    this.#trackingClient?.stop();
+    this.#trackingClient = null;
+    this.#tracking = null;
+    this.#overlayRenderer.setFrame(null);
     this.#session = null;
     this.#camera.stop();
     this.#state = transitionLabState(this.#state, { type: "CAMERA_STOPPED" });
@@ -97,6 +122,10 @@ export class LabController {
       this.#metricsCollector?.stop();
       this.#metricsCollector = null;
       this.#metrics = null;
+      this.#trackingClient?.stop();
+      this.#trackingClient = null;
+      this.#tracking = null;
+      this.#overlayRenderer.setFrame(null);
       this.#session = null;
       this.#camera.stop();
       this.#state = transitionLabState(this.#state, {
@@ -126,6 +155,7 @@ export class LabController {
       session: this.#session,
       metrics: this.#metrics,
       previewVisible: this.#previewVisible,
+      tracking: this.#tracking,
     });
   };
 
@@ -135,6 +165,8 @@ export class LabController {
     }
     this.#disposed = true;
     this.#metricsCollector?.stop();
+    this.#trackingClient?.stop();
+    this.#overlayRenderer.dispose();
     this.#camera.stop();
     window.removeEventListener("resize", this.#handleViewportChange);
     window.removeEventListener("orientationchange", this.#handleViewportChange);
