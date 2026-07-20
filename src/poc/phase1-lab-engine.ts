@@ -18,6 +18,7 @@ import {
   type Phase1SessionDocument,
   type Phase1TechnicalSummary,
 } from "./phase1-session";
+import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapshot";
 
 type TrialMachine = AirTapStateMachine | RibbonSwipeStateMachine | ClapBurstStateMachine;
 
@@ -138,7 +139,7 @@ export class Phase1LabEngine {
     this.#runner.recordFalseTrigger(event);
   }
 
-  createDocument(technicalSummary: Phase1TechnicalSummary): Phase1SessionDocument {
+  createDocument(technicalSummary: Phase1TechnicalSummary, technicalSnapshot: DeviceTechnicalSnapshot): Phase1SessionDocument {
     if (this.#recorder === null) throw new Error("Start a P1 session before exporting.");
     return createPhase1SessionDocument(
       this.#runner.snapshot,
@@ -146,6 +147,7 @@ export class Phase1LabEngine {
       this.#rejections,
       this.#recorder.snapshot(),
       { ...technicalSummary, idConflictCount: this.#idConflictCount },
+      technicalSnapshot,
     );
   }
 

@@ -163,7 +163,7 @@ test("manages, exports, and resumes the device check as JSON", async ({ page }) 
     privacy: { includesCameraFrames: boolean };
     session: { testerId: string; device: string };
   };
-  expect(report.schemaVersion).toBe("2.0");
+  expect(report.schemaVersion).toBe("2.1");
   expect(report.progress).toMatchObject({ completed: 2, total: 25, issue: 1 });
   expect(report.session).toMatchObject({ testerId: "tester-a", device: "iPhone 15" });
   expect(report.privacy.includesCameraFrames).toBe(false);
@@ -201,14 +201,47 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
     privacy: { includesCameraFrames: boolean; includesAudio: boolean };
     protocol: { completed: number; falseTriggers: unknown[] };
     replay: { frames: unknown[] };
+    technicalSnapshot: { pageUrl: string; userAgent: string; viewport: string };
   };
   expect(report.schema).toBe("oto-motion-p1-controlled");
   expect(report.privacy).toEqual(expect.objectContaining({ includesCameraFrames: false, includesAudio: false }));
   expect(report.protocol.completed).toBe(1);
   expect(report.protocol.falseTriggers).toHaveLength(1);
   expect(report.replay.frames.length).toBeGreaterThan(0);
+  expect(report.technicalSnapshot.userAgent.length).toBeGreaterThan(0);
 
-  await page.locator("#device-check-p1-import").setInputFiles(path!);
+  report.technicalSnapshot.pageUrl = "https://smartphone.example.test/";
+  report.technicalSnapshot.userAgent = "smartphone-test-agent";
+  report.technicalSnapshot.viewport = "844 × 390";
+  await page.locator("#device-check-p1-import").setInputFiles({
+    name: "smartphone-p1.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(report)),
+  });
   await expect(page.locator('[name="airTapTrackingLoss"]')).toHaveValue("1");
-  await expect(page.locator("#device-check-export-status")).toContainText("3ジェスチャーの件数");
+  await expect(page.locator("#device-check-export-status")).toContainText("スマホの自動計測値");
+  await expect(page.locator("#device-check-technical-source")).toContainText("P1セッション由来");
+  await expect(page.locator("#device-check-technical-source")).toContainText("844 × 390");
+
+  await page.getByLabel("確認した人（匿名ID）").fill("tester-a");
+  await page.locator('[name="device"]').selectOption("iPhone 15");
+  await page.getByLabel("OS名").fill("iOS");
+  await page.getByLabel("OS完全バージョン").fill("20.0");
+  await page.getByLabel("ブラウザ名").fill("Safari");
+  await page.getByLabel("ブラウザ完全バージョン").fill("20.0");
+  const finalDownloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "実機確認JSONを保存" }).click();
+  const finalDownload = await finalDownloadPromise;
+  const finalPath = await finalDownload.path();
+  expect(finalPath).not.toBeNull();
+  const finalReport = JSON.parse(await readFile(finalPath!, "utf8")) as {
+    technical: { pageUrl: string; userAgent: string; viewport: string };
+    technicalSource: { mode: string };
+  };
+  expect(finalReport.technical).toMatchObject({
+    pageUrl: "https://smartphone.example.test/",
+    userAgent: "smartphone-test-agent",
+    viewport: "844 × 390",
+  });
+  expect(finalReport.technicalSource.mode).toBe("p1-import");
 });

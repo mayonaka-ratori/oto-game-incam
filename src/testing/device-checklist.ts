@@ -1,3 +1,5 @@
+import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapshot";
+
 export type DeviceCheckStatus = "pending" | "pass" | "issue" | "na";
 export type DeviceCheckGroup = "preparation" | "camera" | "tracking" | "operation";
 
@@ -40,30 +42,7 @@ export const DEVICE_CHECK_ITEMS: readonly DeviceCheckItem[] = [
   { id: "json-privacy", group: "operation", label: "出力JSONに生映像・生音声が含まれない", help: "privacyのfalse値と、ファイル容量・内容を確認します。", required: true },
 ] as const;
 
-export interface DeviceCheckTechnicalSnapshot {
-  readonly pageUrl: string;
-  readonly userAgent: string;
-  readonly viewport: string;
-  readonly devicePixelRatio: number;
-  readonly cameraFps: number | null;
-  readonly trackingHz: number | null;
-  readonly inferenceP50Ms: number | null;
-  readonly inferenceP95Ms: number | null;
-  readonly frameAgeP95Ms: number | null;
-  readonly oneHandCoverage: number | null;
-  readonly twoHandCoverage: number | null;
-  readonly frameSource: string | null;
-  readonly delegate: string | null;
-  readonly packageId: string | null;
-  readonly modelId: string | null;
-  readonly capturedFrames: number | null;
-  readonly completedFrames: number | null;
-  readonly replacedFrames: number | null;
-  readonly erroredFrames: number | null;
-  readonly inFlightFrames: number | null;
-  readonly pendingFrames: number | null;
-  readonly trackingError: string | null;
-}
+export type DeviceCheckTechnicalSnapshot = DeviceTechnicalSnapshot;
 
 export interface ControlledGestureResult {
   readonly success: number | null;
@@ -116,7 +95,7 @@ export interface DeviceCheckFormValues {
 }
 
 export interface DeviceCheckReport {
-  readonly schemaVersion: "2.0";
+  readonly schemaVersion: "2.1";
   readonly reportType: "phase1-device-check";
   readonly exportedAt: string;
   readonly session: Omit<DeviceCheckFormValues, "checkStatuses" | "controlled" | "subjective" | "decision" | "notes">;
@@ -135,13 +114,25 @@ export interface DeviceCheckReport {
   readonly decision: DeviceCheckFormValues["decision"];
   readonly notes: string;
   readonly technical: DeviceCheckTechnicalSnapshot;
+  readonly technicalSource: DeviceCheckTechnicalSource;
   readonly privacy: { readonly includesCameraFrames: false; readonly includesAudio: false };
+}
+
+export interface DeviceCheckTechnicalSource {
+  readonly mode: "current-device" | "p1-import" | "report-import";
+  readonly capturedAt: string;
+  readonly sessionId: string | null;
 }
 
 export function createDeviceCheckReport(
   values: DeviceCheckFormValues,
   technical: DeviceCheckTechnicalSnapshot,
   exportedAt = new Date().toISOString(),
+  technicalSource: DeviceCheckTechnicalSource = {
+    mode: "current-device",
+    capturedAt: exportedAt,
+    sessionId: values.sessionId || null,
+  },
 ): DeviceCheckReport {
   const checks = DEVICE_CHECK_ITEMS.map((item) => ({
     ...item,
@@ -150,7 +141,7 @@ export function createDeviceCheckReport(
   const count = (status: DeviceCheckStatus): number => checks.filter((item) => item.status === status).length;
   const completed = checks.filter((item) => item.status !== "pending").length;
   return {
-    schemaVersion: "2.0",
+    schemaVersion: "2.1",
     reportType: "phase1-device-check",
     exportedAt,
     session: {
@@ -185,6 +176,7 @@ export function createDeviceCheckReport(
     decision: values.decision,
     notes: values.notes,
     technical,
+    technicalSource,
     privacy: { includesCameraFrames: false, includesAudio: false },
   };
 }
@@ -194,7 +186,7 @@ export function parseDeviceCheckReport(text: string): DeviceCheckReport {
   if (!isRecord(value) || value.reportType !== "phase1-device-check") {
     throw new TypeError("Phase 1実機確認JSONではありません。");
   }
-  if (value.schemaVersion === "2.0") return parseVersion2(value);
+  if (value.schemaVersion === "2.0" || value.schemaVersion === "2.1") return parseVersion2(value);
   if (value.schemaVersion === "1.0") return migrateVersion1(value);
   throw new TypeError("対応していない実機確認JSONのバージョンです。");
 }
@@ -205,6 +197,7 @@ export class DeviceChecklistController {
   readonly #progress: HTMLElement;
   readonly #status: HTMLElement;
   readonly #getTechnicalSnapshot: () => DeviceCheckTechnicalSnapshot;
+  #technicalOverride: { readonly snapshot: DeviceCheckTechnicalSnapshot; readonly source: DeviceCheckTechnicalSource } | null = null;
 
   constructor(root: HTMLElement, getTechnicalSnapshot: () => DeviceCheckTechnicalSnapshot) {
     this.#form = requiredElement(root, "#device-check-form", HTMLFormElement);
@@ -219,6 +212,8 @@ export class DeviceChecklistController {
     this.#form.addEventListener("submit", this.#download);
     requiredElement(root, "#device-check-import", HTMLInputElement).addEventListener("change", this.#importReport);
     requiredElement(root, "#device-check-p1-import", HTMLInputElement).addEventListener("change", this.#importP1Session);
+    requiredElement(root, "#device-check-use-current-technical", HTMLButtonElement).addEventListener("click", this.#useCurrentTechnical);
+    this.#renderTechnicalSource();
     this.#updateProgress();
   }
 
@@ -282,7 +277,14 @@ export class DeviceChecklistController {
   readonly #download = (event: SubmitEvent): void => {
     event.preventDefault();
     if (!this.#form.reportValidity()) return;
-    const report = createDeviceCheckReport(this.#readValues(), this.#getTechnicalSnapshot());
+    const values = this.#readValues();
+    const override = this.#technicalOverride;
+    const report = createDeviceCheckReport(
+      values,
+      override?.snapshot ?? this.#getTechnicalSnapshot(),
+      new Date().toISOString(),
+      override?.source,
+    );
     downloadJson(report, `oto-motion-device-check-${fileSafe(report.session.sessionId)}.json`);
     this.#status.textContent = `JSONを保存しました（${report.progress.completed}/${report.progress.total}確認、問題 ${report.progress.issue}件）。このファイルを担当者へ返してください。`;
     this.#status.hidden = false;
@@ -294,6 +296,15 @@ export class DeviceChecklistController {
     try {
       const report = parseDeviceCheckReport(await input.files[0].text());
       this.#applyReport(report);
+      this.#technicalOverride = {
+        snapshot: report.technical,
+        source: {
+          mode: "report-import",
+          capturedAt: report.technicalSource.capturedAt,
+          sessionId: report.technicalSource.sessionId ?? report.session.sessionId,
+        },
+      };
+      this.#renderTechnicalSource();
       this.#status.textContent = `実機確認JSONを読み込みました。${report.progress.completed}/${report.progress.total}項目から再開できます。`;
     } catch (error) {
       this.#status.textContent = `読み込めません: ${describeError(error)}`;
@@ -315,13 +326,53 @@ export class DeviceChecklistController {
       applyGestureSummary(this.#form, "airTap", byGesture["air-tap"]);
       applyGestureSummary(this.#form, "ribbonSwipe", byGesture["ribbon-swipe"]);
       applyGestureSummary(this.#form, "clapNearClap", byGesture.clap);
-      this.#status.textContent = "P1セッションから3ジェスチャーの件数とoffset要約を取り込みました。";
+      if (isRecord(value.technicalSnapshot)) {
+        const sessionId = isRecord(value.replay) && isRecord(value.replay.session)
+          ? nullableString(value.replay.session.sessionId)
+          : null;
+        this.#technicalOverride = {
+          snapshot: parseTechnical(value.technicalSnapshot),
+          source: {
+            mode: "p1-import",
+            capturedAt: nullableString(value.createdAtIso) ?? new Date().toISOString(),
+            sessionId,
+          },
+        };
+        if (sessionId !== null) setFormValue(this.#form, "sessionId", sessionId);
+        this.#renderTechnicalSource();
+        this.#status.textContent = "P1セッションから3ジェスチャーとスマホの自動計測値を取り込みました。PCで記入してもスマホ値を保持します。";
+      } else {
+        this.#status.textContent = "3ジェスチャーを取り込みましたが、この旧P1 JSONには端末の自動計測値がありません。最終保存は計測したスマホで行ってください。";
+      }
     } catch (error) {
       this.#status.textContent = `P1結果を読み込めません: ${describeError(error)}`;
     }
     this.#status.hidden = false;
     input.value = "";
   };
+
+  readonly #useCurrentTechnical = (): void => {
+    this.#technicalOverride = null;
+    this.#renderTechnicalSource();
+    this.#status.textContent = "自動計測値を、この画面を開いている端末の値へ戻しました。";
+    this.#status.hidden = false;
+  };
+
+  #renderTechnicalSource(): void {
+    const source = requiredElement(this.#form, "#device-check-technical-source", HTMLElement);
+    const reset = requiredElement(this.#form, "#device-check-use-current-technical", HTMLButtonElement);
+    const override = this.#technicalOverride;
+    if (override === null) {
+      source.textContent = "この画面を開いている端末（スマホで計測する場合はスマホ）";
+      source.dataset.imported = "false";
+      reset.hidden = true;
+      return;
+    }
+    const session = override.source.sessionId === null ? "session不明" : override.source.sessionId;
+    source.textContent = `${override.source.mode === "p1-import" ? "P1セッション" : "実機確認レポート"}由来 · ${session} · ${override.snapshot.viewport || "viewport不明"}`;
+    source.dataset.imported = "true";
+    reset.hidden = false;
+  }
 
   #readValues(): DeviceCheckFormValues {
     const data = new FormData(this.#form);
@@ -511,7 +562,7 @@ function parseVersion2(value: Record<string, unknown>): DeviceCheckReport {
     subjective: parseSubjective(value.subjective),
     decision: parseDecision(value.decision),
     notes: stringValue(value.notes),
-  }, parseTechnical(value.technical), stringValue(value.exportedAt) || new Date().toISOString());
+  }, parseTechnical(value.technical), stringValue(value.exportedAt) || new Date().toISOString(), parseTechnicalSource(value.technicalSource, value));
   return report;
 }
 
@@ -532,7 +583,24 @@ function migrateVersion1(value: Record<string, unknown>): DeviceCheckReport {
       if (!isRecord(check) || typeof check.id !== "string") return [];
       return [[check.id, check.completed === true ? "pass" : "pending"]];
     })),
-  }, isRecord(value.technical) ? parseTechnical(value.technical) : emptyTechnical(), stringValue(value.exportedAt) || new Date().toISOString());
+  }, isRecord(value.technical) ? parseTechnical(value.technical) : emptyTechnical(), stringValue(value.exportedAt) || new Date().toISOString(), {
+    mode: "report-import",
+    capturedAt: stringValue(value.exportedAt) || new Date().toISOString(),
+    sessionId: stringValue(session.sessionId) || null,
+  });
+}
+
+function parseTechnicalSource(value: unknown, report: Record<string, unknown>): DeviceCheckTechnicalSource {
+  const record = isRecord(value) ? value : {};
+  const session = isRecord(report.session) ? report.session : {};
+  const mode = record.mode === "p1-import" || record.mode === "report-import" || record.mode === "current-device"
+    ? record.mode
+    : "report-import";
+  return {
+    mode,
+    capturedAt: stringValue(record.capturedAt) || stringValue(report.exportedAt) || new Date().toISOString(),
+    sessionId: nullableString(record.sessionId) ?? (stringValue(session.sessionId) || null),
+  };
 }
 
 function parseControlled(value: unknown): DeviceCheckFormValues["controlled"] {

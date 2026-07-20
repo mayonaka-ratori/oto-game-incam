@@ -7,10 +7,12 @@ import { parseLandmarkReplayImport, type LandmarkReplayDocument } from "../repla
 import { Phase1LabEngine, type Phase1LabSnapshot } from "./phase1-lab-engine";
 import type { P1Outcome, P1TrialDefinition } from "./phase1-protocol";
 import type { Phase1TechnicalSummary } from "./phase1-session";
+import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapshot";
 
 export interface Phase1LabControllerOptions {
   readonly getProvider: () => TrackingProviderInfo | null;
   readonly getTechnicalSummary: () => Phase1TechnicalSummary;
+  readonly getTechnicalSnapshot: () => DeviceTechnicalSnapshot;
   readonly onGuideChange: (trial: P1TrialDefinition | null) => void;
 }
 
@@ -138,7 +140,10 @@ export class Phase1LabController {
 
   #export(): void {
     try {
-      const document = this.#engine.createDocument(this.#options.getTechnicalSummary());
+      const document = this.#engine.createDocument(
+        this.#options.getTechnicalSummary(),
+        this.#options.getTechnicalSnapshot(),
+      );
       const blob = new Blob([JSON.stringify(document, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const anchor = window.document.createElement("a");

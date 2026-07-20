@@ -20,10 +20,34 @@ describe("Phase1LabEngine", () => {
       oneHandCoverage: 1,
       twoHandCoverage: 0,
       idConflictCount: 0,
+    }, {
+      pageUrl: "https://example.test/",
+      userAgent: "smartphone-test-agent",
+      viewport: "844 × 390",
+      devicePixelRatio: 3,
+      cameraFps: 30,
+      trackingHz: 30,
+      inferenceP50Ms: 10,
+      inferenceP95Ms: 12,
+      frameAgeP95Ms: 90,
+      oneHandCoverage: 1,
+      twoHandCoverage: 0,
+      frameSource: "requestVideoFrameCallback",
+      delegate: "GPU",
+      packageId: "@mediapipe/tasks-vision@0.10.35",
+      modelId: "test-model",
+      capturedFrames: 2,
+      completedFrames: 2,
+      replacedFrames: 0,
+      erroredFrames: 0,
+      inFlightFrames: 0,
+      pendingFrames: 0,
+      trackingError: null,
     });
     expect(document.protocol.results[0]?.outcome).toBe("success");
     expect(document.replay.frames).toHaveLength(2);
     expect(document.privacy.includesCameraFrames).toBe(false);
+    expect(document.technicalSnapshot.userAgent).toBe("smartphone-test-agent");
   });
 
   it("evaluates replay in isolation without completing the live trial", () => {

@@ -3,6 +3,7 @@ import type { LandmarkReplayDocument } from "../replay/landmark-replay";
 import type { P1RunnerSnapshot } from "./phase1-protocol";
 import type { P1Gesture, P1Outcome } from "./phase1-protocol";
 import { percentile } from "../metrics/statistics";
+import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapshot";
 
 export interface Phase1TechnicalSummary {
   readonly inferenceP50Ms: number | null;
@@ -16,7 +17,7 @@ export interface Phase1TechnicalSummary {
 
 export interface Phase1SessionDocument {
   readonly schema: "oto-motion-p1-controlled";
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly createdAtIso: string;
   readonly privacy: {
     readonly includesCameraFrames: false;
@@ -29,6 +30,7 @@ export interface Phase1SessionDocument {
   readonly rejections: readonly GestureRejection[];
   readonly replay: LandmarkReplayDocument;
   readonly technicalSummary: Phase1TechnicalSummary;
+  readonly technicalSnapshot: DeviceTechnicalSnapshot;
 }
 
 export interface Phase1GestureSummary {
@@ -54,11 +56,12 @@ export function createPhase1SessionDocument(
   rejections: readonly GestureRejection[],
   replay: LandmarkReplayDocument,
   technicalSummary: Phase1TechnicalSummary,
+  technicalSnapshot: DeviceTechnicalSnapshot,
   now = new Date(),
 ): Phase1SessionDocument {
   return {
     schema: "oto-motion-p1-controlled",
-    schemaVersion: 1,
+    schemaVersion: 2,
     createdAtIso: now.toISOString(),
     privacy: {
       includesCameraFrames: false,
@@ -71,6 +74,7 @@ export function createPhase1SessionDocument(
     rejections: [...rejections],
     replay,
     technicalSummary,
+    technicalSnapshot,
   };
 }
 

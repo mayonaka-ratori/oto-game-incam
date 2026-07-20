@@ -51,6 +51,7 @@ export class LabController {
     this.#phase1Controller = new Phase1LabController(root, {
       getProvider: () => this.#tracking?.provider ?? null,
       getTechnicalSummary: () => this.#phase1TechnicalSummary(),
+      getTechnicalSnapshot: () => this.#technicalSnapshot(),
       onGuideChange: (trial) => this.#overlayRenderer.setP1Guide(trial),
     });
     new DeviceChecklistController(root, () => this.#technicalSnapshot());

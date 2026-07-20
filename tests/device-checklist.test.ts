@@ -50,13 +50,27 @@ describe("device check report", () => {
     });
     expect(report.checks.some((item) => item.status === "pending")).toBe(true);
     expect(report.privacy).toEqual({ includesCameraFrames: false, includesAudio: false });
-    expect(JSON.parse(JSON.stringify(report))).toMatchObject({ schemaVersion: "2.0", reportType: "phase1-device-check" });
+    expect(JSON.parse(JSON.stringify(report))).toMatchObject({
+      schemaVersion: "2.1",
+      reportType: "phase1-device-check",
+      technicalSource: { mode: "current-device", sessionId: "session-1" },
+    });
   });
 
   it("round-trips a version 2 report for resume", () => {
     const original = createDeviceCheckReport(formValues({ privacy: "pass" }), technical, "2026-07-19T00:00:00.000Z");
     const parsed = parseDeviceCheckReport(JSON.stringify(original));
     expect(parsed).toEqual(original);
+  });
+
+  it("migrates a 2.0 report and marks its technical snapshot as imported", () => {
+    const legacy = JSON.parse(JSON.stringify(createDeviceCheckReport(formValues({}), technical))) as Record<string, unknown>;
+    legacy.schemaVersion = "2.0";
+    delete legacy.technicalSource;
+    const parsed = parseDeviceCheckReport(JSON.stringify(legacy));
+    expect(parsed.schemaVersion).toBe("2.1");
+    expect(parsed.technicalSource).toMatchObject({ mode: "report-import", sessionId: "session-1" });
+    expect(parsed.technical.userAgent).toBe("test-agent");
   });
 
   it("migrates the previous boolean checklist", () => {
@@ -68,7 +82,7 @@ describe("device check report", () => {
       checks: [{ id: "privacy", completed: true }],
       technical,
     }));
-    expect(migrated.schemaVersion).toBe("2.0");
+    expect(migrated.schemaVersion).toBe("2.1");
     expect(migrated.checks.find(({ id }) => id === "privacy")?.status).toBe("pass");
   });
 });

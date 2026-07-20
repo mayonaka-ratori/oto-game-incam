@@ -590,6 +590,13 @@ const template = `
             <label class="button button--quiet" for="device-check-p1-import">P1セッション結果を取込</label>
             <input id="device-check-p1-import" type="file" accept="application/json,.json" hidden>
           </div>
+          <div class="technical-source-row" aria-live="polite">
+            <div>
+              <strong>自動計測値の出所</strong>
+              <span id="device-check-technical-source">この画面を開いている端末</span>
+            </div>
+            <button id="device-check-use-current-technical" class="button button--quiet" type="button" hidden>この端末の値へ戻す</button>
+          </div>
 
           <details class="report-section" open>
             <summary><span>1</span> セッション条件</summary>

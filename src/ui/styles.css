@@ -385,6 +385,40 @@ summary:focus-visible {
   background: rgba(98, 242, 220, 0.045);
 }
 
+.technical-source-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(7, 16, 20, 0.72);
+}
+
+.technical-source-row > div {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+}
+
+.technical-source-row strong {
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.technical-source-row span {
+  color: var(--text);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.technical-source-row span[data-imported="true"] {
+  color: var(--cyan);
+}
+
 .report-toolbar > div {
   display: grid;
   flex: 1;
@@ -1283,6 +1317,11 @@ details[open] summary {
   }
 
   .report-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .technical-source-row {
     align-items: stretch;
     flex-direction: column;
   }
