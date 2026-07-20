@@ -42,8 +42,16 @@ test("fits the camera controls in a phone landscape viewport", async ({ page }) 
   await page.goto("/");
 
   await expect(page.getByRole("button", { name: "カメラを開始" })).toBeInViewport();
+  await expect(page.getByRole("heading", { name: "単体ジェスチャー制御試験" })).toBeInViewport();
+  await expect(page.getByRole("button", { name: "新しいP1セッション" })).toBeInViewport();
   await expect(page.getByRole("heading", { name: "Live diagnostics" })).toBeVisible();
+  await expect(page.locator("details.diagnostics-panel")).not.toHaveAttribute("open", "");
   await expect(page.locator("#orientation-notice")).toBeHidden();
+  const previewBox = await page.locator("#preview-shell").boundingBox();
+  expect(previewBox).not.toBeNull();
+  expect(previewBox!.width / previewBox!.height).toBeCloseTo(4 / 3, 1);
+  expect(previewBox!.y + previewBox!.height).toBeLessThanOrEqual(390);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator("#orientation-notice")).toBeVisible();

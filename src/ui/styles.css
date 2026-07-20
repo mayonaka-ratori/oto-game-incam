@@ -171,6 +171,20 @@ summary:focus-visible {
   padding: 20px;
 }
 
+.diagnostics-panel > summary {
+  margin-bottom: 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.diagnostics-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.diagnostics-panel[open] > summary {
+  margin-bottom: 16px;
+}
+
 .test-checklist-panel {
   grid-column: 1 / -1;
   padding: 20px;
@@ -1395,6 +1409,268 @@ details[open] summary {
 
   .state-copy p {
     font-size: 0.72rem;
+  }
+}
+
+@media (max-width: 1100px) and (max-height: 600px) and (orientation: landscape) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  .app-shell {
+    width: 100%;
+    min-height: 100svh;
+    padding:
+      max(6px, env(safe-area-inset-top))
+      max(8px, env(safe-area-inset-right))
+      max(6px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left));
+  }
+
+  .topbar {
+    display: none;
+  }
+
+  .lab-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.68fr);
+    gap: 8px;
+    align-items: start;
+  }
+
+  .camera-panel,
+  .p1-panel {
+    height: calc(100svh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 12px);
+    min-height: 320px;
+  }
+
+  .camera-panel {
+    position: relative;
+    display: grid;
+    grid-column: 1;
+    grid-row: 1;
+    overflow: hidden;
+    padding: 6px;
+    place-items: center;
+  }
+
+  .camera-panel > .section-heading,
+  .camera-panel > .orientation-notice,
+  .camera-panel > .overlay-controls {
+    display: none !important;
+  }
+
+  .preview-shell {
+    width: min(100%, calc(133.333svh - 32px));
+    height: auto;
+    min-height: 0;
+    max-height: calc(100svh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);
+    aspect-ratio: 4 / 3;
+  }
+
+  .preview-label {
+    right: 8px;
+    bottom: 7px;
+    font-size: 0.55rem;
+  }
+
+  .tracking-state {
+    top: 8px;
+    left: 8px;
+    max-width: calc(100% - 16px);
+    font-size: 0.58rem;
+  }
+
+  .state-card {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    z-index: 8;
+    min-height: 0;
+    margin: 0;
+    padding: 7px 8px;
+    border-color: rgba(157, 216, 211, 0.3);
+    background: rgba(5, 12, 15, 0.86);
+    backdrop-filter: blur(10px);
+  }
+
+  .state-badge {
+    margin-bottom: 2px;
+    font-size: 0.56rem;
+  }
+
+  .state-copy h3 {
+    margin-bottom: 0;
+    font-size: 0.78rem;
+  }
+
+  .state-copy p {
+    display: none;
+  }
+
+  .technical-detail {
+    max-width: 16rem;
+    margin-top: 2px;
+    font-size: 0.56rem;
+  }
+
+  .action-row {
+    gap: 5px;
+  }
+
+  .action-row .button,
+  .p1-panel .button {
+    min-height: 34px;
+    padding: 6px 9px;
+    font-size: 0.68rem;
+  }
+
+  .p1-panel {
+    grid-column: 2;
+    grid-row: 1;
+    overflow-y: auto;
+    padding: 8px;
+    overscroll-behavior: contain;
+  }
+
+  .p1-panel .section-heading {
+    align-items: center;
+    margin-bottom: 6px;
+  }
+
+  .p1-panel .section-index,
+  .p1-panel > .check-intro {
+    display: none;
+  }
+
+  .p1-panel .section-heading h2 {
+    font-size: 0.86rem;
+  }
+
+  .p1-panel .check-progress {
+    padding: 4px 7px;
+    font-size: 0.6rem;
+  }
+
+  .p1-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    margin-top: 0;
+  }
+
+  .p1-card {
+    padding: 7px;
+    border-radius: 10px;
+  }
+
+  .p1-card-heading {
+    gap: 6px;
+  }
+
+  .p1-card-heading span,
+  .p1-instruction span {
+    font-size: 0.56rem;
+  }
+
+  .p1-card-heading strong {
+    font-size: 0.76rem;
+  }
+
+  .p1-audio-card .p1-support-copy,
+  .p1-audio-card .p1-mini-metrics {
+    display: none;
+  }
+
+  .p1-trial-card .p1-mini-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    margin-top: 6px;
+  }
+
+  .p1-trial-card .p1-mini-metrics div {
+    padding: 4px 5px;
+    border-radius: 6px;
+  }
+
+  .p1-trial-card .p1-mini-metrics dt {
+    margin-bottom: 1px;
+    font-size: 0.5rem;
+  }
+
+  .p1-trial-card .p1-mini-metrics dd {
+    font-size: 0.58rem;
+  }
+
+  .p1-instruction {
+    min-height: 46px;
+    margin: 6px 0;
+    padding: 6px 7px;
+    gap: 2px;
+  }
+
+  .p1-instruction strong {
+    font-size: 0.72rem;
+  }
+
+  .p1-observation-row {
+    gap: 4px;
+    margin-top: 6px;
+    padding: 6px 0;
+  }
+
+  .p1-observation-row > span {
+    flex-basis: 100%;
+    font-size: 0.58rem;
+  }
+
+  .p1-observation-row .button {
+    min-height: 30px;
+    padding: 4px 6px;
+    font-size: 0.58rem;
+  }
+
+  .p1-footer {
+    margin-top: 6px;
+  }
+
+  .p1-counters,
+  .p1-replay-block {
+    display: none;
+  }
+
+  .p1-export-block {
+    width: 100%;
+    max-width: none;
+  }
+
+  .p1-export-block .button {
+    width: 100%;
+  }
+
+  .p1-export-block .export-status {
+    font-size: 0.56rem;
+    text-align: left;
+  }
+
+  .diagnostics-panel {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    padding: 10px;
+  }
+
+  .diagnostics-panel > summary,
+  .diagnostics-panel[open] > summary {
+    margin-bottom: 0;
+  }
+
+  .diagnostics-panel[open] > summary {
+    margin-bottom: 10px;
+  }
+
+  .test-checklist-panel {
+    grid-column: 1 / -1;
+    grid-row: 3;
   }
 }
 

@@ -387,14 +387,14 @@ const template = `
         </div>
       </section>
 
-      <section class="diagnostics-panel" aria-labelledby="diagnostics-heading">
-        <div class="section-heading">
+      <details class="diagnostics-panel" aria-labelledby="diagnostics-heading">
+        <summary class="section-heading">
           <div>
             <p class="section-index">02 / TELEMETRY</p>
             <h2 id="diagnostics-heading">Live diagnostics</h2>
           </div>
-          <span class="sample-window">rolling window</span>
-        </div>
+          <span class="sample-window">必要なときだけ開く</span>
+        </summary>
 
         <div class="metric-grid" aria-label="フレーム計測値">
           <article class="metric-card metric-card--primary"><span>CAMERA FPS</span><strong id="metric-camera-fps">—</strong></article>
@@ -494,7 +494,7 @@ const template = `
         </div>
 
         <p class="scope-note">生映像は保存・送信しません。MediaPipeのdetectionIndexは安定ID層へ変換してからジェスチャー判定へ渡します。</p>
-      </section>
+      </details>
 
       <section class="p1-panel" aria-labelledby="p1-heading">
         <div class="section-heading p1-heading">
@@ -507,7 +507,7 @@ const template = `
         <p class="check-intro">正本の順序で、エアタップ10回、リボンスワイプ10回、クラップ／ニアクラップ10回を記録します。実機未確認のため、この画面だけでPass判定はしません。</p>
 
         <div class="p1-grid">
-          <article class="p1-card">
+          <article class="p1-card p1-audio-card">
             <div class="p1-card-heading">
               <div><span>WEB AUDIO CLOCK</span><strong id="p1-audio-state">未開始</strong></div>
               <button id="p1-enable-audio" class="button button--quiet" type="button">音を有効にする</button>
