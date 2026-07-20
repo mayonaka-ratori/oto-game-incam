@@ -530,13 +530,22 @@ const template = `
               <div><dt>sessionId</dt><dd id="p1-session-id">—</dd></div>
               <div><dt>Trial</dt><dd id="p1-trial-number">—</dd></div>
               <div><dt>Gesture</dt><dd id="p1-gesture">—</dd></div>
+              <div><dt>Remaining</dt><dd id="p1-remaining">—</dd></div>
               <div><dt>Last result</dt><dd id="p1-last-result">—</dd></div>
             </dl>
             <div class="p1-instruction" aria-live="polite">
               <span>NEXT ACTION</span>
               <strong id="p1-instruction">セッションを開始してください</strong>
             </div>
-            <button id="p1-next-trial" class="button button--primary p1-next" type="button" disabled>次の試行を開始</button>
+            <div class="p1-live-diagnostic" aria-live="polite">
+              <span>直近の拒否理由</span>
+              <strong id="p1-latest-rejection">—</strong>
+            </div>
+            <p id="p1-performance-warning" class="p1-performance-warning" role="status" hidden>追跡出力が低いためジェスチャーが途切れる可能性があります</p>
+            <div class="p1-trial-actions">
+              <button id="p1-next-trial" class="button button--primary p1-next" type="button" disabled>次の試行を開始</button>
+              <button id="p1-skip" class="button button--quiet p1-skip" type="button" disabled>未成立として次へ</button>
+            </div>
           </article>
         </div>
 
@@ -563,8 +572,10 @@ const template = `
             <p id="p1-replay-status" class="export-status" role="status"></p>
           </div>
           <div class="p1-export-block">
-            <button id="p1-export" class="button button--quiet" type="button" disabled>P1セッションJSONを保存</button>
+            <button id="p1-export" class="button button--quiet" type="button" disabled>P1結果JSONを保存</button>
+            <button id="p1-export-replay" class="button button--quiet" type="button" disabled>診断リプレイを保存</button>
             <p id="p1-export-status" class="export-status" role="status"></p>
+            <p id="p1-replay-export-status" class="export-status" role="status"></p>
           </div>
         </div>
       </section>

@@ -1,12 +1,32 @@
 import type { GestureEvent, RibbonSwipeDirection } from "../gestures/gesture-types";
 
 export type P1Gesture = "air-tap" | "ribbon-swipe" | "clap";
+export const P1_TRIAL_TIMEOUT_MS = 30_000;
+export const P1_EARLY_WINDOW_MS = 500;
+
 export type P1Outcome =
   | "success"
   | "player-miss"
   | "machine-miss"
   | "tracking-loss"
   | "unclassified";
+
+export type P1Resolution =
+  | "gesture-event"
+  | "manual-classification"
+  | "manual-skip"
+  | "trial-timeout";
+
+export interface P1ActiveTrialTiming {
+  readonly preparedAtMs: number;
+  readonly windowOpenedAtMs: number;
+  readonly targetTimeMs: number | null;
+  readonly deadlineTimeMs: number;
+}
+
+export interface P1TrialTiming extends P1ActiveTrialTiming {
+  readonly finishedAtMs: number;
+}
 
 export interface P1TrialDefinition {
   readonly id: string;
@@ -21,6 +41,8 @@ export interface P1TrialDefinition {
 export interface P1TrialResult {
   readonly trial: P1TrialDefinition;
   readonly outcome: P1Outcome;
+  readonly resolution: P1Resolution;
+  readonly timing: P1TrialTiming;
   readonly targetTimeMs: number | null;
   readonly event: GestureEvent | null;
   readonly offsetMs: number | null;
@@ -30,6 +52,7 @@ export interface P1TrialResult {
 export interface P1RunnerSnapshot {
   readonly state: "idle" | "running" | "complete";
   readonly activeTrial: P1TrialDefinition | null;
+  readonly activeTiming: P1ActiveTrialTiming | null;
   readonly nextTrial: P1TrialDefinition | null;
   readonly completed: number;
   readonly total: number;
@@ -44,7 +67,7 @@ export class Phase1ControlledRunner {
   readonly #results: P1TrialResult[] = [];
   readonly #falseTriggers: GestureEvent[] = [];
   #activeTrial: P1TrialDefinition | null = null;
-  #targetTimeMs: number | null = null;
+  #activeTiming: P1ActiveTrialTiming | null = null;
   #state: P1RunnerSnapshot["state"] = "idle";
 
   constructor(trials: readonly P1TrialDefinition[] = P1_CONTROLLED_TRIALS) {
@@ -55,11 +78,11 @@ export class Phase1ControlledRunner {
     this.#results.length = 0;
     this.#falseTriggers.length = 0;
     this.#activeTrial = null;
-    this.#targetTimeMs = null;
+    this.#activeTiming = null;
     this.#state = "running";
   }
 
-  beginNextTrial(targetTimeMs: number | null): P1TrialDefinition | null {
+  beginNextTrial(targetTimeMs: number | null, preparedAtMs = 0): P1TrialDefinition | null {
     if (this.#state !== "running" || this.#activeTrial !== null) return null;
     const trial = this.#trials[this.#results.length] ?? null;
     if (trial === null) {
@@ -67,23 +90,44 @@ export class Phase1ControlledRunner {
       return null;
     }
     this.#activeTrial = trial;
-    this.#targetTimeMs = targetTimeMs;
+    const windowOpenedAtMs = targetTimeMs === null
+      ? preparedAtMs
+      : targetTimeMs - P1_EARLY_WINDOW_MS;
+    this.#activeTiming = {
+      preparedAtMs,
+      windowOpenedAtMs,
+      targetTimeMs,
+      deadlineTimeMs: (targetTimeMs ?? preparedAtMs) + P1_TRIAL_TIMEOUT_MS,
+    };
     return trial;
   }
 
   acceptEvent(event: GestureEvent): boolean {
     const trial = this.#activeTrial;
-    if (trial === null || !eventMatchesTrial(event, trial)) {
+    const timing = this.#activeTiming;
+    if (trial === null || timing === null) return false;
+    if (event.eventTimeMs < timing.windowOpenedAtMs || event.eventTimeMs > timing.deadlineTimeMs) return false;
+    if (!eventMatchesTrial(event, trial)) {
       this.#falseTriggers.push(event);
       return false;
     }
-    this.#finish("success", event, event.reasonCodes);
-    return true;
+    return this.#finish("success", "gesture-event", event, event.reasonCodes, event.eventTimeMs);
   }
 
-  recordOutcome(outcome: Exclude<P1Outcome, "success">, reasonCodes: readonly string[] = []): void {
-    if (this.#activeTrial === null) throw new Error("No P1 trial is active.");
-    this.#finish(outcome, null, reasonCodes);
+  recordOutcome(
+    outcome: Exclude<P1Outcome, "success">,
+    reasonCodes: readonly string[] = [],
+    finishedAtMs = performance.now(),
+  ): boolean {
+    return this.#finish(outcome, "manual-classification", null, reasonCodes, finishedAtMs);
+  }
+
+  skip(finishedAtMs = performance.now()): boolean {
+    return this.#finish("unclassified", "manual-skip", null, ["manual-skip"], finishedAtMs);
+  }
+
+  timeout(finishedAtMs = performance.now()): boolean {
+    return this.#finish("unclassified", "trial-timeout", null, ["trial-timeout"], finishedAtMs);
   }
 
   recordFalseTrigger(event: GestureEvent): void {
@@ -95,6 +139,7 @@ export class Phase1ControlledRunner {
     return {
       state: this.#state,
       activeTrial: this.#activeTrial,
+      activeTiming: this.#activeTiming === null ? null : { ...this.#activeTiming },
       nextTrial,
       completed: this.#results.length,
       total: this.#trials.length,
@@ -103,23 +148,33 @@ export class Phase1ControlledRunner {
     };
   }
 
-  #finish(outcome: P1Outcome, event: GestureEvent | null, reasonCodes: readonly string[]): void {
+  #finish(
+    outcome: P1Outcome,
+    resolution: P1Resolution,
+    event: GestureEvent | null,
+    reasonCodes: readonly string[],
+    finishedAtMs: number,
+  ): boolean {
     const trial = this.#activeTrial;
-    if (trial === null) return;
-    const offsetMs = event === null || this.#targetTimeMs === null
+    const timing = this.#activeTiming;
+    if (trial === null || timing === null) return false;
+    const offsetMs = event === null || timing.targetTimeMs === null
       ? null
-      : event.eventTimeMs - this.#targetTimeMs;
+      : event.eventTimeMs - timing.targetTimeMs;
     this.#results.push({
       trial,
       outcome,
-      targetTimeMs: this.#targetTimeMs,
+      resolution,
+      timing: { ...timing, finishedAtMs },
+      targetTimeMs: timing.targetTimeMs,
       event,
       offsetMs,
       reasonCodes: [...reasonCodes],
     });
     this.#activeTrial = null;
-    this.#targetTimeMs = null;
+    this.#activeTiming = null;
     if (this.#results.length >= this.#trials.length) this.#state = "complete";
+    return true;
   }
 }
 

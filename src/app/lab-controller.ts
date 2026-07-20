@@ -52,6 +52,7 @@ export class LabController {
       getProvider: () => this.#tracking?.provider ?? null,
       getTechnicalSummary: () => this.#phase1TechnicalSummary(),
       getTechnicalSnapshot: () => this.#technicalSnapshot(),
+      getPerformanceLow: () => this.#tracking?.state === "performance-low",
       onGuideChange: (trial) => this.#overlayRenderer.setP1Guide(trial),
     });
     new DeviceChecklistController(root, () => this.#technicalSnapshot());

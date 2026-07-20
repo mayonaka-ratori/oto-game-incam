@@ -44,6 +44,8 @@ test("fits the camera controls in a phone landscape viewport", async ({ page }) 
   await expect(page.getByRole("button", { name: "カメラを開始" })).toBeInViewport();
   await expect(page.getByRole("heading", { name: "単体ジェスチャー制御試験" })).toBeInViewport();
   await expect(page.getByRole("button", { name: "新しいP1セッション" })).toBeInViewport();
+  await expect(page.locator("#p1-remaining")).toBeInViewport();
+  await expect(page.getByRole("button", { name: "未成立として次へ" })).toBeInViewport();
   await expect(page.getByRole("heading", { name: "Live diagnostics" })).toBeVisible();
   await expect(page.locator("details.diagnostics-panel")).not.toHaveAttribute("open", "");
   await expect(page.locator("#orientation-notice")).toBeHidden();
@@ -165,7 +167,9 @@ test("manages, exports, and resumes the device check as JSON", async ({ page }) 
   expect(download.suggestedFilename()).toMatch(/^oto-motion-device-check-.+\.json$/);
   const path = await download.path();
   expect(path).not.toBeNull();
-  const report = JSON.parse(await readFile(path!, "utf8")) as {
+  const reportText = await readFile(path!, "utf8");
+  expect(Buffer.byteLength(reportText)).toBeLessThan(300_000);
+  const report = JSON.parse(reportText) as {
     schemaVersion: string;
     progress: { completed: number; total: number; issue: number };
     privacy: { includesCameraFrames: boolean };
@@ -194,29 +198,52 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
   await expect(page.locator("#p1-progress")).toHaveText("0 / 30");
   await page.getByRole("button", { name: "次の試行を開始" }).click();
   await expect(page.locator("#p1-trial-number")).toHaveText("1 / 30");
-  await page.getByRole("button", { name: "tracking loss" }).click();
+  await expect(page.locator("#p1-remaining")).toHaveText(/\d+秒/);
+  await page.getByRole("button", { name: "未成立として次へ" }).click();
   await expect(page.locator("#p1-progress")).toHaveText("1 / 30");
+  await expect(page.locator("#p1-state")).toHaveText("未成立を記録");
+  await expect(page.locator("#p1-latest-rejection")).toHaveText("未成立として次へ進みました");
   await page.getByRole("button", { name: "false triggerを記録" }).click();
   await expect(page.locator("#p1-false-trigger-count")).toHaveText("1");
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "P1セッションJSONを保存" }).click();
+  await page.getByRole("button", { name: "P1結果JSONを保存" }).click();
   const download = await downloadPromise;
   const path = await download.path();
   expect(path).not.toBeNull();
   const report = JSON.parse(await readFile(path!, "utf8")) as {
     schema: string;
-    privacy: { includesCameraFrames: boolean; includesAudio: boolean };
-    protocol: { completed: number; falseTriggers: unknown[] };
-    replay: { frames: unknown[] };
+    schemaVersion: number;
+    privacy: { includesCameraFrames: boolean; includesAudio: boolean; includesReplayFrames: boolean };
+    protocol: { completed: number; falseTriggers: unknown[]; results: Array<{ resolution: string }> };
+    replay: { available: boolean; schemaVersion: number; frameCount: number };
     technicalSnapshot: { pageUrl: string; userAgent: string; viewport: string };
   };
   expect(report.schema).toBe("oto-motion-p1-controlled");
+  expect(report.schemaVersion).toBe(3);
   expect(report.privacy).toEqual(expect.objectContaining({ includesCameraFrames: false, includesAudio: false }));
+  expect(report.privacy.includesReplayFrames).toBe(false);
   expect(report.protocol.completed).toBe(1);
+  expect(report.protocol.results[0]?.resolution).toBe("manual-skip");
   expect(report.protocol.falseTriggers).toHaveLength(1);
-  expect(report.replay.frames.length).toBeGreaterThan(0);
+  expect(report.replay).not.toHaveProperty("frames");
+  expect(report.replay.schemaVersion).toBe(2);
   expect(report.technicalSnapshot.userAgent.length).toBeGreaterThan(0);
+
+  const replayDownloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "診断リプレイを保存" }).click();
+  const replayDownload = await replayDownloadPromise;
+  const replayPath = await replayDownload.path();
+  expect(replayPath).not.toBeNull();
+  const replay = JSON.parse(await readFile(replayPath!, "utf8")) as {
+    schemaVersion: number;
+    frames: Array<{ hands: Array<Record<string, unknown>> }>;
+    trialWindows: unknown[];
+  };
+  expect(replay.schemaVersion).toBe(2);
+  expect(replay.frames.length).toBeGreaterThan(0);
+  expect(replay.trialWindows.length).toBeGreaterThan(0);
+  expect(replay.frames[0]?.hands[0]).not.toHaveProperty("landmarksWorld");
 
   report.technicalSnapshot.pageUrl = "https://smartphone.example.test/";
   report.technicalSnapshot.userAgent = "smartphone-test-agent";
@@ -226,7 +253,7 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify(report)),
   });
-  await expect(page.locator('[name="airTapTrackingLoss"]')).toHaveValue("1");
+  await expect(page.locator('[name="airTapUnclassified"]')).toHaveValue("1");
   await expect(page.locator("#device-check-export-status")).toContainText("スマホの自動計測値");
   await expect(page.locator("#device-check-technical-source")).toContainText("P1セッション由来");
   await expect(page.locator("#device-check-technical-source")).toContainText("844 × 390");
@@ -252,4 +279,37 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
     viewport: "844 × 390",
   });
   expect(finalReport.technicalSource.mode).toBe("p1-import");
+});
+
+test("times out and auto-advances all 30 trials without double-finishing", async ({ page }) => {
+  await page.clock.install();
+  await page.goto("/?tracking=mock");
+  await page.getByRole("button", { name: "新しいP1セッション" }).click();
+  await page.getByRole("button", { name: "次の試行を開始" }).click();
+
+  for (let ordinal = 1; ordinal <= 30; ordinal += 1) {
+    await page.clock.fastForward(30_001);
+    await expect(page.locator("#p1-progress")).toHaveText(`${ordinal} / 30`);
+    if (ordinal < 30) {
+      await page.clock.fastForward(1_001);
+      await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal + 1} / 30`);
+    }
+  }
+
+  await expect(page.locator("#p1-state")).toHaveText("完了");
+  await expect(page.locator("#p1-latest-rejection")).toHaveText("30秒で未成立として記録しました");
+  await expect(page.getByRole("button", { name: "未成立として次へ" })).toBeDisabled();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "P1結果JSONを保存" }).click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  const report = JSON.parse(await readFile(path!, "utf8")) as {
+    protocol: { results: Array<{ outcome: string; resolution: string }> };
+  };
+  expect(report.protocol.results).toHaveLength(30);
+  expect(report.protocol.results.every(({ outcome, resolution }) => (
+    outcome === "unclassified" && resolution === "trial-timeout"
+  ))).toBe(true);
 });

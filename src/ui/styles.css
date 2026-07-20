@@ -301,7 +301,49 @@ summary:focus-visible {
   font-size: 1rem;
 }
 
+.p1-live-diagnostic {
+  display: grid;
+  min-height: 52px;
+  margin-bottom: 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(157, 216, 211, 0.14);
+  border-radius: 10px;
+  background: rgba(7, 17, 21, 0.72);
+  gap: 4px;
+}
+
+.p1-live-diagnostic span {
+  color: var(--muted);
+  font-size: 0.67rem;
+}
+
+.p1-live-diagnostic strong {
+  color: #dce9e7;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.p1-performance-warning {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 197, 109, 0.3);
+  border-radius: 9px;
+  color: var(--warning);
+  background: rgba(255, 197, 109, 0.08);
+  font-size: 0.74rem;
+}
+
+.p1-trial-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .p1-next {
+  width: 100%;
+}
+
+.p1-skip {
   width: 100%;
 }
 
@@ -331,9 +373,18 @@ summary:focus-visible {
 
 .p1-export-block {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   max-width: 320px;
   justify-items: end;
   gap: 8px;
+}
+
+.p1-export-block .button {
+  width: 100%;
+}
+
+.p1-export-block .export-status {
+  grid-column: 1 / -1;
 }
 
 .p1-replay-block {
@@ -1568,6 +1619,17 @@ details[open] summary {
     gap: 6px;
   }
 
+  .p1-trial-card .p1-card-heading {
+    position: sticky;
+    top: -1px;
+    z-index: 3;
+    margin: -7px -7px 0;
+    padding: 7px;
+    border-bottom: 1px solid var(--line);
+    border-radius: 9px 9px 0 0;
+    background: rgba(3, 10, 13, 0.97);
+  }
+
   .p1-card-heading span,
   .p1-instruction span {
     font-size: 0.56rem;
@@ -1611,6 +1673,32 @@ details[open] summary {
 
   .p1-instruction strong {
     font-size: 0.72rem;
+  }
+
+  .p1-live-diagnostic {
+    min-height: 32px;
+    margin-bottom: 5px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    gap: 1px;
+  }
+
+  .p1-live-diagnostic span {
+    font-size: 0.5rem;
+  }
+
+  .p1-live-diagnostic strong {
+    font-size: 0.58rem;
+  }
+
+  .p1-performance-warning {
+    margin-bottom: 5px;
+    padding: 4px 6px;
+    font-size: 0.56rem;
+  }
+
+  .p1-trial-actions {
+    gap: 4px;
   }
 
   .p1-observation-row {

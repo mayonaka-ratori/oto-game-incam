@@ -327,9 +327,11 @@ export class DeviceChecklistController {
       applyGestureSummary(this.#form, "ribbonSwipe", byGesture["ribbon-swipe"]);
       applyGestureSummary(this.#form, "clapNearClap", byGesture.clap);
       if (isRecord(value.technicalSnapshot)) {
-        const sessionId = isRecord(value.replay) && isRecord(value.replay.session)
-          ? nullableString(value.replay.session.sessionId)
-          : null;
+        const sessionId = isRecord(value.session)
+          ? nullableString(value.session.sessionId)
+          : isRecord(value.replay) && isRecord(value.replay.session)
+            ? nullableString(value.replay.session.sessionId)
+            : null;
         this.#technicalOverride = {
           snapshot: parseTechnical(value.technicalSnapshot),
           source: {
