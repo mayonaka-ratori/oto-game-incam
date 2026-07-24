@@ -61,7 +61,11 @@ export class Phase1LabEngine {
   #idConflictCount = 0;
   #rejectionCount = 0;
 
-  startSession(sessionId: string, provider: TrackingProviderInfo | null, notes = ""): void {
+  startSession(
+    sessionId: string,
+    provider: TrackingProviderInfo | null,
+    options: { readonly notes?: string; readonly appVersion?: string } = {},
+  ): void {
     this.#pipeline.reset();
     this.#runner.start();
     this.#events.length = 0;
@@ -74,9 +78,9 @@ export class Phase1LabEngine {
     this.#session = {
       sessionId,
       createdAtIso: new Date().toISOString(),
-      appVersion: "0.1.0",
+      appVersion: options.appVersion ?? "0.1.0",
       provider,
-      notes,
+      notes: options.notes ?? "",
     };
     this.#recorder = new LandmarkReplayRecorder(this.#session);
   }

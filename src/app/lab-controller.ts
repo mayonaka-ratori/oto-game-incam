@@ -20,6 +20,13 @@ import {
   DeviceChecklistController,
   type DeviceCheckTechnicalSnapshot,
 } from "../testing/device-checklist";
+import { P1SessionComparisonController } from "../testing/p1-session-comparison";
+import { APP_BUILD_ID } from "./app-build";
+import {
+  findTrackingExperimentProfile,
+  type TrackingExperimentProfile,
+  type TrackingExperimentProfileId,
+} from "../experiments/tracking-experiment-profile";
 import { initialLabState, transitionLabState, type LabState } from "./lab-state";
 
 export class LabController {
@@ -34,10 +41,13 @@ export class LabController {
   #trackingClient: TrackingWorkerClient | null = null;
   readonly #overlayRenderer: OverlayRenderer;
   readonly #phase1Controller: Phase1LabController;
+  #experimentProfile: TrackingExperimentProfile;
   #previewVisible = true;
   #disposed = false;
 
   constructor(root: HTMLElement) {
+    const requestedProfileId = new URLSearchParams(window.location.search).get("profile");
+    this.#experimentProfile = findTrackingExperimentProfile(requestedProfileId);
     this.#support = inspectCameraSupport();
     this.#camera = new CameraController((event) => this.#handleTrackEvent(event));
     this.#view = new LabView(root, {
@@ -45,10 +55,12 @@ export class LabController {
       onStop: () => this.#stopCamera(),
       onTogglePreview: () => this.#togglePreview(),
       onOverlayLayersChange: (layers) => this.#overlayRenderer.setLayers(layers),
+      onExperimentProfileChange: (id) => this.#changeExperimentProfile(id),
     });
     this.#overlayRenderer = new OverlayRenderer(this.#view.video, this.#view.overlay);
     this.#overlayRenderer.setLayers(DEFAULT_OVERLAY_LAYERS);
     this.#phase1Controller = new Phase1LabController(root, {
+      appBuildId: APP_BUILD_ID,
       getProvider: () => this.#tracking?.provider ?? null,
       getTechnicalSummary: () => this.#phase1TechnicalSummary(),
       getTechnicalSnapshot: () => this.#technicalSnapshot(),
@@ -56,6 +68,7 @@ export class LabController {
       onGuideChange: (trial) => this.#overlayRenderer.setP1Guide(trial),
     });
     new DeviceChecklistController(root, () => this.#technicalSnapshot());
+    new P1SessionComparisonController(root);
 
     const issues = getBlockingSupportIssues(this.#support);
     this.#state = transitionLabState(
@@ -79,7 +92,7 @@ export class LabController {
     this.#render();
 
     try {
-      this.#session = await this.#camera.start(this.#view.video);
+      this.#session = await this.#camera.start(this.#view.video, this.#experimentProfile);
       if (this.#disposed) {
         this.#camera.stop();
         return;
@@ -100,7 +113,11 @@ export class LabController {
       });
       this.#trackingClient = trackingClient;
       try {
-        await trackingClient.start(this.#session.track, this.#view.video);
+        await trackingClient.start(
+          this.#session.track,
+          this.#view.video,
+          this.#experimentProfile,
+        );
       } catch {
         // The tracking diagnostics already contain the classified initialization error.
       }
@@ -157,6 +174,13 @@ export class LabController {
     this.#render();
   }
 
+  #changeExperimentProfile(id: TrackingExperimentProfileId): void {
+    if (this.#state.kind === "active" || this.#state.kind === "requesting") return;
+    this.#experimentProfile = findTrackingExperimentProfile(id);
+    this.#phase1Controller.experimentProfileChanged();
+    this.#render();
+  }
+
   readonly #handleViewportChange = (): void => {
     this.#render();
   };
@@ -172,6 +196,7 @@ export class LabController {
       metrics: this.#metrics,
       previewVisible: this.#previewVisible,
       tracking: this.#tracking,
+      experimentProfile: this.#experimentProfile,
     });
   };
 
@@ -193,11 +218,25 @@ export class LabController {
 
   #technicalSnapshot(): DeviceCheckTechnicalSnapshot {
     const scheduler = this.#tracking?.scheduler;
+    const actualCamera = this.#session?.track.getSettings();
+    const profile = this.#experimentProfile;
     return {
+      appBuildId: APP_BUILD_ID,
+      experimentProfileId: profile.id,
+      requestedCameraWidth: profile.camera.width,
+      requestedCameraHeight: profile.camera.height,
+      requestedFrameRateIdeal: profile.camera.frameRateIdeal,
+      requestedFrameRateMin: profile.camera.frameRateMin,
+      requestedDelegate: profile.tracking.preferredDelegate,
+      requestedModelId: profile.tracking.modelId,
       pageUrl: window.location.href,
       userAgent: navigator.userAgent,
       viewport: `${window.innerWidth} × ${window.innerHeight}`,
       devicePixelRatio: window.devicePixelRatio,
+      actualCameraWidth: actualCamera?.width ?? null,
+      actualCameraHeight: actualCamera?.height ?? null,
+      actualCameraFrameRate: actualCamera?.frameRate ?? null,
+      actualFacingMode: actualCamera?.facingMode ?? null,
       cameraFps: this.#metrics?.cameraFps ?? null,
       trackingHz: this.#tracking?.outputHz ?? null,
       inferenceP50Ms: this.#tracking?.inferenceP50 ?? null,

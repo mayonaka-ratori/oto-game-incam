@@ -1,8 +1,20 @@
 export interface DeviceTechnicalSnapshot {
+  readonly appBuildId: string;
+  readonly experimentProfileId: string;
+  readonly requestedCameraWidth: number;
+  readonly requestedCameraHeight: number;
+  readonly requestedFrameRateIdeal: number;
+  readonly requestedFrameRateMin: number;
+  readonly requestedDelegate: string;
+  readonly requestedModelId: string;
   readonly pageUrl: string;
   readonly userAgent: string;
   readonly viewport: string;
   readonly devicePixelRatio: number;
+  readonly actualCameraWidth: number | null;
+  readonly actualCameraHeight: number | null;
+  readonly actualCameraFrameRate: number | null;
+  readonly actualFacingMode: string | null;
   readonly cameraFps: number | null;
   readonly trackingHz: number | null;
   readonly inferenceP50Ms: number | null;

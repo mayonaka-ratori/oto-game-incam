@@ -1,6 +1,6 @@
 # Phase 1 AI先行実装結果
 
-- 実施日: 2026-07-19〜2026-07-20
+- 実施日: 2026-07-19〜2026-07-24
 - 対象: **Phase 1 — Tracking & Latency Lab / Technical Stage T0**
 - ステータス: **試行進行・スワイプ信頼性改善を含む実装・合成検証・PC実表示完了、対象実機再試験待ち**
 - 文書種別: 実装結果と引き継ぎ。仕様の正本ではない
@@ -126,13 +126,23 @@ API値は最終的な知覚遅延を保証しない。同期感と外部遅延�
 - 試行解決直後の保存操作は500ms post-rollの確定を待ってから結果metadataと診断リプレイを生成する
 - 通常結果のE2E上限を300KB未満として固定し、生映像・生音声・replay frame非同梱を検証
 
+### 2.10 実験profileと複数P1セッション比較
+
+- baselineを現行640×480、60fps ideal、30fps minimum、GPU優先として型付き定義
+- 640×480 / 30fps、960×540 / 30fps、1280×720 / 30fps、640×480 / 30fps / CPU優先を未検証の比較候補として分離
+- カメラ動作中はprofileを変更不可にし、P1開始後にprofileを変更した場合は新しいP1 sessionを開始するまで旧結果を保存不可
+- P1結果へ、明示ID／CI commit／source hashで実装差を識別できるapp build ID、profile ID、要求した解像度／fps／delegate／model、実際の解像度／fps／facing／delegate／modelを保存
+- 複数P1 JSONについて、schema、30試行、各ジェスチャー10試行、summaryとtrial resultsのoutcome／false trigger一致、重複trial、privacy、queue上限を自動検証
+- build／profile混在、tracking 15Hz未満、frame age p95 140ms超、8/10未達を警告し、次に確認する一項目の候補を表示
+- 2件以上が8/10を満たしても自動Passにせず、対象端末／テスター、手動分類、同期感の確認を要求
+
 ## 3. 自動検証結果
 
 - `npm run verify`: 成功
-- 単体テスト: 16ファイル、79件成功
+- 単体テスト: 19ファイル、91件成功
 - production build: 成功
-- Chromiumブラウザ試験: 11件成功
-- MediaPipe Worker smoke、mock 0／1／2手、回復可能エラー、rVFC、P1 JSON分離、skip、30件timeout完走を確認
+- Chromiumブラウザ試験: 13件成功
+- MediaPipe Worker smoke、mock 0／1／2手、回復可能エラー、rVFC、P1 JSON分離、skip、30件timeout完走、profile固定、複数P1比較を確認
 - MediaPipe固定資産のSHA-256検証: 成功
 - 844×390の実ブラウザ表示で状態、残り30秒、直近理由、skipを同時表示し、skip後の一度だけ完了と約1秒後の自動進行を確認
 - 実ブラウザのconsole error: なし

@@ -1,11 +1,11 @@
 # プロジェクト資料ガイド
 
-- 更新日: 2026-07-20
+- 更新日: 2026-07-24
 - 現在のプロダクトフェーズ: **Phase 1 — Tracking & Latency Lab**
 - 現在の技術ステージ: **Technical Stage T0 — Measurement Lab**
 - 現在のステップ: **1.1 — TypeScript / Viteの最小Webアプリ、カメラ許可、計測画面を作る**
-- 実装先行状況: **30秒timeout／手動skip／約1秒後の自動進行、リボンスワイプの150ms gap耐性、試行別診断、P1結果schema v3と診断リプレイv2の分離を実装し、合成試験・E2E・844×390実表示を完了**
-- 次の作業: **Android ChromeとiPhone SafariでP1-Controlledを各30試行実施し、停止せず完走できること、両方向スワイプの結果と拒否理由、標準／診断JSONサイズを記録する**
+- 実装先行状況: **試行進行・スワイプ改善に加え、型付き実験profile、source識別可能なbuild ID、要求／実設定のP1記録、summary／trial照合を含む複数P1 JSONの整合性検証・端末比較を実装し、単体91件・E2E 13件・PC実表示を完了**
+- 次の作業: **baseline profileを固定し、Android ChromeとiPhone SafariでP1-Controlledを各30試行実施する。比較画面で完走、両方向スワイプ、拒否理由、技術値、標準／診断JSONサイズを確認する**
 - 次の判断: 両端末で30試行を完走して失敗理由を説明できるか。追跡15Hz未満またはframe age p95 140ms超が続く場合は、ジェスチャー閾値より先にMediaPipe処理負荷を変更するか
 
 Codexで作業を継続する場合、リポジトリ直下の [`AGENTS.md`](../AGENTS.md) が自動引き継ぎの入口となる。そこから本書を読み、現在地と依頼に関係する正本だけを確認して作業を始める。

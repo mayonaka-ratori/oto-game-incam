@@ -15,6 +15,7 @@ const POST_ROLL_POLL_MS = 50;
 const POST_ROLL_WAIT_TIMEOUT_MS = 5_000;
 
 export interface Phase1LabControllerOptions {
+  readonly appBuildId: string;
   readonly getProvider: () => TrackingProviderInfo | null;
   readonly getTechnicalSummary: () => Phase1TechnicalSummary;
   readonly getTechnicalSnapshot: () => DeviceTechnicalSnapshot;
@@ -36,6 +37,7 @@ export class Phase1LabController {
   #renderTimer: number | null = null;
   #autoAdvanceAtMs: number | null = null;
   #sessionStarted = false;
+  #sessionExperimentProfileId: string | null = null;
   #replay: LandmarkReplayDocument | null = null;
   #disposed = false;
 
@@ -69,6 +71,13 @@ export class Phase1LabController {
     const snapshot = this.#engine.processFrame(frame);
     if (snapshot.protocol.completed > before) this.#handleTrialFinished(snapshot);
     this.#render(snapshot);
+  }
+
+  experimentProfileChanged(): void {
+    if (this.#sessionStarted && !this.#sessionProfileMatches()) {
+      requiredElement(this.#root, "#p1-export-status").textContent = "実験プロファイルが変わりました。結果を混ぜないため、新しいP1セッションを開始してください。";
+    }
+    this.#render();
   }
 
   async dispose(): Promise<void> {
@@ -106,7 +115,10 @@ export class Phase1LabController {
   #startSession(): void {
     this.#clearProgressTimers();
     const sessionId = `p1-${new Date().toISOString().replace(/[-:.TZ]/g, "")}`;
-    this.#engine.startSession(sessionId, this.#options.getProvider());
+    this.#engine.startSession(sessionId, this.#options.getProvider(), {
+      appVersion: this.#options.appBuildId,
+    });
+    this.#sessionExperimentProfileId = this.#options.getTechnicalSnapshot().experimentProfileId;
     this.#sessionStarted = true;
     this.#options.onGuideChange(null);
     requiredElement(this.#root, "#p1-session-id").textContent = sessionId;
@@ -246,6 +258,9 @@ export class Phase1LabController {
     const status = requiredElement(this.#root, "#p1-export-status");
     const sessionId = this.#engine.sessionId;
     try {
+      if (!this.#sessionProfileMatches()) {
+        throw new Error("実験プロファイルが変わっています。新しいP1セッションを開始してから保存してください。");
+      }
       if (this.#engine.diagnosticFrameCount > 0) await this.#waitForDiagnosticPostRoll(status);
       if (this.#engine.sessionId !== sessionId) return;
       const document = this.#engine.createDocument(
@@ -263,6 +278,9 @@ export class Phase1LabController {
     const status = requiredElement(this.#root, "#p1-replay-export-status");
     const sessionId = this.#engine.sessionId;
     try {
+      if (!this.#sessionProfileMatches()) {
+        throw new Error("実験プロファイルが変わっています。新しいP1セッションを開始してから保存してください。");
+      }
       await this.#waitForDiagnosticPostRoll(status);
       if (this.#engine.sessionId !== sessionId) return;
       const document = this.#engine.createDiagnosticReplay();
@@ -343,13 +361,19 @@ export class Phase1LabController {
       && this.#autoAdvanceAtMs === null;
     requiredButton(this.#root, "#p1-next-trial").disabled = !canBegin;
     requiredButton(this.#root, "#p1-skip").disabled = active === null;
-    requiredButton(this.#root, "#p1-export").disabled = !this.#sessionStarted;
-    requiredButton(this.#root, "#p1-export-replay").disabled = !this.#sessionStarted;
+    const sessionProfileMatches = this.#sessionProfileMatches();
+    requiredButton(this.#root, "#p1-export").disabled = !this.#sessionStarted || !sessionProfileMatches;
+    requiredButton(this.#root, "#p1-export-replay").disabled = !this.#sessionStarted || !sessionProfileMatches;
     requiredButton(this.#root, "#p1-replay-run").disabled = this.#replay === null || active === null;
     for (const button of this.#root.querySelectorAll<HTMLButtonElement>("[data-p1-outcome]")) {
       button.disabled = active === null;
     }
     this.#renderAudio();
+  }
+
+  #sessionProfileMatches(): boolean {
+    return this.#sessionExperimentProfileId === null
+      || this.#sessionExperimentProfileId === this.#options.getTechnicalSnapshot().experimentProfileId;
   }
 
   #renderAudio(): void {

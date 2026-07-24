@@ -86,6 +86,57 @@ test("renders two mock hands and exposes tracking queue diagnostics", async ({ p
   })).toBe(true);
 });
 
+test("locks the selected experiment profile while the camera is active", async ({ page }) => {
+  await page.goto("/?tracking=mock");
+  await page.locator("details.diagnostics-panel > summary").click();
+  const profile = page.getByLabel("実験プロファイル");
+  await expect(profile).toHaveValue("baseline-gpu-640x480-60");
+  await profile.selectOption("gpu-640x480-30");
+  await expect(page.locator("#requested-profile")).toHaveText("gpu-640x480-30");
+  await expect(page.locator("#requested-fps")).toHaveText("30–30 fps");
+
+  await page.getByRole("button", { name: "カメラを開始" }).click();
+  await expect(profile).toBeDisabled();
+  await page.getByRole("button", { name: "新しいP1セッション" }).click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "P1結果JSONを保存" }).click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  const result = JSON.parse(await readFile(path!, "utf8")) as {
+    session: { appVersion: string };
+    technicalSnapshot: {
+      appBuildId: string;
+      experimentProfileId: string;
+      requestedCameraWidth: number;
+      requestedFrameRateIdeal: number;
+      requestedDelegate: string;
+      requestedModelId: string;
+      actualCameraWidth: number | null;
+      actualCameraFrameRate: number | null;
+    };
+  };
+  expect(result.session.appVersion.length).toBeGreaterThan(0);
+  expect(result.technicalSnapshot).toMatchObject({
+    experimentProfileId: "gpu-640x480-30",
+    requestedCameraWidth: 640,
+    requestedFrameRateIdeal: 30,
+    requestedDelegate: "GPU",
+  });
+  expect(result.technicalSnapshot.appBuildId).toBe(result.session.appVersion);
+  expect(result.technicalSnapshot.requestedModelId.length).toBeGreaterThan(0);
+  expect(result.technicalSnapshot.actualCameraWidth).toBeGreaterThan(0);
+  expect(result.technicalSnapshot.actualCameraFrameRate).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: "カメラを停止" }).click();
+  await expect(profile).toBeEnabled();
+  await profile.selectOption("baseline-gpu-640x480-60");
+  await expect(page.getByRole("button", { name: "P1結果JSONを保存" })).toBeDisabled();
+  await expect(page.locator("#p1-export-status")).toContainText("新しいP1セッション");
+  await page.getByRole("button", { name: "新しいP1セッション" }).click();
+  await expect(page.getByRole("button", { name: "P1結果JSONを保存" })).toBeEnabled();
+});
+
 for (const scenario of [
   { query: "one-left", state: "TRACKING LOSS · 片手のみ検出（MISSではありません）", hands: "1" },
   { query: "none", state: "TRACKING LOSS · 両手を検出できません（MISSではありません）", hands: "0" },
@@ -313,3 +364,113 @@ test("times out and auto-advances all 30 trials without double-finishing", async
     outcome === "unclassified" && resolution === "trial-timeout"
   ))).toBe(true);
 });
+
+test("compares multiple complete P1 sessions without declaring an automatic pass", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#p1-comparison-import").setInputFiles([
+    {
+      name: "android.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify(comparisonDocument("android", "android-agent"))),
+    },
+    {
+      name: "iphone.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify(comparisonDocument("iphone", "iphone-agent"))),
+    },
+  ]);
+
+  await expect(page.locator("#p1-comparison-status")).toHaveText("2セッション · 完全 2 · 8/10候補 2");
+  await expect(page.locator("#p1-comparison-body tr")).toHaveCount(2);
+  await expect(page.locator("#p1-comparison-findings")).toContainText("最終判定");
+  await expect(page.locator("#p1-comparison-findings")).toContainText("Pass／Learn／Pivot");
+  await expect(page.locator("#p1-comparison-findings")).not.toContainText("自動Pass");
+
+  await page.getByRole("button", { name: "比較をクリア" }).click();
+  await expect(page.locator("#p1-comparison-status")).toHaveText("0セッション");
+  await expect(page.locator("#p1-comparison-body tr")).toHaveCount(0);
+});
+
+function comparisonDocument(sessionId: string, userAgent: string): unknown {
+  const gesture = {
+    completed: 10,
+    success: 8,
+    playerMiss: 0,
+    machineMiss: 0,
+    falseTrigger: 0,
+    trackingLoss: 1,
+    unclassified: 1,
+  };
+  return {
+    schema: "oto-motion-p1-controlled",
+    schemaVersion: 3,
+    createdAtIso: "2026-07-24T00:00:00.000Z",
+    session: {
+      sessionId,
+      createdAtIso: "2026-07-24T00:00:00.000Z",
+      appVersion: "e2e-build",
+      provider: null,
+      notes: "",
+    },
+    privacy: {
+      includesCameraFrames: false,
+      includesAudio: false,
+      derivedLandmarksOnly: true,
+      includesReplayFrames: false,
+    },
+    protocol: {
+      state: "complete",
+      completed: 30,
+      total: 30,
+      results: Array.from({ length: 30 }, (_, index) => {
+        const position = index % 10;
+        return {
+          trial: {
+            ordinal: index + 1,
+            gesture: index < 10
+              ? "air-tap"
+              : index < 20
+                ? "ribbon-swipe"
+                : "clap",
+          },
+          outcome: position < 8
+            ? "success"
+            : position === 8
+              ? "tracking-loss"
+              : "unclassified",
+        };
+      }),
+      falseTriggers: [],
+    },
+    summary: {
+      byGesture: {
+        "air-tap": gesture,
+        "ribbon-swipe": gesture,
+        clap: gesture,
+      },
+    },
+    technicalSnapshot: {
+      appBuildId: "e2e-build",
+      experimentProfileId: "baseline-gpu-640x480-60",
+      requestedCameraWidth: 640,
+      requestedCameraHeight: 480,
+      requestedFrameRateMin: 30,
+      requestedFrameRateIdeal: 60,
+      actualCameraWidth: 640,
+      actualCameraHeight: 480,
+      actualCameraFrameRate: 30,
+      requestedDelegate: "GPU",
+      delegate: "GPU",
+      requestedModelId: "model",
+      modelId: "model",
+      userAgent,
+      viewport: "844 × 390",
+      trackingHz: 25,
+      inferenceP95Ms: 40,
+      frameAgeP95Ms: 100,
+      twoHandCoverage: 0.95,
+      inFlightFrames: 0,
+      pendingFrames: 0,
+    },
+  };
+}

@@ -4,6 +4,10 @@ import { LatestFrameScheduler } from "../camera/latest-frame-scheduler";
 import { TrackingMetricsCollector, type TrackingMetricsSnapshot } from "../metrics/tracking-metrics";
 import type { HandTrackingFrame } from "../tracking/tracking-types";
 import {
+  createMediaPipeProviderConfig,
+  type TrackingExperimentProfile,
+} from "../experiments/tracking-experiment-profile";
+import {
   MockTrackingWorker,
   type MockTrackingScenario,
   type TrackingWorkerEndpoint,
@@ -34,7 +38,11 @@ export class TrackingWorkerClient {
     this.#onUpdate = onUpdate;
   }
 
-  async start(track: MediaStreamTrack, video: HTMLVideoElement): Promise<void> {
+  async start(
+    track: MediaStreamTrack,
+    video: HTMLVideoElement,
+    profile: TrackingExperimentProfile,
+  ): Promise<void> {
     this.stop();
     this.#running = true;
     this.#metrics.markInitializing();
@@ -61,17 +69,7 @@ export class TrackingWorkerClient {
     worker.postMessage({
       type: "INIT",
       mainTimeOriginMs: performance.timeOrigin,
-      config: {
-        wasmRootUrl: new URL("/mediapipe/wasm", window.location.href).href,
-        modelUrl: new URL("/mediapipe/models/hand_landmarker.task", window.location.href).href,
-        preferredDelegate: "GPU",
-        numHands: 2,
-        minHandDetectionConfidence: 0.5,
-        minHandPresenceConfidence: 0.5,
-        minTrackingConfidence: 0.5,
-        packageId: "@mediapipe/tasks-vision@0.10.35",
-        modelId: "hand_landmarker/full/float16/1#fbc2a30080c3",
-      },
+      config: createMediaPipeProviderConfig(profile, window.location.href),
     });
 
     await ready;

@@ -1,6 +1,13 @@
-import { CAMERA_CONSTRAINTS, type CameraSession } from "../camera/camera-controller";
+import type { CameraSession } from "../camera/camera-controller";
 import type { CameraSupportSnapshot } from "../camera/camera-support";
 import type { LabState } from "../app/lab-state";
+import { APP_BUILD_ID } from "../app/app-build";
+import {
+  findTrackingExperimentProfile,
+  TRACKING_EXPERIMENT_PROFILES,
+  type TrackingExperimentProfile,
+  type TrackingExperimentProfileId,
+} from "../experiments/tracking-experiment-profile";
 import type { FrameMetricsSnapshot } from "../metrics/frame-metrics";
 import type { TrackingMetricsSnapshot } from "../metrics/tracking-metrics";
 import type { OverlayLayers } from "../rendering/overlay-renderer";
@@ -10,6 +17,7 @@ export interface LabViewCallbacks {
   readonly onStop: () => void;
   readonly onTogglePreview: () => void;
   readonly onOverlayLayersChange: (layers: OverlayLayers) => void;
+  readonly onExperimentProfileChange: (id: TrackingExperimentProfileId) => void;
 }
 
 export interface LabViewModel {
@@ -19,6 +27,7 @@ export interface LabViewModel {
   readonly metrics: FrameMetricsSnapshot | null;
   readonly previewVisible: boolean;
   readonly tracking: TrackingMetricsSnapshot | null;
+  readonly experimentProfile: TrackingExperimentProfile;
 }
 
 export class LabView {
@@ -37,6 +46,7 @@ export class LabView {
   readonly #cameraPlaceholder: HTMLElement;
   readonly #orientationNotice: HTMLElement;
   readonly #trackingState: HTMLElement;
+  readonly #experimentProfileSelect: HTMLSelectElement;
   readonly #overlayInputs: readonly HTMLInputElement[];
 
   constructor(root: HTMLElement, callbacks: LabViewCallbacks) {
@@ -57,11 +67,22 @@ export class LabView {
     this.#cameraPlaceholder = requiredElement(root, "#camera-placeholder", HTMLElement);
     this.#orientationNotice = requiredElement(root, "#orientation-notice", HTMLElement);
     this.#trackingState = requiredElement(root, "#tracking-state", HTMLElement);
+    this.#experimentProfileSelect = requiredElement(root, "#experiment-profile", HTMLSelectElement);
     this.#overlayInputs = [...root.querySelectorAll<HTMLInputElement>("[data-overlay-layer]")];
+    for (const profile of TRACKING_EXPERIMENT_PROFILES) {
+      const option = document.createElement("option");
+      option.value = profile.id;
+      option.textContent = profile.label;
+      this.#experimentProfileSelect.append(option);
+    }
 
     this.#startButton.addEventListener("click", callbacks.onStart);
     this.#stopButton.addEventListener("click", callbacks.onStop);
     this.#previewButton.addEventListener("click", callbacks.onTogglePreview);
+    this.#experimentProfileSelect.addEventListener("change", () => {
+      const profile = findTrackingExperimentProfile(this.#experimentProfileSelect.value);
+      callbacks.onExperimentProfileChange(profile.id);
+    });
     for (const input of this.#overlayInputs) {
       input.addEventListener("change", () => callbacks.onOverlayLayersChange(readOverlayLayers(this.#overlayInputs)));
     }
@@ -86,6 +107,9 @@ export class LabView {
     this.#previewButton.hidden = !active;
     this.#previewButton.setAttribute("aria-pressed", String(model.previewVisible));
     this.#previewButton.textContent = model.previewVisible ? "プレビューを隠す" : "プレビューを表示";
+    this.#experimentProfileSelect.value = model.experimentProfile.id;
+    this.#experimentProfileSelect.disabled = active || requesting;
+    setText(this.#root, "experiment-profile-purpose", model.experimentProfile.purpose);
 
     this.#previewShell.dataset.active = String(active);
     this.#previewShell.dataset.previewVisible = String(model.previewVisible);
@@ -101,7 +125,7 @@ export class LabView {
     this.#orientationNotice.hidden = !isPortraitViewport();
     renderTrackingState(this.#trackingState, model.tracking, active);
 
-    renderRequestedSettings(this.#root);
+    renderRequestedSettings(this.#root, model.experimentProfile);
     renderActualSettings(this.#root, model.session);
     renderEnvironment(this.#root, model.support, model.metrics);
     renderSupport(this.#root, model.support);
@@ -143,11 +167,17 @@ function renderTrackingState(
   element.hidden = !active;
 }
 
-function renderRequestedSettings(root: HTMLElement): void {
-  const video = CAMERA_CONSTRAINTS.video;
-  setText(root, "requested-facing", constraintValue(video.facingMode));
-  setText(root, "requested-size", `${constraintValue(video.width)} × ${constraintValue(video.height)}`);
-  setText(root, "requested-fps", `${video.frameRate.min}–${video.frameRate.ideal} fps`);
+function renderRequestedSettings(
+  root: HTMLElement,
+  profile: TrackingExperimentProfile,
+): void {
+  setText(root, "requested-profile", profile.id);
+  setText(root, "requested-build", APP_BUILD_ID);
+  setText(root, "requested-facing", "user");
+  setText(root, "requested-size", `${profile.camera.width} × ${profile.camera.height}`);
+  setText(root, "requested-fps", `${profile.camera.frameRateMin}–${profile.camera.frameRateIdeal} fps`);
+  setText(root, "requested-delegate", profile.tracking.preferredDelegate);
+  setText(root, "requested-model", profile.tracking.modelId);
   setText(root, "requested-audio", "off");
 }
 
@@ -284,22 +314,6 @@ function formatDuration(value: number | null | undefined): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-function constraintValue(value: ConstrainULong | ConstrainDOMString): string {
-  if (typeof value === "string" || typeof value === "number") {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    return value.join(", ");
-  }
-  if ("exact" in value && value.exact !== undefined) {
-    return String(value.exact);
-  }
-  if ("ideal" in value && value.ideal !== undefined) {
-    return String(value.ideal);
-  }
-  return "—";
-}
-
 function setText(root: HTMLElement, id: string, value: string): void {
   requiredElement(root, `#${id}`, HTMLElement).textContent = value;
 }
@@ -412,13 +426,22 @@ const template = `
         <div class="data-sections">
           <details open>
             <summary>Camera settings</summary>
+            <label class="experiment-profile-control" for="experiment-profile">
+              <span>実験プロファイル</span>
+              <select id="experiment-profile" aria-describedby="experiment-profile-purpose"></select>
+              <small id="experiment-profile-purpose">現行条件。最初のP1セッションはこの条件を使います。</small>
+            </label>
             <div class="settings-columns">
               <div>
                 <h3>REQUESTED</h3>
                 <dl class="data-list">
+                  <div><dt>Profile</dt><dd id="requested-profile">—</dd></div>
+                  <div><dt>Build</dt><dd id="requested-build">—</dd></div>
                   <div><dt>Facing</dt><dd id="requested-facing">—</dd></div>
                   <div><dt>Resolution</dt><dd id="requested-size">—</dd></div>
                   <div><dt>Frame rate</dt><dd id="requested-fps">—</dd></div>
+                  <div><dt>Delegate</dt><dd id="requested-delegate">—</dd></div>
+                  <div><dt>Model</dt><dd id="requested-model">—</dd></div>
                   <div><dt>Audio</dt><dd id="requested-audio">—</dd></div>
                 </dl>
               </div>
@@ -689,6 +712,44 @@ const template = `
           </div>
           <p id="device-check-export-status" class="export-status" role="status" hidden></p>
         </form>
+      </section>
+
+      <section class="p1-comparison-panel" aria-labelledby="p1-comparison-heading">
+        <div class="section-heading comparison-heading">
+          <div>
+            <p class="section-index">05 / SESSION REVIEW</p>
+            <h2 id="p1-comparison-heading">P1セッション比較</h2>
+          </div>
+          <span id="p1-comparison-status" class="check-progress" data-candidate="false">0セッション</span>
+        </div>
+        <p class="check-intro">Android／iPhone等のP1結果JSONを追加し、30試行、分類合計、privacy、build／profile条件、技術値を比較します。8/10を満たしても、この画面だけでPassにはしません。</p>
+        <div class="comparison-toolbar">
+          <label class="button button--primary" for="p1-comparison-import">P1結果JSONを追加</label>
+          <input id="p1-comparison-import" type="file" accept="application/json,.json" multiple hidden>
+          <button id="p1-comparison-clear" class="button button--quiet" type="button" disabled>比較をクリア</button>
+          <span>複数ファイルを同時選択できます。追加読込も可能です。</span>
+        </div>
+        <div class="comparison-table-wrap">
+          <table class="comparison-table">
+            <thead>
+              <tr>
+                <th>Session</th>
+                <th>Schema / build</th>
+                <th>Profile</th>
+                <th>Trials</th>
+                <th>Air</th>
+                <th>Swipe</th>
+                <th>Clap</th>
+                <th>Tracking</th>
+                <th>Frame age</th>
+                <th>2 hands</th>
+                <th>Validation</th>
+              </tr>
+            </thead>
+            <tbody id="p1-comparison-body"></tbody>
+          </table>
+        </div>
+        <ul id="p1-comparison-findings" class="comparison-findings" aria-live="polite"></ul>
       </section>
     </main>
   </div>

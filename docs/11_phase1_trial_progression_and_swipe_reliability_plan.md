@@ -1,6 +1,6 @@
 # Phase 1 試行進行・リボンスワイプ信頼性改善 実装計画
 
-- 更新日: 2026-07-20
+- 更新日: 2026-07-24
 - 文書種別: Phase 1 / Step 1.1の不具合分析・実装引き継ぎ計画
 - ステータス: **実装・自動検証・PC実表示完了、対象実機再試験待ち**
 - 対象: P1-Controlledの試行進行、リボンスワイプ状態機械、診断表示、P1 JSON出力
@@ -494,9 +494,10 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 ### 自動検証・PC実表示
 
 - `npm run verify`: 成功
-- `npm run test:e2e`: Chromium 11件成功。skip、自動進行、30件すべてtimeoutでの完走、標準／診断JSON分離を含む
+- `npm run test:e2e`: Chromium 13件成功。skip、自動進行、30件すべてtimeoutでの完走、標準／診断JSON分離、実験profile固定、複数P1比較を含む
 - 合成試験: 左→右／右→左、125ms間隔、150ms以内の欠落、長い開始位置保持、拒否後のrearm、target前非集計、negative offsetに成功
 - 844×390実表示: 状態、残り時間、直近理由、skipが同時にviewport内。skip後に1件だけ完了し、約1秒後に次試行へ進行
+- PC実表示: baselineと比較profileの目的、要求設定、未検証表示、P1セッション比較表と自動Passを行わない案内を確認
 - ブラウザconsole error: なし
 - 対象実機: 未実施。以下の表を埋めるまでP1-ControlledをPassにしない
 

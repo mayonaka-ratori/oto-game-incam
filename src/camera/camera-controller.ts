@@ -1,22 +1,7 @@
-export const CAMERA_CONSTRAINTS = {
-  audio: false,
-  video: {
-    facingMode: { ideal: "user" },
-    width: { ideal: 640 },
-    height: { ideal: 480 },
-    frameRate: { ideal: 60, min: 30 },
-  },
-} as const satisfies MediaStreamConstraints;
-
-const CAMERA_FALLBACK_CONSTRAINTS = {
-  audio: false,
-  video: {
-    facingMode: { ideal: "user" },
-    width: { ideal: 640 },
-    height: { ideal: 480 },
-    frameRate: { ideal: 30 },
-  },
-} as const satisfies MediaStreamConstraints;
+import {
+  createCameraConstraints,
+  type TrackingExperimentProfile,
+} from "../experiments/tracking-experiment-profile";
 
 export interface CameraSession {
   readonly stream: MediaStream;
@@ -40,11 +25,14 @@ export class CameraController {
     this.#onTrackEvent = onTrackEvent;
   }
 
-  async start(video: HTMLVideoElement): Promise<CameraSession> {
+  async start(
+    video: HTMLVideoElement,
+    profile: TrackingExperimentProfile,
+  ): Promise<CameraSession> {
     const requestToken = ++this.#requestToken;
     this.#releaseStream();
 
-    const stream = await requestPreferredCamera();
+    const stream = await requestPreferredCamera(profile);
     if (requestToken !== this.#requestToken) {
       stopStream(stream);
       throw new DOMException("A newer camera request replaced this one.", "AbortError");
@@ -122,12 +110,14 @@ function stopStream(stream: MediaStream): void {
   }
 }
 
-async function requestPreferredCamera(): Promise<MediaStream> {
+async function requestPreferredCamera(
+  profile: TrackingExperimentProfile,
+): Promise<MediaStream> {
   try {
-    return await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
+    return await navigator.mediaDevices.getUserMedia(createCameraConstraints(profile));
   } catch (error) {
     if (isConstraintError(error)) {
-      return navigator.mediaDevices.getUserMedia(CAMERA_FALLBACK_CONSTRAINTS);
+      return navigator.mediaDevices.getUserMedia(createCameraConstraints(profile, true));
     }
     throw error;
   }

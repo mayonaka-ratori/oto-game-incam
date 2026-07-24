@@ -327,13 +327,14 @@ export class DeviceChecklistController {
       applyGestureSummary(this.#form, "ribbonSwipe", byGesture["ribbon-swipe"]);
       applyGestureSummary(this.#form, "clapNearClap", byGesture.clap);
       if (isRecord(value.technicalSnapshot)) {
+        const technical = parseTechnical(value.technicalSnapshot);
         const sessionId = isRecord(value.session)
           ? nullableString(value.session.sessionId)
           : isRecord(value.replay) && isRecord(value.replay.session)
             ? nullableString(value.replay.session.sessionId)
             : null;
         this.#technicalOverride = {
-          snapshot: parseTechnical(value.technicalSnapshot),
+          snapshot: technical,
           source: {
             mode: "p1-import",
             capturedAt: nullableString(value.createdAtIso) ?? new Date().toISOString(),
@@ -341,6 +342,7 @@ export class DeviceChecklistController {
           },
         };
         if (sessionId !== null) setFormValue(this.#form, "sessionId", sessionId);
+        if (technical.appBuildId.length > 0) setFormValue(this.#form, "appVersion", technical.appBuildId);
         this.#renderTechnicalSource();
         this.#status.textContent = "P1セッションから3ジェスチャーとスマホの自動計測値を取り込みました。PCで記入してもスマホ値を保持します。";
       } else {
@@ -371,7 +373,9 @@ export class DeviceChecklistController {
       return;
     }
     const session = override.source.sessionId === null ? "session不明" : override.source.sessionId;
-    source.textContent = `${override.source.mode === "p1-import" ? "P1セッション" : "実機確認レポート"}由来 · ${session} · ${override.snapshot.viewport || "viewport不明"}`;
+    const profile = override.snapshot.experimentProfileId || "profile不明";
+    const build = override.snapshot.appBuildId || "build不明";
+    source.textContent = `${override.source.mode === "p1-import" ? "P1セッション" : "実機確認レポート"}由来 · ${session} · ${build} · ${profile} · ${override.snapshot.viewport || "viewport不明"}`;
     source.dataset.imported = "true";
     reset.hidden = false;
   }
@@ -656,10 +660,22 @@ function parseDecision(value: unknown): DeviceCheckFormValues["decision"] {
 
 function parseTechnical(value: Record<string, unknown>): DeviceCheckTechnicalSnapshot {
   return {
+    appBuildId: stringValue(value.appBuildId),
+    experimentProfileId: stringValue(value.experimentProfileId),
+    requestedCameraWidth: finite(value.requestedCameraWidth) ?? 0,
+    requestedCameraHeight: finite(value.requestedCameraHeight) ?? 0,
+    requestedFrameRateIdeal: finite(value.requestedFrameRateIdeal) ?? 0,
+    requestedFrameRateMin: finite(value.requestedFrameRateMin) ?? 0,
+    requestedDelegate: stringValue(value.requestedDelegate),
+    requestedModelId: stringValue(value.requestedModelId),
     pageUrl: stringValue(value.pageUrl),
     userAgent: stringValue(value.userAgent),
     viewport: stringValue(value.viewport),
     devicePixelRatio: finite(value.devicePixelRatio) ?? 1,
+    actualCameraWidth: finite(value.actualCameraWidth),
+    actualCameraHeight: finite(value.actualCameraHeight),
+    actualCameraFrameRate: finite(value.actualCameraFrameRate),
+    actualFacingMode: nullableString(value.actualFacingMode),
     cameraFps: finite(value.cameraFps),
     trackingHz: finite(value.trackingHz),
     inferenceP50Ms: finite(value.inferenceP50Ms),
@@ -694,7 +710,42 @@ function emptyValues(): DeviceCheckFormValues {
 }
 
 function emptyTechnical(): DeviceCheckTechnicalSnapshot {
-  return { pageUrl: "", userAgent: "", viewport: "", devicePixelRatio: 1, cameraFps: null, trackingHz: null, inferenceP50Ms: null, inferenceP95Ms: null, frameAgeP95Ms: null, oneHandCoverage: null, twoHandCoverage: null, frameSource: null, delegate: null, packageId: null, modelId: null, capturedFrames: null, completedFrames: null, replacedFrames: null, erroredFrames: null, inFlightFrames: null, pendingFrames: null, trackingError: null };
+  return {
+    appBuildId: "",
+    experimentProfileId: "",
+    requestedCameraWidth: 0,
+    requestedCameraHeight: 0,
+    requestedFrameRateIdeal: 0,
+    requestedFrameRateMin: 0,
+    requestedDelegate: "",
+    requestedModelId: "",
+    pageUrl: "",
+    userAgent: "",
+    viewport: "",
+    devicePixelRatio: 1,
+    actualCameraWidth: null,
+    actualCameraHeight: null,
+    actualCameraFrameRate: null,
+    actualFacingMode: null,
+    cameraFps: null,
+    trackingHz: null,
+    inferenceP50Ms: null,
+    inferenceP95Ms: null,
+    frameAgeP95Ms: null,
+    oneHandCoverage: null,
+    twoHandCoverage: null,
+    frameSource: null,
+    delegate: null,
+    packageId: null,
+    modelId: null,
+    capturedFrames: null,
+    completedFrames: null,
+    replacedFrames: null,
+    erroredFrames: null,
+    inFlightFrames: null,
+    pendingFrames: null,
+    trackingError: null,
+  };
 }
 
 function downloadJson(value: unknown, filename: string): void {

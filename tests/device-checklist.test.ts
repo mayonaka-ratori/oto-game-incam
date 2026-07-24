@@ -9,10 +9,22 @@ import {
 } from "../src/testing/device-checklist";
 
 const technical: DeviceCheckTechnicalSnapshot = {
+  appBuildId: "0.1.0-test",
+  experimentProfileId: "baseline-gpu-640x480-60",
+  requestedCameraWidth: 640,
+  requestedCameraHeight: 480,
+  requestedFrameRateIdeal: 60,
+  requestedFrameRateMin: 30,
+  requestedDelegate: "GPU",
+  requestedModelId: "hand-landmarker-test",
   pageUrl: "https://example.test/",
   userAgent: "test-agent",
   viewport: "844 × 390",
   devicePixelRatio: 2,
+  actualCameraWidth: 640,
+  actualCameraHeight: 480,
+  actualCameraFrameRate: 30,
+  actualFacingMode: "user",
   cameraFps: 30,
   trackingHz: 25,
   inferenceP50Ms: 16,
