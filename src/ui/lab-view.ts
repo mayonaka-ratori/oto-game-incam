@@ -155,12 +155,12 @@ function renderTrackingState(
       : (tracking?.state ?? "framing")
     : "framing";
   const copy = {
-    framing: "TRACKING · 準備中 / 手を枠内へ",
-    ready: "TRACKING · 両手を検出",
-    "one-hand-lost": "TRACKING LOSS · 片手のみ検出（MISSではありません）",
-    "both-hands-lost": "TRACKING LOSS · 両手を検出できません（MISSではありません）",
-    "performance-low": "PERFORMANCE LOW · 追跡出力を確認",
-    error: "TRACKING ERROR · Worker diagnosticsを確認",
+    framing: "手の追跡を準備中 · 両手を枠内へ入れてください",
+    ready: "両手を追跡しています",
+    "one-hand-lost": "片手だけを検出しています（プレイヤーの失敗ではありません）",
+    "both-hands-lost": "両手を検出できません（プレイヤーの失敗ではありません）",
+    "performance-low": "追跡性能が低下しています · 計測値を確認してください",
+    error: "手の追跡でエラーが発生しました · 詳細情報を確認してください",
   }[state];
   element.textContent = copy;
   element.dataset.state = state;
@@ -173,17 +173,17 @@ function renderRequestedSettings(
 ): void {
   setText(root, "requested-profile", profile.id);
   setText(root, "requested-build", APP_BUILD_ID);
-  setText(root, "requested-facing", "user");
+  setText(root, "requested-facing", "インカメ");
   setText(root, "requested-size", `${profile.camera.width} × ${profile.camera.height}`);
   setText(root, "requested-fps", `${profile.camera.frameRateMin}–${profile.camera.frameRateIdeal} fps`);
   setText(root, "requested-delegate", profile.tracking.preferredDelegate);
   setText(root, "requested-model", profile.tracking.modelId);
-  setText(root, "requested-audio", "off");
+  setText(root, "requested-audio", "使用しない");
 }
 
 function renderActualSettings(root: HTMLElement, session: CameraSession | null): void {
   const settings = session?.track.getSettings() ?? null;
-  setText(root, "actual-facing", settings?.facingMode ?? "—");
+  setText(root, "actual-facing", cameraFacingLabel(settings?.facingMode));
   setText(
     root,
     "actual-size",
@@ -193,8 +193,8 @@ function renderActualSettings(root: HTMLElement, session: CameraSession | null):
   );
   setText(root, "actual-fps", formatValue(settings?.frameRate, 1, " fps"));
   setText(root, "actual-label", session?.track.label || "—");
-  setText(root, "track-state", session?.track.readyState ?? "—");
-  setText(root, "track-muted", session === null ? "—" : session.track.muted ? "yes" : "no");
+  setText(root, "track-state", trackStateLabel(session?.track.readyState));
+  setText(root, "track-muted", session === null ? "—" : session.track.muted ? "はい" : "いいえ");
 }
 
 function renderEnvironment(
@@ -203,12 +203,12 @@ function renderEnvironment(
   metrics: FrameMetricsSnapshot | null,
 ): void {
   const orientation = screen.orientation?.type ?? (isPortraitViewport() ? "portrait" : "landscape");
-  setText(root, "environment-secure", support.secureContext ? "yes" : "no");
-  setText(root, "environment-visibility", metrics?.pageVisible === false ? "hidden" : document.visibilityState);
-  setText(root, "environment-orientation", orientation);
+  setText(root, "environment-secure", support.secureContext ? "有効" : "無効");
+  setText(root, "environment-visibility", visibilityLabel(metrics?.pageVisible === false ? "hidden" : document.visibilityState));
+  setText(root, "environment-orientation", orientationLabel(orientation));
   setText(root, "environment-viewport", `${window.innerWidth} × ${window.innerHeight}`);
   setText(root, "environment-dpr", window.devicePixelRatio.toFixed(2));
-  setText(root, "environment-frame-source", metrics?.source ?? "—");
+  setText(root, "environment-frame-source", frameSourceLabel(metrics?.source));
 }
 
 function renderSupport(root: HTMLElement, support: CameraSupportSnapshot): void {
@@ -222,7 +222,7 @@ function renderSupport(root: HTMLElement, support: CameraSupportSnapshot): void 
 
   for (const [id, available] of entries) {
     const element = requiredElement(root, `#${id}`, HTMLElement);
-    element.textContent = available ? "available" : "unavailable";
+    element.textContent = available ? "利用可能" : "利用不可";
     element.dataset.available = String(available);
   }
 }
@@ -242,11 +242,11 @@ function renderTrackingMetrics(root: HTMLElement, tracking: TrackingMetricsSnaps
   setText(root, "metric-inference-p50", formatValue(tracking?.inferenceP50, 1, " ms"));
   setText(root, "metric-inference-p95", formatValue(tracking?.inferenceP95, 1, " ms"));
   setText(root, "metric-frame-age-p95", formatValue(tracking?.frameAgeP95, 1, " ms"));
-  setText(root, "tracking-init", tracking?.initializationStatus ?? "—");
+  setText(root, "tracking-init", initializationLabel(tracking?.initializationStatus));
   setText(root, "tracking-init-time", formatValue(tracking?.initializationTimeMs, 1, " ms"));
   setText(root, "tracking-delegate", tracking?.provider?.delegate ?? "—");
   setText(root, "tracking-fallback", tracking?.provider?.fallbackReason ?? "—");
-  setText(root, "tracking-source", tracking?.frameSource ?? "—");
+  setText(root, "tracking-source", frameSourceLabel(tracking?.frameSource));
   setText(root, "tracking-inflight", scheduler?.inFlight.toString() ?? "—");
   setText(root, "tracking-pending", scheduler?.pending.toString() ?? "—");
   setText(root, "tracking-counts", scheduler === undefined ? "—" : `${scheduler.captured} / ${scheduler.sent} / ${scheduler.completed}`);
@@ -263,7 +263,7 @@ function renderTrackingMetrics(root: HTMLElement, tracking: TrackingMetricsSnaps
   setText(root, "tracking-left-missing", formatValue(tracking?.leftMissingMs, 0, " ms"));
   setText(root, "tracking-right-missing", formatValue(tracking?.rightMissingMs, 0, " ms"));
   const hands = tracking?.latestFrame?.hands ?? [];
-  setText(root, "tracking-handedness", hands.length === 0 ? "—" : hands.map((hand) => `${hand.handedness} ${hand.handednessScore.toFixed(2)}`).join(" · "));
+  setText(root, "tracking-handedness", hands.length === 0 ? "—" : hands.map((hand) => `${handednessLabel(hand.handedness)} ${hand.handednessScore.toFixed(2)}`).join(" · "));
   setText(root, "tracking-error", tracking?.fatalError ?? "—");
 }
 
@@ -271,23 +271,69 @@ function formatPercent(value: number | null | undefined): string {
   return value === null || value === undefined ? "—" : `${(value * 100).toFixed(1)}%`;
 }
 
+function cameraFacingLabel(value: string | undefined): string {
+  if (value === undefined) return "—";
+  if (value === "user") return "インカメ";
+  if (value === "environment") return "外向きカメラ";
+  return value;
+}
+
+function trackStateLabel(value: MediaStreamTrackState | undefined): string {
+  if (value === undefined) return "—";
+  return value === "live" ? "動作中" : "終了";
+}
+
+function visibilityLabel(value: string): string {
+  return { visible: "表示中", hidden: "非表示", prerender: "表示前" }[value] ?? value;
+}
+
+function orientationLabel(value: string): string {
+  if (value.startsWith("portrait")) return "縦向き";
+  if (value.startsWith("landscape")) return "横向き";
+  return value;
+}
+
+function initializationLabel(value: string | undefined): string {
+  if (value === undefined) return "—";
+  return {
+    idle: "未開始",
+    initializing: "初期化中",
+    ready: "準備完了",
+    error: "エラー",
+  }[value] ?? value;
+}
+
+function frameSourceLabel(value: string | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  return {
+    requestVideoFrameCallback: "映像フレーム通知",
+    "animationFrame-fallback": "画面描画に合わせる代替経路",
+    MediaStreamTrackProcessor: "カメラフレーム処理",
+    "timer-fallback": "タイマーによる代替経路",
+  }[value] ?? value;
+}
+
+function handednessLabel(value: string): string {
+  return { left: "左手", right: "右手", unknown: "左右不明" }[value] ?? value;
+}
+
 function stateLabel(kind: LabState["kind"]): string {
   switch (kind) {
     case "active":
-      return "MEASURING";
+      return "計測中";
     case "requesting":
-      return "WAITING";
+      return "許可待ち";
     case "unsupported":
-      return "UNSUPPORTED";
+      return "利用不可";
     case "permission-denied":
     case "no-device":
     case "interrupted":
     case "error":
-      return "ATTENTION";
+      return "要確認";
     case "checking":
-      return "CHECKING";
+      return "確認中";
     case "permission-required":
-      return "READY";
+      return "準備完了";
   }
 }
 
@@ -340,8 +386,8 @@ const template = `
       <div class="brand-block">
         <span class="brand-mark" aria-hidden="true">O</span>
         <div>
-          <p class="eyebrow">PHASE 1 · MEASUREMENT LAB</p>
-          <h1>Tracking, Timing & Gesture Lab</h1>
+          <p class="eyebrow">フェーズ1 · 技術計測ラボ</p>
+          <h1>手の追跡・時刻・ジェスチャー検証</h1>
         </div>
       </div>
       <div class="privacy-note"><span aria-hidden="true">◆</span> 映像・音声は保存しません</div>
@@ -351,10 +397,10 @@ const template = `
       <section class="camera-panel" aria-labelledby="camera-heading">
         <div class="section-heading">
           <div>
-            <p class="section-index">01 / INPUT</p>
-            <h2 id="camera-heading">Front camera</h2>
+            <p class="section-index">01 / カメラ入力</p>
+            <h2 id="camera-heading">インカメ映像</h2>
           </div>
-          <span class="live-indicator"><span aria-hidden="true"></span> LOCAL ONLY</span>
+          <span class="live-indicator"><span aria-hidden="true"></span> この端末内のみ</span>
         </div>
 
         <div id="orientation-notice" class="orientation-notice" role="status" hidden>
@@ -374,21 +420,21 @@ const template = `
             <span class="guide-corner guide-corner--br"></span>
             <span class="guide-center"></span>
           </div>
-          <span class="preview-label">DEV PREVIEW · MIRRORED</span>
+          <span class="preview-label">検証用プレビュー · 鏡像表示</span>
           <span id="tracking-state" class="tracking-state" data-state="framing" role="status" hidden></span>
         </div>
 
         <fieldset class="overlay-controls">
-          <legend>Developer overlay</legend>
-          <label><input type="checkbox" data-overlay-layer="landmarks" checked> 21 points</label>
-          <label><input type="checkbox" data-overlay-layer="connections" checked> connections</label>
-          <label><input type="checkbox" data-overlay-layer="cursor" checked> cursor</label>
-          <label><input type="checkbox" data-overlay-layer="labels" checked> L / R labels</label>
+          <legend>検証用の重ね表示</legend>
+          <label><input type="checkbox" data-overlay-layer="landmarks" checked> 手の21点</label>
+          <label><input type="checkbox" data-overlay-layer="connections" checked> 点を結ぶ線</label>
+          <label><input type="checkbox" data-overlay-layer="cursor" checked> 手のカーソル</label>
+          <label><input type="checkbox" data-overlay-layer="labels" checked> 左手／右手ラベル</label>
         </fieldset>
 
         <div id="state-card" class="state-card" data-state="checking" aria-live="polite">
           <div class="state-copy">
-            <span id="state-badge" class="state-badge">CHECKING</span>
+            <span id="state-badge" class="state-badge">確認中</span>
             <h3 id="state-title">対応環境を確認しています</h3>
             <p id="state-message">カメラAPIと接続状態を確認しています。</p>
             <code id="technical-detail" class="technical-detail" hidden></code>
@@ -404,28 +450,28 @@ const template = `
       <details class="diagnostics-panel" aria-labelledby="diagnostics-heading">
         <summary class="section-heading">
           <div>
-            <p class="section-index">02 / TELEMETRY</p>
-            <h2 id="diagnostics-heading">Live diagnostics</h2>
+            <p class="section-index">02 / 計測情報</p>
+            <h2 id="diagnostics-heading">リアルタイム計測値</h2>
           </div>
           <span class="sample-window">必要なときだけ開く</span>
         </summary>
 
         <div class="metric-grid" aria-label="フレーム計測値">
-          <article class="metric-card metric-card--primary"><span>CAMERA FPS</span><strong id="metric-camera-fps">—</strong></article>
-          <article class="metric-card"><span>FRAME p50</span><strong id="metric-frame-p50">—</strong></article>
-          <article class="metric-card"><span>FRAME p95</span><strong id="metric-frame-p95">—</strong></article>
-          <article class="metric-card"><span>DISPLAY FPS</span><strong id="metric-display-fps">—</strong></article>
-          <article class="metric-card"><span>FRAMES</span><strong id="metric-frame-count">—</strong></article>
-          <article class="metric-card"><span>ELAPSED</span><strong id="metric-elapsed">—</strong></article>
-          <article class="metric-card metric-card--primary"><span>TRACKING HZ</span><strong id="metric-tracking-hz">—</strong></article>
-          <article class="metric-card"><span>INFERENCE p50</span><strong id="metric-inference-p50">—</strong></article>
-          <article class="metric-card"><span>INFERENCE p95</span><strong id="metric-inference-p95">—</strong></article>
-          <article class="metric-card"><span>FRAME AGE p95</span><strong id="metric-frame-age-p95">—</strong></article>
+          <article class="metric-card metric-card--primary"><span>カメラ FPS</span><strong id="metric-camera-fps">—</strong></article>
+          <article class="metric-card"><span>フレーム間隔 p50</span><strong id="metric-frame-p50">—</strong></article>
+          <article class="metric-card"><span>フレーム間隔 p95</span><strong id="metric-frame-p95">—</strong></article>
+          <article class="metric-card"><span>画面描画 FPS</span><strong id="metric-display-fps">—</strong></article>
+          <article class="metric-card"><span>取得フレーム数</span><strong id="metric-frame-count">—</strong></article>
+          <article class="metric-card"><span>計測時間</span><strong id="metric-elapsed">—</strong></article>
+          <article class="metric-card metric-card--primary"><span>追跡出力 Hz</span><strong id="metric-tracking-hz">—</strong></article>
+          <article class="metric-card"><span>推論時間 p50</span><strong id="metric-inference-p50">—</strong></article>
+          <article class="metric-card"><span>推論時間 p95</span><strong id="metric-inference-p95">—</strong></article>
+          <article class="metric-card"><span>フレームの古さ p95</span><strong id="metric-frame-age-p95">—</strong></article>
         </div>
 
         <div class="data-sections">
           <details open>
-            <summary>Camera settings</summary>
+            <summary>カメラ設定</summary>
             <label class="experiment-profile-control" for="experiment-profile">
               <span>実験プロファイル</span>
               <select id="experiment-profile" aria-describedby="experiment-profile-purpose"></select>
@@ -433,79 +479,79 @@ const template = `
             </label>
             <div class="settings-columns">
               <div>
-                <h3>REQUESTED</h3>
+                <h3>要求した設定</h3>
                 <dl class="data-list">
-                  <div><dt>Profile</dt><dd id="requested-profile">—</dd></div>
-                  <div><dt>Build</dt><dd id="requested-build">—</dd></div>
-                  <div><dt>Facing</dt><dd id="requested-facing">—</dd></div>
-                  <div><dt>Resolution</dt><dd id="requested-size">—</dd></div>
-                  <div><dt>Frame rate</dt><dd id="requested-fps">—</dd></div>
-                  <div><dt>Delegate</dt><dd id="requested-delegate">—</dd></div>
-                  <div><dt>Model</dt><dd id="requested-model">—</dd></div>
-                  <div><dt>Audio</dt><dd id="requested-audio">—</dd></div>
+                  <div><dt>プロファイルID</dt><dd id="requested-profile">—</dd></div>
+                  <div><dt>ビルドID</dt><dd id="requested-build">—</dd></div>
+                  <div><dt>カメラの向き</dt><dd id="requested-facing">—</dd></div>
+                  <div><dt>解像度</dt><dd id="requested-size">—</dd></div>
+                  <div><dt>フレームレート</dt><dd id="requested-fps">—</dd></div>
+                  <div><dt>処理先</dt><dd id="requested-delegate">—</dd></div>
+                  <div><dt>モデルID</dt><dd id="requested-model">—</dd></div>
+                  <div><dt>音声入力</dt><dd id="requested-audio">—</dd></div>
                 </dl>
               </div>
               <div>
-                <h3>ACTUAL</h3>
+                <h3>実際の設定</h3>
                 <dl class="data-list">
-                  <div><dt>Facing</dt><dd id="actual-facing">—</dd></div>
-                  <div><dt>Resolution</dt><dd id="actual-size">—</dd></div>
-                  <div><dt>Frame rate</dt><dd id="actual-fps">—</dd></div>
-                  <div><dt>Device</dt><dd id="actual-label">—</dd></div>
-                  <div><dt>Track</dt><dd id="track-state">—</dd></div>
-                  <div><dt>Muted</dt><dd id="track-muted">—</dd></div>
+                  <div><dt>カメラの向き</dt><dd id="actual-facing">—</dd></div>
+                  <div><dt>解像度</dt><dd id="actual-size">—</dd></div>
+                  <div><dt>フレームレート</dt><dd id="actual-fps">—</dd></div>
+                  <div><dt>カメラ名</dt><dd id="actual-label">—</dd></div>
+                  <div><dt>カメラ状態</dt><dd id="track-state">—</dd></div>
+                  <div><dt>一時停止中</dt><dd id="track-muted">—</dd></div>
                 </dl>
               </div>
             </div>
           </details>
 
           <details>
-            <summary>Tracking Worker</summary>
+            <summary>手の追跡処理</summary>
             <dl class="data-list">
-              <div><dt>Initialization</dt><dd id="tracking-init">—</dd></div>
-              <div><dt>Init time</dt><dd id="tracking-init-time">—</dd></div>
-              <div><dt>Delegate</dt><dd id="tracking-delegate">—</dd></div>
-              <div><dt>Fallback reason</dt><dd id="tracking-fallback">—</dd></div>
-              <div><dt>Frame source</dt><dd id="tracking-source">—</dd></div>
-              <div><dt>In-flight / pending</dt><dd><span id="tracking-inflight">—</span> / <span id="tracking-pending">—</span></dd></div>
-              <div><dt>Captured / sent / completed</dt><dd id="tracking-counts">—</dd></div>
-              <div><dt>Replaced</dt><dd id="tracking-replaced">—</dd></div>
-              <div><dt>Errored</dt><dd id="tracking-errored">—</dd></div>
-              <div><dt>Callback → Worker p50</dt><dd id="tracking-callback-worker">—</dd></div>
-              <div><dt>Worker wait p50</dt><dd id="tracking-worker-wait">—</dd></div>
-              <div><dt>Inference max</dt><dd id="tracking-inference-max">—</dd></div>
-              <div><dt>Frame age p50</dt><dd id="tracking-frame-age-p50">—</dd></div>
-              <div><dt>Fatal error</dt><dd id="tracking-error">—</dd></div>
+              <div><dt>初期化状態</dt><dd id="tracking-init">—</dd></div>
+              <div><dt>初期化時間</dt><dd id="tracking-init-time">—</dd></div>
+              <div><dt>実際の処理先</dt><dd id="tracking-delegate">—</dd></div>
+              <div><dt>切り替え理由</dt><dd id="tracking-fallback">—</dd></div>
+              <div><dt>フレーム取得元</dt><dd id="tracking-source">—</dd></div>
+              <div><dt>処理中／次に処理</dt><dd><span id="tracking-inflight">—</span> / <span id="tracking-pending">—</span></dd></div>
+              <div><dt>取得／送信／完了</dt><dd id="tracking-counts">—</dd></div>
+              <div><dt>新しいフレームへ置換</dt><dd id="tracking-replaced">—</dd></div>
+              <div><dt>エラー件数</dt><dd id="tracking-errored">—</dd></div>
+              <div><dt>取得から追跡処理まで p50</dt><dd id="tracking-callback-worker">—</dd></div>
+              <div><dt>追跡処理の待ち時間 p50</dt><dd id="tracking-worker-wait">—</dd></div>
+              <div><dt>最大推論時間</dt><dd id="tracking-inference-max">—</dd></div>
+              <div><dt>フレームの古さ p50</dt><dd id="tracking-frame-age-p50">—</dd></div>
+              <div><dt>重大エラー</dt><dd id="tracking-error">—</dd></div>
             </dl>
           </details>
 
           <details>
-            <summary>Hand tracking</summary>
+            <summary>両手の検出状況</summary>
             <dl class="data-list">
-              <div><dt>Hands</dt><dd id="tracking-hands">—</dd></div>
-              <div><dt>First acquisition</dt><dd id="tracking-first-acquisition">—</dd></div>
-              <div><dt>≥1 hand coverage</dt><dd id="tracking-one-coverage">—</dd></div>
-              <div><dt>2 hand coverage</dt><dd id="tracking-two-coverage">—</dd></div>
-              <div><dt>Left missing</dt><dd id="tracking-left-missing">—</dd></div>
-              <div><dt>Right missing</dt><dd id="tracking-right-missing">—</dd></div>
-              <div><dt>Handedness</dt><dd id="tracking-handedness">—</dd></div>
+              <div><dt>検出した手の数</dt><dd id="tracking-hands">—</dd></div>
+              <div><dt>初回検出まで</dt><dd id="tracking-first-acquisition">—</dd></div>
+              <div><dt>片手以上を検出した割合</dt><dd id="tracking-one-coverage">—</dd></div>
+              <div><dt>両手を検出した割合</dt><dd id="tracking-two-coverage">—</dd></div>
+              <div><dt>左手の未検出時間</dt><dd id="tracking-left-missing">—</dd></div>
+              <div><dt>右手の未検出時間</dt><dd id="tracking-right-missing">—</dd></div>
+              <div><dt>左右判定</dt><dd id="tracking-handedness">—</dd></div>
             </dl>
           </details>
 
           <details>
-            <summary>Environment</summary>
+            <summary>端末・表示環境</summary>
             <dl class="data-list">
-              <div><dt>Secure context</dt><dd id="environment-secure">—</dd></div>
-              <div><dt>Page visibility</dt><dd id="environment-visibility">—</dd></div>
-              <div><dt>Orientation</dt><dd id="environment-orientation">—</dd></div>
-              <div><dt>Viewport</dt><dd id="environment-viewport">—</dd></div>
-              <div><dt>Device pixel ratio</dt><dd id="environment-dpr">—</dd></div>
-              <div><dt>Frame source</dt><dd id="environment-frame-source">—</dd></div>
+              <div><dt>安全な接続</dt><dd id="environment-secure">—</dd></div>
+              <div><dt>ページの表示状態</dt><dd id="environment-visibility">—</dd></div>
+              <div><dt>画面の向き</dt><dd id="environment-orientation">—</dd></div>
+              <div><dt>表示領域</dt><dd id="environment-viewport">—</dd></div>
+              <div><dt>画面の画素密度</dt><dd id="environment-dpr">—</dd></div>
+              <div><dt>フレーム取得元</dt><dd id="environment-frame-source">—</dd></div>
             </dl>
           </details>
 
           <details>
-            <summary>Next-stage API support</summary>
+            <summary>使用APIの対応状況</summary>
             <dl class="data-list support-list">
               <div><dt>getUserMedia</dt><dd id="support-media">—</dd></div>
               <div><dt>requestVideoFrameCallback</dt><dd id="support-rvfc">—</dd></div>
@@ -522,42 +568,42 @@ const template = `
       <section class="p1-panel" aria-labelledby="p1-heading">
         <div class="section-heading p1-heading">
           <div>
-            <p class="section-index">03 / P1-CONTROLLED</p>
+            <p class="section-index">03 / P1制御試験</p>
             <h2 id="p1-heading">単体ジェスチャー制御試験</h2>
           </div>
           <span id="p1-progress" class="check-progress">0 / 30</span>
         </div>
-        <p class="check-intro">正本の順序で、エアタップ10回、リボンスワイプ10回、クラップ／ニアクラップ10回を記録します。実機未確認のため、この画面だけでPass判定はしません。</p>
+        <p class="check-intro">正本の順序で、エアタップ10回、リボンスワイプ10回、クラップ／ニアクラップ10回を記録します。この画面の結果だけで合格とは判定しません。</p>
 
         <div class="p1-grid">
           <article class="p1-card p1-audio-card">
             <div class="p1-card-heading">
-              <div><span>WEB AUDIO CLOCK</span><strong id="p1-audio-state">未開始</strong></div>
+              <div><span>音声の基準時刻</span><strong id="p1-audio-state">未開始</strong></div>
               <button id="p1-enable-audio" class="button button--quiet" type="button">音を有効にする</button>
             </div>
             <p id="p1-audio-status" class="p1-support-copy">画面操作後にだけAudioContextを開始します。BluetoothはP1対象外です。</p>
             <dl class="p1-mini-metrics">
-              <div><dt>Mapping</dt><dd id="p1-audio-source">—</dd></div>
-              <div><dt>Audio time</dt><dd id="p1-audio-time">—</dd></div>
-              <div><dt>baseLatency</dt><dd id="p1-base-latency">—</dd></div>
-              <div><dt>outputLatency</dt><dd id="p1-output-latency">—</dd></div>
+              <div><dt>時刻の対応方法</dt><dd id="p1-audio-source">—</dd></div>
+              <div><dt>音声時刻</dt><dd id="p1-audio-time">—</dd></div>
+              <div><dt>基本出力遅延（baseLatency）</dt><dd id="p1-base-latency">—</dd></div>
+              <div><dt>出力遅延（outputLatency）</dt><dd id="p1-output-latency">—</dd></div>
             </dl>
           </article>
 
           <article class="p1-card p1-trial-card">
             <div class="p1-card-heading">
-              <div><span>SESSION</span><strong id="p1-state">未開始</strong></div>
+              <div><span>試験セッション</span><strong id="p1-state">未開始</strong></div>
               <button id="p1-start-session" class="button button--primary" type="button">新しいP1セッション</button>
             </div>
             <dl class="p1-mini-metrics">
-              <div><dt>sessionId</dt><dd id="p1-session-id">—</dd></div>
-              <div><dt>Trial</dt><dd id="p1-trial-number">—</dd></div>
-              <div><dt>Gesture</dt><dd id="p1-gesture">—</dd></div>
-              <div><dt>Remaining</dt><dd id="p1-remaining">—</dd></div>
-              <div><dt>Last result</dt><dd id="p1-last-result">—</dd></div>
+              <div><dt>セッションID</dt><dd id="p1-session-id">—</dd></div>
+              <div><dt>試行</dt><dd id="p1-trial-number">—</dd></div>
+              <div><dt>ジェスチャー</dt><dd id="p1-gesture">—</dd></div>
+              <div><dt>残り時間</dt><dd id="p1-remaining">—</dd></div>
+              <div><dt>直前の結果</dt><dd id="p1-last-result">—</dd></div>
             </dl>
             <div class="p1-instruction" aria-live="polite">
-              <span>NEXT ACTION</span>
+              <span>次に行うこと</span>
               <strong id="p1-instruction">セッションを開始してください</strong>
             </div>
             <div class="p1-live-diagnostic" aria-live="polite">
@@ -574,19 +620,19 @@ const template = `
 
         <div class="p1-observation-row" aria-label="試行結果の手動分類">
           <span>自動成立しなかった場合:</span>
-          <button class="button button--quiet" type="button" data-p1-outcome="player-miss" disabled>player miss</button>
-          <button class="button button--quiet" type="button" data-p1-outcome="machine-miss" disabled>machine miss</button>
-          <button class="button button--quiet" type="button" data-p1-outcome="tracking-loss" disabled>tracking loss</button>
-          <button class="button button--quiet" type="button" data-p1-outcome="unclassified" disabled>unclassified</button>
-          <button id="p1-false-trigger" class="button button--danger" type="button">false triggerを記録</button>
+          <button class="button button--quiet" type="button" data-p1-outcome="player-miss" disabled>操作が条件外</button>
+          <button class="button button--quiet" type="button" data-p1-outcome="machine-miss" disabled>正しく操作したが未検出</button>
+          <button class="button button--quiet" type="button" data-p1-outcome="tracking-loss" disabled>手の追跡失敗</button>
+          <button class="button button--quiet" type="button" data-p1-outcome="unclassified" disabled>分類できない</button>
+          <button id="p1-false-trigger" class="button button--danger" type="button">誤検出を記録</button>
         </div>
 
         <div class="p1-footer">
           <dl class="p1-counters">
-            <div><dt>Events</dt><dd id="p1-event-count">0</dd></div>
-            <div><dt>Rejections</dt><dd id="p1-rejection-count">0</dd></div>
-            <div><dt>False triggers</dt><dd id="p1-false-trigger-count">0</dd></div>
-            <div><dt>ID conflicts</dt><dd id="p1-id-conflicts">0</dd></div>
+            <div><dt>成立イベント</dt><dd id="p1-event-count">0</dd></div>
+            <div><dt>不成立</dt><dd id="p1-rejection-count">0</dd></div>
+            <div><dt>誤検出</dt><dd id="p1-false-trigger-count">0</dd></div>
+            <div><dt>手の識別競合</dt><dd id="p1-id-conflicts">0</dd></div>
           </dl>
           <div class="p1-replay-block">
             <label class="button button--quiet" for="p1-replay-file">ランドマークリプレイを読込</label>
@@ -606,7 +652,7 @@ const template = `
       <section class="test-checklist-panel" aria-labelledby="device-check-heading">
         <div class="section-heading checklist-heading">
           <div>
-            <p class="section-index">04 / DEVICE CHECK</p>
+            <p class="section-index">04 / 実機確認</p>
             <h2 id="device-check-heading">実機確認レポート</h2>
           </div>
           <span id="device-check-progress" class="check-progress">0 / 25確認 · 問題 0</span>
@@ -635,16 +681,16 @@ const template = `
           <details class="report-section" open>
             <summary><span>1</span> セッション条件</summary>
             <fieldset class="session-fields report-fields">
-              <legend>条件を変えた試験は別sessionIdにしてください</legend>
-              <label><span>sessionId</span><input id="device-check-session" name="sessionId" type="text" required></label>
+              <legend>条件を変えた試験は別のセッションIDにしてください</legend>
+              <label><span>セッションID</span><input id="device-check-session" name="sessionId" type="text" required></label>
               <label><span>確認した人（匿名ID）</span><input name="testerId" type="text" autocomplete="off" required placeholder="例: tester-a"></label>
-              <label><span>参加者種別</span><select name="participantType"><option value="creator">creator</option><option value="target">target</option><option value="other" selected>other</option></select></label>
+              <label><span>参加者種別</span><select name="participantType"><option value="creator">開発者</option><option value="target">対象テスター</option><option value="other" selected>その他</option></select></label>
               <label><span>端末</span><select name="device" required><option value="">選択</option><option value="iPhone 15">iPhone 15</option><option value="Google Pixel 10 Pro XL">Google Pixel 10 Pro XL</option><option value="other">その他</option></select></label>
               <label><span>OS名</span><input name="osName" type="text" required placeholder="例: iOS"></label>
               <label><span>OS完全バージョン</span><input name="osVersion" type="text" required placeholder="例: 20.0.1"></label>
               <label><span>ブラウザ名</span><input name="browserName" type="text" required placeholder="例: Safari"></label>
               <label><span>ブラウザ完全バージョン</span><input name="browserVersion" type="text" required></label>
-              <label><span>アプリ／build</span><input name="appVersion" type="text" placeholder="画面または担当者指定の値"></label>
+              <label><span>アプリ／ビルドID</span><input name="appVersion" type="text" placeholder="画面または担当者指定の値"></label>
               <label><span>カメラ距離（cm）</span><input name="distanceCm" type="number" min="30" max="300" inputmode="numeric" placeholder="80"></label>
               <label><span>向き</span><select name="orientation"><option value="landscape">横向き</option><option value="portrait">縦向き比較</option></select></label>
               <label><span>本体音量段階</span><input name="speakerVolume" type="text" placeholder="例: 8/16"></label>
@@ -656,24 +702,24 @@ const template = `
 
           <details class="report-section" open>
             <summary><span>2</span> セットアップ・カメラ・二手追跡</summary>
-            <p class="report-help">「問題あり」を選んだ項目は、最後のメモに発生時刻や見え方を残してください。tracking lossはplayer missにしません。</p>
+            <p class="report-help">「問題あり」を選んだ項目は、最後のメモに発生時刻や見え方を残してください。手の追跡失敗をプレイヤーの操作失敗として扱わないでください。</p>
             <div id="device-check-list" class="device-check-list device-check-list--managed"></div>
           </details>
 
           <details class="report-section" open>
-            <summary><span>3</span> P1-Controlled結果</summary>
+            <summary><span>3</span> P1制御試験の結果</summary>
             <p class="report-help">上の制御試験画面で30試行を行い、P1セッションJSONを取り込むと自動入力できます。未分類を除外して成功率を良く見せないでください。</p>
             <div class="controlled-table-wrap">
               <table class="controlled-table">
-                <thead><tr><th>Gesture</th><th>success</th><th>player miss</th><th>machine miss</th><th>false trigger</th><th>tracking loss</th><th>unclassified</th><th>offset</th></tr></thead>
+                <thead><tr><th>ジェスチャー</th><th>成功</th><th>操作が条件外</th><th>正しく操作したが未検出</th><th>誤検出</th><th>手の追跡失敗</th><th>分類不能</th><th>時刻差</th></tr></thead>
                 <tbody>
-                  <tr><th>Air tap</th><td><input name="airTapSuccess" type="number" min="0" max="10"></td><td><input name="airTapPlayerMiss" type="number" min="0" max="10"></td><td><input name="airTapMachineMiss" type="number" min="0" max="10"></td><td><input name="airTapFalseTrigger" type="number" min="0"></td><td><input name="airTapTrackingLoss" type="number" min="0" max="10"></td><td><input name="airTapUnclassified" type="number" min="0" max="10"></td><td><input name="airTapOffsetSummary" type="text" placeholder="p50 / p95"></td></tr>
-                  <tr><th>Ribbon swipe</th><td><input name="ribbonSwipeSuccess" type="number" min="0" max="10"></td><td><input name="ribbonSwipePlayerMiss" type="number" min="0" max="10"></td><td><input name="ribbonSwipeMachineMiss" type="number" min="0" max="10"></td><td><input name="ribbonSwipeFalseTrigger" type="number" min="0"></td><td><input name="ribbonSwipeTrackingLoss" type="number" min="0" max="10"></td><td><input name="ribbonSwipeUnclassified" type="number" min="0" max="10"></td><td><input name="ribbonSwipeOffsetSummary" type="text" placeholder="p50 / p95"></td></tr>
-                  <tr><th>Clap / near</th><td><input name="clapNearClapSuccess" type="number" min="0" max="10"></td><td><input name="clapNearClapPlayerMiss" type="number" min="0" max="10"></td><td><input name="clapNearClapMachineMiss" type="number" min="0" max="10"></td><td><input name="clapNearClapFalseTrigger" type="number" min="0"></td><td><input name="clapNearClapTrackingLoss" type="number" min="0" max="10"></td><td><input name="clapNearClapUnclassified" type="number" min="0" max="10"></td><td><input name="clapNearClapOffsetSummary" type="text" placeholder="p50 / p95"></td></tr>
+                  <tr><th>エアタップ</th><td><input name="airTapSuccess" type="number" min="0" max="10"></td><td><input name="airTapPlayerMiss" type="number" min="0" max="10"></td><td><input name="airTapMachineMiss" type="number" min="0" max="10"></td><td><input name="airTapFalseTrigger" type="number" min="0"></td><td><input name="airTapTrackingLoss" type="number" min="0" max="10"></td><td><input name="airTapUnclassified" type="number" min="0" max="10"></td><td><input name="airTapOffsetSummary" type="text" placeholder="p50 / p95"></td></tr>
+                  <tr><th>リボンスワイプ</th><td><input name="ribbonSwipeSuccess" type="number" min="0" max="10"></td><td><input name="ribbonSwipePlayerMiss" type="number" min="0" max="10"></td><td><input name="ribbonSwipeMachineMiss" type="number" min="0" max="10"></td><td><input name="ribbonSwipeFalseTrigger" type="number" min="0"></td><td><input name="ribbonSwipeTrackingLoss" type="number" min="0" max="10"></td><td><input name="ribbonSwipeUnclassified" type="number" min="0" max="10"></td><td><input name="ribbonSwipeOffsetSummary" type="text" placeholder="p50 / p95"></td></tr>
+                  <tr><th>クラップ／ニアクラップ</th><td><input name="clapNearClapSuccess" type="number" min="0" max="10"></td><td><input name="clapNearClapPlayerMiss" type="number" min="0" max="10"></td><td><input name="clapNearClapMachineMiss" type="number" min="0" max="10"></td><td><input name="clapNearClapFalseTrigger" type="number" min="0"></td><td><input name="clapNearClapTrackingLoss" type="number" min="0" max="10"></td><td><input name="clapNearClapUnclassified" type="number" min="0" max="10"></td><td><input name="clapNearClapOffsetSummary" type="text" placeholder="p50 / p95"></td></tr>
                 </tbody>
               </table>
             </div>
-            <p id="device-check-controlled-status" class="report-validation" role="status">Air tap: 未入力 · Ribbon swipe: 未入力 · Clap / near: 未入力</p>
+            <p id="device-check-controlled-status" class="report-validation" role="status">エアタップ: 未入力 · リボンスワイプ: 未入力 · クラップ／ニアクラップ: 未入力</p>
           </details>
 
           <details class="report-section">
@@ -697,8 +743,8 @@ const template = `
           <details class="report-section" open>
             <summary><span>5</span> 判定と次の一手</summary>
             <fieldset class="result-fields report-fields">
-              <legend>Passを急がず、Learnなら次に変えるものを一つだけ記録します</legend>
-              <label><span>P1-Controlled</span><select name="p1Decision"><option value="pending">未判定</option><option value="pass">Pass</option><option value="learn">Learn</option><option value="pivot">Pivot</option></select></label>
+              <legend>合格を急がず、要改善なら次に変えるものを一つだけ記録します</legend>
+              <label><span>P1制御試験</span><select name="p1Decision"><option value="pending">未判定</option><option value="pass">合格</option><option value="learn">要改善</option><option value="pivot">方針転換</option></select></label>
               <label><span>次に変えるもの（一つ）</span><input name="nextChange" type="text" placeholder="例: clap triggerDistance"></label>
               <label class="field-wide"><span>判定・変更理由</span><textarea name="decisionReason" rows="3"></textarea></label>
               <label class="field-wide"><span>次セッションで固定する条件</span><textarea name="nextFixedConditions" rows="2"></textarea></label>
@@ -717,12 +763,12 @@ const template = `
       <section class="p1-comparison-panel" aria-labelledby="p1-comparison-heading">
         <div class="section-heading comparison-heading">
           <div>
-            <p class="section-index">05 / SESSION REVIEW</p>
+            <p class="section-index">05 / セッション比較</p>
             <h2 id="p1-comparison-heading">P1セッション比較</h2>
           </div>
           <span id="p1-comparison-status" class="check-progress" data-candidate="false">0セッション</span>
         </div>
-        <p class="check-intro">Android／iPhone等のP1結果JSONを追加し、30試行、分類合計、privacy、build／profile条件、技術値を比較します。8/10を満たしても、この画面だけでPassにはしません。</p>
+        <p class="check-intro">Android／iPhone等のP1結果JSONを追加し、30試行、分類合計、プライバシー設定、ビルド／プロファイル条件、技術値を比較します。8/10を満たしても、この画面だけで合格とは判定しません。</p>
         <div class="comparison-toolbar">
           <label class="button button--primary" for="p1-comparison-import">P1結果JSONを追加</label>
           <input id="p1-comparison-import" type="file" accept="application/json,.json" multiple hidden>
@@ -733,17 +779,17 @@ const template = `
           <table class="comparison-table">
             <thead>
               <tr>
-                <th>Session</th>
-                <th>Schema / build</th>
-                <th>Profile</th>
-                <th>Trials</th>
-                <th>Air</th>
-                <th>Swipe</th>
-                <th>Clap</th>
-                <th>Tracking</th>
-                <th>Frame age</th>
-                <th>2 hands</th>
-                <th>Validation</th>
+                <th>セッション</th>
+                <th>形式／ビルド</th>
+                <th>プロファイル</th>
+                <th>試行数</th>
+                <th>エアタップ</th>
+                <th>スワイプ</th>
+                <th>クラップ</th>
+                <th>追跡出力</th>
+                <th>フレームの古さ</th>
+                <th>両手検出率</th>
+                <th>整合性</th>
               </tr>
             </thead>
             <tbody id="p1-comparison-body"></tbody>

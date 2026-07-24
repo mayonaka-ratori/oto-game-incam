@@ -20,24 +20,24 @@ export const DEVICE_CHECK_ITEMS: readonly DeviceCheckItem[] = [
   { id: "privacy", group: "preparation", label: "生映像・生音声を保存しない設定を確認した", help: "保存するのは派生ランドマーク、イベント、時刻、性能値、回答です。", required: true },
   { id: "tester-briefing", group: "preparation", label: "ずれや誤認識をそのまま伝えるよう説明した", help: "成功させることより、機械側の失敗を区別することが重要だと伝えます。", required: true },
 
-  { id: "secure-context", group: "camera", label: "HTTPSで画面を開けた", help: "スマートフォンのカメラAPIにはsecure contextが必要です。", required: true },
+  { id: "secure-context", group: "camera", label: "HTTPSで画面を開けた", help: "スマートフォンのカメラAPIには安全な接続が必要です。", required: true },
   { id: "camera-permission", group: "camera", label: "カメラ許可後にインカメ映像が表示された", help: "マイク許可は要求しません。拒否時の案内も確認します。", required: true },
-  { id: "front-camera", group: "camera", label: "インカメが選択されている", help: "実設定のFacingと映像を確認します。", required: true },
-  { id: "frame-source", group: "camera", label: "Frame sourceとdelegateを記録した", help: "TrackProcessor／rVFC／fallback、GPU／CPUをLive diagnosticsで確認します。", required: true },
-  { id: "camera-settings", group: "camera", label: "実解像度と実FPSを記録した", help: "要求値ではなくActual settingsの値を使います。", required: true },
+  { id: "front-camera", group: "camera", label: "インカメが選択されている", help: "実際のカメラの向きと映像を確認します。", required: true },
+  { id: "frame-source", group: "camera", label: "フレーム取得元と処理先を記録した", help: "TrackProcessor／rVFC／代替経路、GPU／CPUをリアルタイム計測値で確認します。", required: true },
+  { id: "camera-settings", group: "camera", label: "実解像度と実FPSを記録した", help: "要求値ではなく「実際の設定」の値を使います。", required: true },
   { id: "camera-sixty-seconds", group: "camera", label: "カメラを60秒以上動かして停止・エラーがなかった", help: "画面固着、track終了、継続エラーがあれば「問題あり」にします。", required: true },
 
-  { id: "two-hands", group: "tracking", label: "両手に21点とカーソルが表示された", help: "胸〜肩の高さで両手を広げ、2 hands coverageを確認します。", required: true },
+  { id: "two-hands", group: "tracking", label: "両手に21点とカーソルが表示された", help: "胸〜肩の高さで両手を広げ、両手を検出した割合を確認します。", required: true },
   { id: "hand-labels", group: "tracking", label: "片手ずつ上げてL／Rラベルを確認した", help: "画面上の左右ではなく、解剖学的な左手／右手と一致するか見ます。", required: true },
   { id: "overlay-alignment", group: "tracking", label: "鏡像映像とランドマーク位置が一致した", help: "指先、手首、手のひら中心が映像から大きく外れていないか確認します。", required: true },
   { id: "follow-motion", group: "tracking", label: "ゆっくり動かした手へ表示が追従した", help: "長い停止、別の手への飛び、目立つ遅れを観察します。", required: true },
-  { id: "one-hand-loss", group: "tracking", label: "片手を隠すとtracking lossとして表示された", help: "プレイヤーのMISSとして扱われていないことを確認します。", required: true },
+  { id: "one-hand-loss", group: "tracking", label: "片手を隠すと手の追跡失敗として表示された", help: "プレイヤーの操作失敗として扱われていないことを確認します。", required: true },
   { id: "both-hands-loss", group: "tracking", label: "両手を外すと両手喪失の案内が表示された", help: "両手を戻した時に追跡が復帰することも確認します。", required: true },
-  { id: "tracking-metrics", group: "tracking", label: "追跡Hz・推論p95・frame age p95・coverageを記録した", help: "未計測値を0として扱わず、JSONのtechnicalへ保存します。", required: true },
-  { id: "queue-bounded", group: "tracking", label: "in-flight／pendingが各1以下で増え続けなかった", help: "captured／completed／replacedも60秒の前後で確認します。", required: true },
+  { id: "tracking-metrics", group: "tracking", label: "追跡Hz・推論p95・フレームの古さp95・検出率を記録した", help: "未計測値を0として扱わず、JSONの技術情報へ保存します。", required: true },
+  { id: "queue-bounded", group: "tracking", label: "処理中／次に処理が各1以下で増え続けなかった", help: "取得／完了／置換の件数も60秒の前後で確認します。", required: true },
 
-  { id: "preview-hidden", group: "operation", label: "プレビューを隠しても追跡が継続した", help: "生映像を隠した後もcompletedと追跡表示が更新されることを見ます。", required: true },
-  { id: "stop", group: "operation", label: "カメラ停止後に利用中表示が消えた", help: "映像が止まり、trackや多重streamが残らないことを確認します。", required: true },
+  { id: "preview-hidden", group: "operation", label: "プレビューを隠しても追跡が継続した", help: "生映像を隠した後も完了件数と追跡表示が更新されることを見ます。", required: true },
+  { id: "stop", group: "operation", label: "カメラ停止後に利用中表示が消えた", help: "映像が止まり、カメラ処理や多重取得が残らないことを確認します。", required: true },
   { id: "restart", group: "operation", label: "停止後に再開して二手表示が戻った", help: "開始→停止→再開を1回行い、エラーや二重表示がないか見ます。", required: true },
   { id: "json-privacy", group: "operation", label: "出力JSONに生映像・生音声が含まれない", help: "privacyのfalse値と、ファイル容量・内容を確認します。", required: true },
 ] as const;
@@ -266,9 +266,9 @@ export class DeviceChecklistController {
     }
     const controlledStatus = requiredElement(this.#form, "#device-check-controlled-status", HTMLElement);
     const gestureStatuses = [
-      controlledRowStatus(this.#form, "Air tap", "airTap"),
-      controlledRowStatus(this.#form, "Ribbon swipe", "ribbonSwipe"),
-      controlledRowStatus(this.#form, "Clap / near", "clapNearClap"),
+      controlledRowStatus(this.#form, "エアタップ", "airTap"),
+      controlledRowStatus(this.#form, "リボンスワイプ", "ribbonSwipe"),
+      controlledRowStatus(this.#form, "クラップ／ニアクラップ", "clapNearClap"),
     ];
     controlledStatus.textContent = gestureStatuses.join(" · ");
     controlledStatus.dataset.complete = String(gestureStatuses.every((status) => status.includes("10/10")));
@@ -512,7 +512,7 @@ function controlledRowStatus(form: HTMLFormElement, label: string, prefix: strin
   const classified = [success, value("PlayerMiss"), value("MachineMiss"), value("TrackingLoss"), value("Unclassified")];
   if (classified.every((item) => item === null)) return `${label}: 未入力`;
   const total = classified.reduce<number>((sum, item) => sum + (item ?? 0), 0);
-  return `${label}: ${total}/10${success === null ? "" : `・success ${success}`}`;
+  return `${label}: ${total}/10${success === null ? "" : `・成功 ${success}`}`;
 }
 
 function applyGestureSummary(form: HTMLFormElement, key: string, value: unknown): void {

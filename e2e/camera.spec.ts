@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 test("starts, measures, hides, and releases the camera", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Tracking, Timing & Gesture Lab" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "手の追跡・時刻・ジェスチャー検証" })).toBeVisible();
   await expect(page.getByText("映像・音声は保存しません")).toBeVisible();
 
   const startButton = page.getByRole("button", { name: "カメラを開始" });
@@ -46,7 +46,7 @@ test("fits the camera controls in a phone landscape viewport", async ({ page }) 
   await expect(page.getByRole("button", { name: "新しいP1セッション" })).toBeInViewport();
   await expect(page.locator("#p1-remaining")).toBeInViewport();
   await expect(page.getByRole("button", { name: "未成立として次へ" })).toBeInViewport();
-  await expect(page.getByRole("heading", { name: "Live diagnostics" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "リアルタイム計測値" })).toBeVisible();
   await expect(page.locator("details.diagnostics-panel")).not.toHaveAttribute("open", "");
   await expect(page.locator("#orientation-notice")).toBeHidden();
   const previewBox = await page.locator("#preview-shell").boundingBox();
@@ -65,7 +65,7 @@ test("renders two mock hands and exposes tracking queue diagnostics", async ({ p
   await page.goto("/?tracking=mock");
   await page.getByRole("button", { name: "カメラを開始" }).click();
 
-  await expect(page.getByText("TRACKING · 両手を検出")).toBeVisible();
+  await expect(page.getByText("両手を追跡しています")).toBeVisible();
   await expect(page.locator("#tracking-hands")).toHaveText("2");
   await expect(page.locator("#tracking-inflight")).toHaveText(/[01]/);
   await expect(page.locator("#tracking-pending")).toHaveText(/[01]/);
@@ -76,7 +76,7 @@ test("renders two mock hands and exposes tracking queue diagnostics", async ({ p
     return context.getImageData(0, 0, canvas.width, canvas.height).data.some((value, index) => index % 4 === 3 && value > 0);
   })).toBe(true);
 
-  for (const name of ["21 points", "connections", "cursor", "L / R labels"]) {
+  for (const name of ["手の21点", "点を結ぶ線", "手のカーソル", "左手／右手ラベル"]) {
     await page.getByRole("checkbox", { name }).uncheck();
   }
   await expect.poll(() => page.locator("#tracking-overlay").evaluate((canvas: HTMLCanvasElement) => {
@@ -138,8 +138,8 @@ test("locks the selected experiment profile while the camera is active", async (
 });
 
 for (const scenario of [
-  { query: "one-left", state: "TRACKING LOSS · 片手のみ検出（MISSではありません）", hands: "1" },
-  { query: "none", state: "TRACKING LOSS · 両手を検出できません（MISSではありません）", hands: "0" },
+  { query: "one-left", state: "片手だけを検出しています（プレイヤーの失敗ではありません）", hands: "1" },
+  { query: "none", state: "両手を検出できません（プレイヤーの失敗ではありません）", hands: "0" },
 ] as const) {
   test(`renders the ${scenario.query} tracking state`, async ({ page }) => {
     await page.goto(`/?tracking=mock&trackingScenario=${scenario.query}`);
@@ -155,7 +155,7 @@ test("recovers from synthetic per-frame inference errors without growing the que
   await expect.poll(async () => Number(await page.locator("#tracking-inflight").textContent())).toBeLessThanOrEqual(1);
   await expect.poll(async () => Number(await page.locator("#tracking-pending").textContent())).toBeLessThanOrEqual(1);
   await expect.poll(async () => Number(await page.locator("#tracking-errored").textContent())).toBeGreaterThan(0);
-  await expect(page.locator("#tracking-init")).toHaveText("ready");
+  await expect(page.locator("#tracking-init")).toHaveText("準備完了");
 });
 
 test("initializes MediaPipe in the Worker and processes a camera frame", async ({ page }) => {
@@ -167,7 +167,7 @@ test("initializes MediaPipe in the Worker and processes a camera frame", async (
   await expect.poll(async () => {
     const status = await page.locator("#tracking-init").textContent();
     return status === "error" ? await page.locator("#tracking-error").textContent() : status;
-  }, { timeout: 30_000 }).toBe("ready");
+  }, { timeout: 30_000 }).toBe("準備完了");
   await expect(page.locator("#tracking-delegate")).toHaveText(/GPU|CPU/);
   await expect.poll(async () => {
     const value = await page.locator("#tracking-counts").textContent();
@@ -187,7 +187,7 @@ test("continues rVFC tracking while the raw preview is hidden", async ({ page })
   await page.goto("/?tracking=mock");
   await page.getByRole("button", { name: "カメラを開始" }).click();
 
-  await expect(page.locator("#tracking-source")).toHaveText("requestVideoFrameCallback");
+  await expect(page.locator("#tracking-source")).toHaveText("映像フレーム通知");
   const completedCount = async (): Promise<number> => {
     const value = await page.locator("#tracking-counts").textContent();
     return Number(value?.split("/")[2]?.trim() ?? 0);
@@ -242,9 +242,9 @@ test("manages, exports, and resumes the device check as JSON", async ({ page }) 
 test("runs and exports a P1 controlled trial without raw media", async ({ page }) => {
   await page.goto("/?tracking=mock");
   await page.getByRole("button", { name: "カメラを開始" }).click();
-  await expect(page.locator("#tracking-init")).toHaveText("ready");
+  await expect(page.locator("#tracking-init")).toHaveText("準備完了");
   await page.getByRole("button", { name: "音を有効にする" }).click();
-  await expect(page.locator("#p1-audio-state")).toHaveText(/running|suspended/);
+  await expect(page.locator("#p1-audio-state")).toHaveText(/動作中|一時停止中/);
   await page.getByRole("button", { name: "新しいP1セッション" }).click();
   await expect(page.locator("#p1-progress")).toHaveText("0 / 30");
   await page.getByRole("button", { name: "次の試行を開始" }).click();
@@ -254,7 +254,7 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
   await expect(page.locator("#p1-progress")).toHaveText("1 / 30");
   await expect(page.locator("#p1-state")).toHaveText("未成立を記録");
   await expect(page.locator("#p1-latest-rejection")).toHaveText("未成立として次へ進みました");
-  await page.getByRole("button", { name: "false triggerを記録" }).click();
+  await page.getByRole("button", { name: "誤検出を記録" }).click();
   await expect(page.locator("#p1-false-trigger-count")).toHaveText("1");
 
   const downloadPromise = page.waitForEvent("download");
@@ -383,7 +383,7 @@ test("compares multiple complete P1 sessions without declaring an automatic pass
   await expect(page.locator("#p1-comparison-status")).toHaveText("2セッション · 完全 2 · 8/10候補 2");
   await expect(page.locator("#p1-comparison-body tr")).toHaveCount(2);
   await expect(page.locator("#p1-comparison-findings")).toContainText("最終判定");
-  await expect(page.locator("#p1-comparison-findings")).toContainText("Pass／Learn／Pivot");
+  await expect(page.locator("#p1-comparison-findings")).toContainText("合格／要改善／方針転換");
   await expect(page.locator("#p1-comparison-findings")).not.toContainText("自動Pass");
 
   await page.getByRole("button", { name: "比較をクリア" }).click();

@@ -95,13 +95,13 @@ export function parseP1SessionForComparison(
   const appBuildId = stringValue(technical.appBuildId) || stringValue(session.appVersion);
   const experimentProfileId = stringValue(technical.experimentProfileId);
   if (appBuildId.length === 0) {
-    findings.push(finding("build-missing", "warning", "app build IDがありません。"));
+    findings.push(finding("build-missing", "warning", "アプリのビルドIDがありません。"));
   }
   if (experimentProfileId.length === 0) {
-    findings.push(finding("profile-missing", "warning", "実験profile IDがありません。旧結果として比較します。"));
+    findings.push(finding("profile-missing", "warning", "実験プロファイルIDがありません。旧形式の結果として比較します。"));
   }
   if (value.schemaVersion === 2) {
-    findings.push(finding("legacy-schema", "warning", "schema v2です。profile／実カメラ設定が不足する場合があります。"));
+    findings.push(finding("legacy-schema", "warning", "データ形式がv2です。プロファイル／実カメラ設定が不足する場合があります。"));
   }
   const requestedConfigurationComplete = [
     technical.requestedCameraWidth,
@@ -135,27 +135,27 @@ export function parseP1SessionForComparison(
     findings.push(finding(
       "technical-missing",
       "warning",
-      "tracking Hz、frame age p95、二手coverageのいずれかが未計測です。",
+      "追跡出力Hz、フレームの古さp95、両手検出率のいずれかが未計測です。",
     ));
   }
   if (trackingHz !== null && trackingHz < 15) {
     findings.push(finding(
       "tracking-hz-low",
       "warning",
-      `tracking Hzが15未満です（${formatNumber(trackingHz)}Hz）。`,
+      `追跡出力が15Hz未満です（${formatNumber(trackingHz)}Hz）。`,
     ));
   }
   if (frameAgeP95Ms !== null && frameAgeP95Ms > 140) {
     findings.push(finding(
       "frame-age-high",
       "warning",
-      `frame age p95が140msを超えています（${formatNumber(frameAgeP95Ms)}ms）。`,
+      `フレームの古さp95が140msを超えています（${formatNumber(frameAgeP95Ms)}ms）。`,
     ));
   }
   const inFlight = nullableFinite(technical.inFlightFrames);
   const pending = nullableFinite(technical.pendingFrames);
   if ((inFlight !== null && inFlight > 1) || (pending !== null && pending > 1)) {
-    findings.push(finding("queue-unbounded", "error", "保存時点でin-flightまたはpendingが1を超えています。"));
+    findings.push(finding("queue-unbounded", "error", "保存時点で「処理中」または「次に処理」が1を超えています。"));
   }
 
   const dataComplete = findings.every(({ severity }) => severity !== "error");
@@ -225,14 +225,14 @@ export function compareP1Sessions(
     findings.push(finding(
       "mixed-builds",
       "warning",
-      `buildが混在しています（${buildIds.join(" / ")}）。同一条件のP1合格結果としてまとめません。`,
+      `ビルドが混在しています（${buildIds.join(" / ")}）。同一条件のP1合格結果としてまとめません。`,
     ));
   }
   if (profileIds.length > 1) {
     findings.push(finding(
       "mixed-profiles",
       "warning",
-      `profileが混在しています（${profileIds.join(" / ")}）。性能比較として扱い、同一条件の結果へまとめません。`,
+      `プロファイルが混在しています（${profileIds.join(" / ")}）。性能比較として扱い、同一条件の結果へまとめません。`,
     ));
   }
   if (complete.length < sessions.length) {
@@ -260,7 +260,7 @@ export function compareP1Sessions(
     findings.push(finding(
       "partial-controlled-candidate",
       "info",
-      `${candidateSessions.length}件は3ジェスチャー8/10以上ですが、自動Passにはしません。`,
+      `${candidateSessions.length}件は3ジェスチャー8/10以上ですが、自動的に合格とは判定しません。`,
     ));
   }
 
@@ -560,20 +560,20 @@ function chooseNextAction(
     }))
     .sort((a, b) => a.success - b.success)[0];
   if (lowest !== undefined && lowest.success < 8) {
-    return `${lowest.gesture}の失敗理由を確認し、画角・ガイド・状態機械から一項目だけ選ぶ`;
+    return `${gestureLabel(lowest.gesture)}の失敗理由を確認し、画角・ガイド・状態機械から一項目だけ選ぶ`;
   }
   if (findings.some(({ code }) => code === "mixed-builds" || code === "mixed-profiles")) {
-    return "同じbuildとprofileのセッションを揃える";
+    return "同じビルドとプロファイルのセッションを揃える";
   }
   if (sessions.some((session) => session.findings.some(({ code }) => (
     code === "build-missing" || code === "profile-missing"
   )))) {
-    return "buildとprofileを記録できるschema v3でセッションを揃える";
+    return "ビルドとプロファイルを記録できるデータ形式v3でセッションを揃える";
   }
   if (sessions.length < 2) {
-    return "もう一方の対象端末／テスターで同じbuildとprofileの30試行を行う";
+    return "もう一方の対象端末／テスターで同じビルドとプロファイルの30試行を行う";
   }
-  return "対象端末／テスター、手動分類、同期感を確認してPass／Learn／Pivotを記録する";
+  return "対象端末／テスター、手動分類、同期感を確認して合格／要改善／方針転換を記録する";
 }
 
 function renderSessionRow(session: P1ComparisonSession): HTMLTableRowElement {
@@ -581,8 +581,8 @@ function renderSessionRow(session: P1ComparisonSession): HTMLTableRowElement {
   row.dataset.complete = String(session.dataComplete);
   const values = [
     session.sessionId,
-    `v${session.schemaVersion} / ${session.appBuildId || "build不明"}`,
-    session.experimentProfileId || "profile不明",
+    `v${session.schemaVersion} / ${session.appBuildId || "ビルド不明"}`,
+    session.experimentProfileId || "プロファイル不明",
     `${session.completed}/${session.total}`,
     `${session.gestures["air-tap"].success}/10`,
     `${session.gestures["ribbon-swipe"].success}/10`,
@@ -612,6 +612,14 @@ function renderFinding(message: string, severity: FindingSeverity): HTMLLIElemen
   item.textContent = message;
   item.dataset.severity = severity;
   return item;
+}
+
+function gestureLabel(gesture: P1ComparisonGesture): string {
+  return {
+    "air-tap": "エアタップ",
+    "ribbon-swipe": "リボンスワイプ",
+    clap: "クラップ／ニアクラップ",
+  }[gesture];
 }
 
 function finding(

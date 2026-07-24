@@ -268,7 +268,7 @@ export class Phase1LabController {
         this.#options.getTechnicalSnapshot(),
       );
       downloadJson(document, `${document.session.sessionId}.json`);
-      status.textContent = "軽量なP1結果JSONを保存しました。映像・音声・リプレイframeは含みません。";
+      status.textContent = "軽量なP1結果JSONを保存しました。映像・音声・リプレイ用フレームは含みません。";
     } catch (error) {
       status.textContent = error instanceof Error ? error.message : String(error);
     }
@@ -293,12 +293,12 @@ export class Phase1LabController {
 
   async #waitForDiagnosticPostRoll(status: HTMLElement): Promise<void> {
     if (!this.#engine.diagnosticPostRollPending) return;
-    status.textContent = "診断用の500ms post-rollを収集中です…";
+    status.textContent = "診断用に操作後500ミリ秒分のデータを収集中です…";
     const deadline = performance.now() + POST_ROLL_WAIT_TIMEOUT_MS;
     while (this.#engine.diagnosticPostRollPending) {
       if (this.#disposed) throw new Error("P1画面が終了したため保存を中止しました。");
       if (performance.now() >= deadline) {
-        throw new Error("post-rollを完了できません。カメラを動作させたまま、もう一度保存してください。");
+        throw new Error("操作後の診断データを収集できません。カメラを動作させたまま、もう一度保存してください。");
       }
       await new Promise<void>((resolve) => window.setTimeout(resolve, POST_ROLL_POLL_MS));
     }
@@ -336,7 +336,7 @@ export class Phase1LabController {
     setText(this.#root, "p1-state", trialStateLabel(this.#sessionStarted, snapshot, this.#autoAdvanceAtMs, now));
     setText(this.#root, "p1-remaining", remainingLabel(protocol.activeTiming?.deadlineTimeMs ?? null, now));
     setText(this.#root, "p1-trial-number", active === null ? "—" : `${active.ordinal} / ${protocol.total}`);
-    setText(this.#root, "p1-gesture", active?.gesture ?? next?.gesture ?? "—");
+    setText(this.#root, "p1-gesture", gestureLabel(active?.gesture ?? next?.gesture));
     setText(this.#root, "p1-instruction", active?.instruction ?? next?.instruction ?? "セッションを開始してください");
     setText(this.#root, "p1-event-count", String(snapshot.eventCount));
     setText(this.#root, "p1-rejection-count", String(snapshot.rejectionCount));
@@ -348,7 +348,7 @@ export class Phase1LabController {
       "p1-last-result",
       latestResult === undefined
         ? "—"
-        : `${latestResult.outcome} / ${latestResult.resolution}${latestResult.offsetMs === null ? "" : ` / ${formatSigned(latestResult.offsetMs)} ms`}`,
+        : `${outcomeLabel(latestResult.outcome)}／${resolutionLabel(latestResult.resolution)}${latestResult.offsetMs === null ? "" : `／時刻差 ${formatSigned(latestResult.offsetMs)} ms`}`,
     );
     const latestReason = latestVisibleReason(snapshot, latestResult);
     setText(this.#root, "p1-latest-rejection", latestReason);
@@ -378,8 +378,8 @@ export class Phase1LabController {
 
   #renderAudio(): void {
     const snapshot = this.#audioSnapshot;
-    setText(this.#root, "p1-audio-state", snapshot?.state ?? "未開始");
-    setText(this.#root, "p1-audio-source", snapshot?.source ?? "—");
+    setText(this.#root, "p1-audio-state", audioStateLabel(snapshot?.state));
+    setText(this.#root, "p1-audio-source", audioSourceLabel(snapshot?.source));
     setText(this.#root, "p1-audio-time", snapshot === null ? "—" : `${snapshot.contextTimeSec.toFixed(3)} s`);
     setText(this.#root, "p1-base-latency", formatSeconds(snapshot?.baseLatencySec));
     setText(this.#root, "p1-output-latency", formatSeconds(snapshot?.outputLatencySec));
@@ -398,7 +398,7 @@ function trialStateLabel(
   const timing = protocol.activeTiming;
   if (timing !== null) {
     if (now < timing.windowOpenedAtMs) return "準備中";
-    if (timing.targetTimeMs !== null && now < timing.targetTimeMs + 500) return "GO";
+    if (timing.targetTimeMs !== null && now < timing.targetTimeMs + 500) return "今です";
     return "判定中";
   }
   if (autoAdvanceAtMs !== null) {
@@ -433,6 +433,51 @@ function reasonLabel(reason: string): string {
     "manual-skip": "未成立として次へ進みました",
     "identity-conflict": "手の識別が一時的に競合しました",
   }[reason] ?? reason;
+}
+
+function gestureLabel(gesture: string | null | undefined): string {
+  return {
+    "air-tap": "エアタップ",
+    "ribbon-swipe": "リボンスワイプ",
+    clap: "クラップ／ニアクラップ",
+  }[gesture ?? ""] ?? "—";
+}
+
+function outcomeLabel(outcome: string): string {
+  return {
+    success: "成功",
+    "player-miss": "操作が条件外",
+    "machine-miss": "正しく操作したが未検出",
+    "tracking-loss": "手の追跡失敗",
+    unclassified: "分類不能",
+  }[outcome] ?? outcome;
+}
+
+function resolutionLabel(resolution: string): string {
+  return {
+    "gesture-event": "自動判定",
+    "manual-classification": "手動分類",
+    "manual-skip": "手動で次へ",
+    "trial-timeout": "時間切れ",
+  }[resolution] ?? resolution;
+}
+
+function audioStateLabel(state: string | undefined): string {
+  if (state === undefined) return "未開始";
+  return {
+    suspended: "一時停止中",
+    running: "動作中",
+    closed: "終了",
+    interrupted: "中断",
+  }[state] ?? state;
+}
+
+function audioSourceLabel(source: string | undefined): string {
+  if (source === undefined) return "—";
+  return {
+    "output-timestamp": "出力時刻を取得",
+    "current-time-sample": "現在時刻から推定",
+  }[source] ?? source;
 }
 
 function downloadJson(value: unknown, filename: string): void {

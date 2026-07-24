@@ -74,7 +74,7 @@ describe("P1 session comparison", () => {
     expect(result.controlledCriterionCandidate).toBe(true);
     expect(result.findings.find(({ code }) => code === "controlled-candidate")?.message)
       .toContain("最終判定");
-    expect(result.nextAction).toContain("Pass／Learn／Pivot");
+    expect(result.nextAction).toContain("合格／要改善／方針転換");
   });
 
   it("keeps mixed profiles separate and prioritizes processing load when metrics are low", () => {
