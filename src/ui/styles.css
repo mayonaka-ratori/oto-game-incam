@@ -935,6 +935,10 @@ summary:focus-visible {
 }
 
 .orientation-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 12px;
   padding: 10px 12px;
   border: 1px solid rgba(255, 197, 109, 0.28);
@@ -942,6 +946,10 @@ summary:focus-visible {
   color: #ffe0ab;
   background: rgba(255, 197, 109, 0.08);
   font-size: 0.82rem;
+}
+
+.orientation-notice .button {
+  flex: 0 0 auto;
 }
 
 .preview-shell {

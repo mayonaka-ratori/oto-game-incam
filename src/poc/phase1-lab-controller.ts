@@ -20,6 +20,8 @@ export interface Phase1LabControllerOptions {
   readonly getTechnicalSummary: () => Phase1TechnicalSummary;
   readonly getTechnicalSnapshot: () => DeviceTechnicalSnapshot;
   readonly getPerformanceLow: () => boolean;
+  readonly getCameraActive: () => boolean;
+  readonly requestLandscape: () => Promise<void>;
   readonly onGuideChange: (trial: P1TrialDefinition | null) => void;
 }
 
@@ -39,13 +41,14 @@ export class Phase1LabController {
   #sessionStarted = false;
   #sessionExperimentProfileId: string | null = null;
   #replay: LandmarkReplayDocument | null = null;
+  #starting = false;
   #disposed = false;
 
   constructor(root: HTMLElement, options: Phase1LabControllerOptions) {
     this.#root = root;
     this.#options = options;
     requiredButton(root, "#p1-enable-audio").addEventListener("click", () => void this.#enableAudio());
-    requiredButton(root, "#p1-start-session").addEventListener("click", () => this.#startSession());
+    requiredButton(root, "#p1-start-session").addEventListener("click", () => void this.#startTest());
     requiredButton(root, "#p1-next-trial").addEventListener("click", () => this.#beginNextTrial());
     requiredButton(root, "#p1-skip").addEventListener("click", () => this.#skip());
     requiredButton(root, "#p1-false-trigger").addEventListener("click", () => this.#recordFalseTrigger());
@@ -75,7 +78,7 @@ export class Phase1LabController {
 
   experimentProfileChanged(): void {
     if (this.#sessionStarted && !this.#sessionProfileMatches()) {
-      requiredElement(this.#root, "#p1-export-status").textContent = "実験プロファイルが変わりました。結果を混ぜないため、新しいP1セッションを開始してください。";
+      requiredElement(this.#root, "#p1-export-status").textContent = "実験プロファイルが変わりました。結果を混ぜないため、テストを最初からやり直してください。";
     }
     this.#render();
   }
@@ -112,7 +115,19 @@ export class Phase1LabController {
     this.#renderAudio();
   }
 
-  #startSession(): void {
+  async #startTest(): Promise<void> {
+    if (this.#starting || this.#disposed || !this.#options.getCameraActive()) return;
+    this.#starting = true;
+    this.#render();
+    const landscapeRequest = this.#options.requestLandscape();
+    await Promise.allSettled([landscapeRequest, this.#enableAudio()]);
+    if (this.#disposed) return;
+    if (!this.#options.getCameraActive()) {
+      this.#starting = false;
+      this.#render();
+      return;
+    }
+
     this.#clearProgressTimers();
     const sessionId = `p1-${new Date().toISOString().replace(/[-:.TZ]/g, "")}`;
     this.#engine.startSession(sessionId, this.#options.getProvider(), {
@@ -124,7 +139,8 @@ export class Phase1LabController {
     requiredElement(this.#root, "#p1-session-id").textContent = sessionId;
     requiredElement(this.#root, "#p1-export-status").textContent = "";
     requiredElement(this.#root, "#p1-replay-export-status").textContent = "";
-    this.#render();
+    this.#starting = false;
+    this.#beginNextTrial();
   }
 
   #beginNextTrial(): void {
@@ -259,7 +275,7 @@ export class Phase1LabController {
     const sessionId = this.#engine.sessionId;
     try {
       if (!this.#sessionProfileMatches()) {
-        throw new Error("実験プロファイルが変わっています。新しいP1セッションを開始してから保存してください。");
+        throw new Error("実験プロファイルが変わっています。テストを最初からやり直してから保存してください。");
       }
       if (this.#engine.diagnosticFrameCount > 0) await this.#waitForDiagnosticPostRoll(status);
       if (this.#engine.sessionId !== sessionId) return;
@@ -279,7 +295,7 @@ export class Phase1LabController {
     const sessionId = this.#engine.sessionId;
     try {
       if (!this.#sessionProfileMatches()) {
-        throw new Error("実験プロファイルが変わっています。新しいP1セッションを開始してから保存してください。");
+        throw new Error("実験プロファイルが変わっています。テストを最初からやり直してから保存してください。");
       }
       await this.#waitForDiagnosticPostRoll(status);
       if (this.#engine.sessionId !== sessionId) return;
@@ -360,6 +376,13 @@ export class Phase1LabController {
       && next !== null
       && this.#autoAdvanceAtMs === null;
     requiredButton(this.#root, "#p1-next-trial").disabled = !canBegin;
+    const startButton = requiredButton(this.#root, "#p1-start-session");
+    startButton.disabled = this.#starting || !this.#options.getCameraActive();
+    startButton.textContent = this.#starting
+      ? "準備中…"
+      : this.#sessionStarted
+        ? "テストを最初からやり直す"
+        : "テストを開始";
     requiredButton(this.#root, "#p1-skip").disabled = active === null;
     const sessionProfileMatches = this.#sessionProfileMatches();
     requiredButton(this.#root, "#p1-export").disabled = !this.#sessionStarted || !sessionProfileMatches;

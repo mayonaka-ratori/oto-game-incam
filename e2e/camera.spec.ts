@@ -43,7 +43,7 @@ test("fits the camera controls in a phone landscape viewport", async ({ page }) 
 
   await expect(page.getByRole("button", { name: "カメラを開始" })).toBeInViewport();
   await expect(page.getByRole("heading", { name: "単体ジェスチャー制御試験" })).toBeInViewport();
-  await expect(page.getByRole("button", { name: "新しいP1セッション" })).toBeInViewport();
+  await expect(page.getByRole("button", { name: "テストを開始" })).toBeInViewport();
   await expect(page.locator("#p1-remaining")).toBeInViewport();
   await expect(page.getByRole("button", { name: "未成立として次へ" })).toBeInViewport();
   await expect(page.getByRole("heading", { name: "リアルタイム計測値" })).toBeVisible();
@@ -57,6 +57,7 @@ test("fits the camera controls in a phone landscape viewport", async ({ page }) 
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator("#orientation-notice")).toBeVisible();
+  await expect(page.getByRole("button", { name: "横向き表示を試す" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "単体ジェスチャー制御試験" })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
@@ -97,7 +98,8 @@ test("locks the selected experiment profile while the camera is active", async (
 
   await page.getByRole("button", { name: "カメラを開始" }).click();
   await expect(profile).toBeDisabled();
-  await page.getByRole("button", { name: "新しいP1セッション" }).click();
+  await page.getByRole("button", { name: "テストを開始" }).click();
+  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 30");
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "P1結果JSONを保存" }).click();
   const download = await downloadPromise;
@@ -132,8 +134,9 @@ test("locks the selected experiment profile while the camera is active", async (
   await expect(profile).toBeEnabled();
   await profile.selectOption("baseline-gpu-640x480-60");
   await expect(page.getByRole("button", { name: "P1結果JSONを保存" })).toBeDisabled();
-  await expect(page.locator("#p1-export-status")).toContainText("新しいP1セッション");
-  await page.getByRole("button", { name: "新しいP1セッション" }).click();
+  await expect(page.locator("#p1-export-status")).toContainText("テストを最初から");
+  await page.getByRole("button", { name: "カメラを開始" }).click();
+  await page.getByRole("button", { name: "テストを最初からやり直す" }).click();
   await expect(page.getByRole("button", { name: "P1結果JSONを保存" })).toBeEnabled();
 });
 
@@ -243,11 +246,9 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
   await page.goto("/?tracking=mock");
   await page.getByRole("button", { name: "カメラを開始" }).click();
   await expect(page.locator("#tracking-init")).toHaveText("準備完了");
-  await page.getByRole("button", { name: "音を有効にする" }).click();
+  await page.getByRole("button", { name: "テストを開始" }).click();
   await expect(page.locator("#p1-audio-state")).toHaveText(/動作中|一時停止中/);
-  await page.getByRole("button", { name: "新しいP1セッション" }).click();
   await expect(page.locator("#p1-progress")).toHaveText("0 / 30");
-  await page.getByRole("button", { name: "次の試行を開始" }).click();
   await expect(page.locator("#p1-trial-number")).toHaveText("1 / 30");
   await expect(page.locator("#p1-remaining")).toHaveText(/\d+秒/);
   await page.getByRole("button", { name: "未成立として次へ" }).click();
@@ -333,10 +334,14 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
 });
 
 test("times out and auto-advances all 30 trials without double-finishing", async ({ page }) => {
-  await page.clock.install();
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "AudioContext", { value: undefined });
+  });
   await page.goto("/?tracking=mock");
-  await page.getByRole("button", { name: "新しいP1セッション" }).click();
-  await page.getByRole("button", { name: "次の試行を開始" }).click();
+  await page.getByRole("button", { name: "カメラを開始" }).click();
+  await expect(page.locator("#tracking-init")).toHaveText("準備完了");
+  await page.clock.install();
+  await page.getByRole("button", { name: "テストを開始" }).click();
 
   for (let ordinal = 1; ordinal <= 30; ordinal += 1) {
     await page.clock.fastForward(30_001);

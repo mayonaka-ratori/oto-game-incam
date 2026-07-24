@@ -15,6 +15,7 @@ import type { OverlayLayers } from "../rendering/overlay-renderer";
 export interface LabViewCallbacks {
   readonly onStart: () => void;
   readonly onStop: () => void;
+  readonly onRequestLandscape: () => void;
   readonly onTogglePreview: () => void;
   readonly onOverlayLayersChange: (layers: OverlayLayers) => void;
   readonly onExperimentProfileChange: (id: TrackingExperimentProfileId) => void;
@@ -28,6 +29,7 @@ export interface LabViewModel {
   readonly previewVisible: boolean;
   readonly tracking: TrackingMetricsSnapshot | null;
   readonly experimentProfile: TrackingExperimentProfile;
+  readonly orientationMessage: string;
 }
 
 export class LabView {
@@ -45,6 +47,8 @@ export class LabView {
   readonly #previewShell: HTMLElement;
   readonly #cameraPlaceholder: HTMLElement;
   readonly #orientationNotice: HTMLElement;
+  readonly #orientationMessage: HTMLElement;
+  readonly #orientationButton: HTMLButtonElement;
   readonly #trackingState: HTMLElement;
   readonly #experimentProfileSelect: HTMLSelectElement;
   readonly #overlayInputs: readonly HTMLInputElement[];
@@ -66,6 +70,8 @@ export class LabView {
     this.#previewShell = requiredElement(root, "#preview-shell", HTMLElement);
     this.#cameraPlaceholder = requiredElement(root, "#camera-placeholder", HTMLElement);
     this.#orientationNotice = requiredElement(root, "#orientation-notice", HTMLElement);
+    this.#orientationMessage = requiredElement(root, "#orientation-message", HTMLElement);
+    this.#orientationButton = requiredElement(root, "#request-landscape", HTMLButtonElement);
     this.#trackingState = requiredElement(root, "#tracking-state", HTMLElement);
     this.#experimentProfileSelect = requiredElement(root, "#experiment-profile", HTMLSelectElement);
     this.#overlayInputs = [...root.querySelectorAll<HTMLInputElement>("[data-overlay-layer]")];
@@ -78,6 +84,7 @@ export class LabView {
 
     this.#startButton.addEventListener("click", callbacks.onStart);
     this.#stopButton.addEventListener("click", callbacks.onStop);
+    this.#orientationButton.addEventListener("click", callbacks.onRequestLandscape);
     this.#previewButton.addEventListener("click", callbacks.onTogglePreview);
     this.#experimentProfileSelect.addEventListener("change", () => {
       const profile = findTrackingExperimentProfile(this.#experimentProfileSelect.value);
@@ -123,6 +130,7 @@ export class LabView {
       : "カメラ開始後、ここにインカメ映像を表示します。";
 
     this.#orientationNotice.hidden = !isPortraitViewport();
+    this.#orientationMessage.textContent = model.orientationMessage;
     renderTrackingState(this.#trackingState, model.tracking, active);
 
     renderRequestedSettings(this.#root, model.experimentProfile);
@@ -403,8 +411,9 @@ const template = `
           <span class="live-indicator"><span aria-hidden="true"></span> この端末内のみ</span>
         </div>
 
-        <div id="orientation-notice" class="orientation-notice" role="status" hidden>
-          端末を横向きにして、スタンドへ置いてください。計測は続けられます。
+        <div id="orientation-notice" class="orientation-notice" hidden>
+          <span id="orientation-message" role="status">横向き表示に切り替えてから、端末をスタンドへ置いてください。</span>
+          <button id="request-landscape" class="button button--quiet" type="button">横向き表示を試す</button>
         </div>
 
         <div id="preview-shell" class="preview-shell" data-active="false" data-preview-visible="true">
@@ -593,7 +602,7 @@ const template = `
           <article class="p1-card p1-trial-card">
             <div class="p1-card-heading">
               <div><span>試験セッション</span><strong id="p1-state">未開始</strong></div>
-              <button id="p1-start-session" class="button button--primary" type="button">新しいP1セッション</button>
+              <button id="p1-start-session" class="button button--primary" type="button" disabled>テストを開始</button>
             </div>
             <dl class="p1-mini-metrics">
               <div><dt>セッションID</dt><dd id="p1-session-id">—</dd></div>

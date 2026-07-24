@@ -15,6 +15,7 @@ import { DEFAULT_OVERLAY_LAYERS, OverlayRenderer } from "../rendering/overlay-re
 import { Phase1LabController } from "../poc/phase1-lab-controller";
 import type { Phase1TechnicalSummary } from "../poc/phase1-session";
 import { LabView } from "../ui/lab-view";
+import { requestLandscapeMode } from "../ui/landscape-mode";
 import { TrackingWorkerClient } from "../worker/tracking-worker-client";
 import {
   DeviceChecklistController,
@@ -43,6 +44,7 @@ export class LabController {
   readonly #phase1Controller: Phase1LabController;
   #experimentProfile: TrackingExperimentProfile;
   #previewVisible = true;
+  #orientationMessage = "横向き表示に切り替えてから、端末をスタンドへ置いてください。";
   #disposed = false;
 
   constructor(root: HTMLElement) {
@@ -53,6 +55,7 @@ export class LabController {
     this.#view = new LabView(root, {
       onStart: () => void this.#startCamera(),
       onStop: () => this.#stopCamera(),
+      onRequestLandscape: () => void this.#requestLandscape(),
       onTogglePreview: () => this.#togglePreview(),
       onOverlayLayersChange: (layers) => this.#overlayRenderer.setLayers(layers),
       onExperimentProfileChange: (id) => this.#changeExperimentProfile(id),
@@ -65,6 +68,8 @@ export class LabController {
       getTechnicalSummary: () => this.#phase1TechnicalSummary(),
       getTechnicalSnapshot: () => this.#technicalSnapshot(),
       getPerformanceLow: () => this.#tracking?.state === "performance-low",
+      getCameraActive: () => this.#state.kind === "active",
+      requestLandscape: () => this.#requestLandscape(),
       onGuideChange: (trial) => this.#overlayRenderer.setP1Guide(trial),
     });
     new DeviceChecklistController(root, () => this.#technicalSnapshot());
@@ -197,8 +202,17 @@ export class LabController {
       previewVisible: this.#previewVisible,
       tracking: this.#tracking,
       experimentProfile: this.#experimentProfile,
+      orientationMessage: this.#orientationMessage,
     });
   };
+
+  async #requestLandscape(): Promise<void> {
+    const result = await requestLandscapeMode();
+    this.#orientationMessage = result === "manual-required"
+      ? "このブラウザでは自動で横向きに固定できません。端末の自動回転をオンにして、横向きにしてください。"
+      : "横向き表示に切り替えました。端末をスタンドへ置いてください。";
+    this.#render();
+  }
 
   readonly #dispose = (): void => {
     if (this.#disposed) {
