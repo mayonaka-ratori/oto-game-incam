@@ -300,11 +300,417 @@ summary:focus-visible {
   border-left: 3px solid var(--warning);
   border-radius: 4px 12px 12px 4px;
   background: rgba(255, 197, 109, 0.08);
+  gap: 10px;
+}
+
+.p1-instruction-copy {
+  display: grid;
   gap: 7px;
 }
 
 .p1-instruction strong {
   font-size: 1rem;
+}
+
+.p1-motion-sample {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.85fr) minmax(0, 1.15fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.p1-motion-stage {
+  position: relative;
+  overflow: hidden;
+  min-height: 108px;
+  border: 1px solid rgba(255, 197, 109, 0.28);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(98, 242, 220, 0.09), transparent 42%),
+    linear-gradient(135deg, rgba(7, 17, 21, 0.96), rgba(14, 30, 36, 0.88));
+}
+
+.p1-motion-stage::before {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  z-index: 4;
+  color: rgba(220, 233, 231, 0.66);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  content: "動作見本";
+}
+
+.p1-motion-stage::after {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  color: rgba(255, 197, 109, 0.72);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.48rem;
+  content: "START → END";
+}
+
+.p1-motion-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.p1-motion-copy span,
+.p1-motion-copy small {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.p1-motion-copy strong {
+  color: #f7dfb1;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.p1-motion-copy small {
+  color: var(--warning);
+}
+
+.p1-motion-path,
+.p1-motion-target,
+.p1-motion-orb,
+.p1-motion-contact,
+.p1-motion-hand {
+  position: absolute;
+  opacity: 0;
+}
+
+.p1-motion-path {
+  z-index: 1;
+  border-top: 2px dashed rgba(255, 197, 109, 0.52);
+}
+
+.p1-motion-target,
+.p1-motion-orb,
+.p1-motion-contact {
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.p1-motion-hand {
+  z-index: 3;
+  font-size: 2.15rem;
+  filter: drop-shadow(0 0 8px rgba(98, 242, 220, 0.35));
+  line-height: 1;
+  transform: translate(-50%, -50%);
+}
+
+.p1-motion-sample[data-gesture="air-tap"][data-variant="left"] {
+  --air-x: 34%;
+}
+
+.p1-motion-sample[data-gesture="air-tap"][data-variant="right"] {
+  --air-x: 66%;
+}
+
+.p1-motion-sample[data-gesture="air-tap"] .p1-motion-path {
+  top: 29%;
+  bottom: 23%;
+  left: var(--air-x);
+  width: 0;
+  border-top: 0;
+  border-left: 2px dashed rgba(255, 197, 109, 0.52);
+  opacity: 1;
+}
+
+.p1-motion-sample[data-gesture="air-tap"] .p1-motion-path::before {
+  position: absolute;
+  top: 78%;
+  left: -1.05rem;
+  color: rgba(220, 233, 231, 0.28);
+  font-size: 1.8rem;
+  content: "☝️";
+}
+
+.p1-motion-sample[data-gesture="air-tap"] .p1-motion-target {
+  top: 43%;
+  left: var(--air-x);
+  width: 42px;
+  height: 42px;
+  border: 2px solid var(--warning);
+  border-radius: 50%;
+  box-shadow: 0 0 18px rgba(255, 197, 109, 0.22);
+  opacity: 1;
+  animation: p1-target-pulse 1.8s ease-in-out infinite;
+}
+
+.p1-motion-sample[data-gesture="air-tap"] .p1-motion-hand--single {
+  top: 78%;
+  left: var(--air-x);
+  opacity: 1;
+  animation: p1-air-tap-sample 1.8s ease-in-out infinite;
+}
+
+.p1-motion-sample[data-gesture="ribbon-swipe"] {
+  --swipe-start-x: 15%;
+  --swipe-start-y: 50%;
+  --swipe-end-x: 85%;
+  --swipe-end-y: 50%;
+  --swipe-angle: 0deg;
+  --swipe-arrow-angle: 0deg;
+  --swipe-icon-angle: 0deg;
+}
+
+.p1-motion-sample[data-gesture="ribbon-swipe"][data-variant="right-to-left"] {
+  --swipe-start-x: 85%;
+  --swipe-end-x: 15%;
+  --swipe-arrow-angle: 180deg;
+}
+
+.p1-motion-sample[data-gesture="ribbon-swipe"][data-variant="lower-left-to-upper-right"] {
+  --swipe-start-x: 18%;
+  --swipe-start-y: 75%;
+  --swipe-end-x: 82%;
+  --swipe-end-y: 28%;
+  --swipe-angle: -28deg;
+  --swipe-arrow-angle: -28deg;
+  --swipe-icon-angle: 28deg;
+}
+
+.p1-motion-sample[data-gesture="ribbon-swipe"][data-variant="lower-right-to-upper-left"] {
+  --swipe-start-x: 82%;
+  --swipe-start-y: 75%;
+  --swipe-end-x: 18%;
+  --swipe-end-y: 28%;
+  --swipe-angle: 28deg;
+  --swipe-arrow-angle: 208deg;
+  --swipe-icon-angle: -28deg;
+}
+
+.p1-motion-sample[data-gesture="ribbon-swipe"] .p1-motion-path {
+  top: 50%;
+  left: 15%;
+  width: 70%;
+  opacity: 1;
+  transform: rotate(var(--swipe-angle));
+}
+
+.p1-motion-sample[data-gesture="ribbon-swipe"] .p1-motion-path::before {
+  position: absolute;
+  top: -1.1rem;
+  left: -1.1rem;
+  color: rgba(220, 233, 231, 0.28);
+  font-size: 1.8rem;
+  content: "✋";
+  transform: rotate(var(--swipe-icon-angle));
+}
+
+.p1-motion-sample[data-gesture="ribbon-swipe"] .p1-motion-target {
+  top: var(--swipe-end-y);
+  left: var(--swipe-end-x);
+  color: var(--warning);
+  font-size: 1.55rem;
+  opacity: 1;
+  transform: translate(-50%, -50%) rotate(var(--swipe-arrow-angle));
+}
+
+.p1-motion-sample[data-gesture="ribbon-swipe"] .p1-motion-target::before {
+  content: "➜";
+}
+
+.p1-motion-sample[data-gesture="ribbon-swipe"] .p1-motion-hand--single {
+  top: var(--swipe-start-y);
+  left: var(--swipe-start-x);
+  opacity: 1;
+  animation: p1-swipe-sample 1.8s ease-in-out infinite;
+}
+
+.p1-motion-sample[data-gesture="clap"] {
+  --clap-left-end: 46%;
+  --clap-right-end: 54%;
+}
+
+.p1-motion-sample[data-gesture="clap"][data-variant="near-clap"] {
+  --clap-left-end: 38%;
+  --clap-right-end: 62%;
+}
+
+.p1-motion-sample[data-gesture="clap"] .p1-motion-path {
+  top: 50%;
+  left: 15%;
+  width: 70%;
+  opacity: 1;
+}
+
+.p1-motion-sample[data-gesture="clap"] .p1-motion-path::before,
+.p1-motion-sample[data-gesture="clap"] .p1-motion-path::after {
+  position: absolute;
+  top: -1.1rem;
+  color: rgba(220, 233, 231, 0.28);
+  font-size: 1.8rem;
+  content: "✋";
+}
+
+.p1-motion-sample[data-gesture="clap"] .p1-motion-path::before {
+  left: -1.1rem;
+}
+
+.p1-motion-sample[data-gesture="clap"] .p1-motion-path::after {
+  right: -1.1rem;
+  transform: scaleX(-1);
+}
+
+.p1-motion-sample[data-gesture="clap"] .p1-motion-hand--left,
+.p1-motion-sample[data-gesture="clap"] .p1-motion-hand--right {
+  top: 50%;
+  opacity: 1;
+}
+
+.p1-motion-sample[data-gesture="clap"] .p1-motion-hand--left {
+  left: 15%;
+  animation: p1-clap-left-sample 1.8s ease-in-out infinite;
+}
+
+.p1-motion-sample[data-gesture="clap"] .p1-motion-hand--right {
+  left: 85%;
+  animation: p1-clap-right-sample 1.8s ease-in-out infinite;
+}
+
+.p1-motion-sample[data-gesture="clap"][data-variant="near-clap"] .p1-motion-orb {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--cyan);
+  border-radius: 50%;
+  box-shadow: 0 0 18px rgba(98, 242, 220, 0.52);
+  opacity: 1;
+  animation: p1-orb-pulse 1.8s ease-in-out infinite;
+}
+
+.p1-motion-sample[data-gesture="clap"][data-variant="contact"] .p1-motion-contact {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--warning);
+  border-radius: 50%;
+  opacity: 1;
+  animation: p1-contact-flash 1.8s ease-in-out infinite;
+}
+
+@keyframes p1-air-tap-sample {
+  0%,
+  18% {
+    top: 78%;
+    opacity: 0.45;
+  }
+  56%,
+  72% {
+    top: 43%;
+    opacity: 1;
+  }
+  100% {
+    top: 25%;
+    opacity: 0.35;
+  }
+}
+
+@keyframes p1-target-pulse {
+  0%,
+  35%,
+  100% {
+    box-shadow: 0 0 10px rgba(255, 197, 109, 0.15);
+    transform: translate(-50%, -50%) scale(1);
+  }
+  60% {
+    box-shadow: 0 0 24px rgba(255, 197, 109, 0.5);
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+}
+
+@keyframes p1-swipe-sample {
+  0%,
+  18% {
+    top: var(--swipe-start-y);
+    left: var(--swipe-start-x);
+    opacity: 0.45;
+  }
+  68%,
+  82% {
+    top: var(--swipe-end-y);
+    left: var(--swipe-end-x);
+    opacity: 1;
+  }
+  100% {
+    top: var(--swipe-end-y);
+    left: var(--swipe-end-x);
+    opacity: 0;
+  }
+}
+
+@keyframes p1-clap-left-sample {
+  0%,
+  18% {
+    left: 15%;
+    opacity: 0.45;
+  }
+  62%,
+  82% {
+    left: var(--clap-left-end);
+    opacity: 1;
+  }
+  100% {
+    left: 15%;
+    opacity: 0.25;
+  }
+}
+
+@keyframes p1-clap-right-sample {
+  0%,
+  18% {
+    left: 85%;
+    opacity: 0.45;
+    transform: translate(-50%, -50%) scaleX(-1);
+  }
+  62%,
+  82% {
+    left: var(--clap-right-end);
+    opacity: 1;
+    transform: translate(-50%, -50%) scaleX(-1);
+  }
+  100% {
+    left: 85%;
+    opacity: 0.25;
+    transform: translate(-50%, -50%) scaleX(-1);
+  }
+}
+
+@keyframes p1-orb-pulse {
+  0%,
+  28%,
+  100% {
+    opacity: 0.4;
+    transform: translate(-50%, -50%) scale(0.82);
+  }
+  62%,
+  82% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.12);
+  }
+}
+
+@keyframes p1-contact-flash {
+  0%,
+  52%,
+  100% {
+    box-shadow: 0 0 0 rgba(255, 197, 109, 0);
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  65%,
+  80% {
+    box-shadow: 0 0 22px rgba(255, 197, 109, 0.8);
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.35);
+  }
 }
 
 .p1-live-diagnostic {
@@ -1770,8 +2176,7 @@ details[open] summary {
     font-size: 0.76rem;
   }
 
-  .p1-audio-card .p1-support-copy,
-  .p1-audio-card .p1-mini-metrics {
+  .p1-audio-card {
     display: none;
   }
 
@@ -1796,14 +2201,49 @@ details[open] summary {
   }
 
   .p1-instruction {
-    min-height: 46px;
+    grid-template-columns: minmax(0, 0.8fr) minmax(148px, 1.2fr);
+    align-items: center;
+    min-height: 76px;
     margin: 6px 0;
     padding: 6px 7px;
-    gap: 2px;
+    gap: 6px;
   }
 
   .p1-instruction strong {
     font-size: 0.72rem;
+  }
+
+  .p1-instruction-copy {
+    gap: 3px;
+  }
+
+  .p1-motion-sample {
+    display: block;
+  }
+
+  .p1-motion-stage {
+    min-height: 72px;
+    border-radius: 7px;
+  }
+
+  .p1-motion-stage::before {
+    top: 4px;
+    left: 5px;
+    font-size: 0.4rem;
+  }
+
+  .p1-motion-stage::after {
+    right: 5px;
+    bottom: 3px;
+    font-size: 0.36rem;
+  }
+
+  .p1-motion-hand {
+    font-size: 1.55rem;
+  }
+
+  .p1-motion-copy {
+    display: none;
   }
 
   .p1-live-diagnostic {
@@ -1899,5 +2339,36 @@ details[open] summary {
   *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .p1-motion-hand,
+  .p1-motion-target,
+  .p1-motion-orb,
+  .p1-motion-contact {
+    animation: none !important;
+  }
+
+  .p1-motion-sample[data-gesture="air-tap"] .p1-motion-hand--single {
+    top: 43%;
+  }
+
+  .p1-motion-sample[data-gesture="ribbon-swipe"] .p1-motion-hand--single {
+    top: var(--swipe-end-y);
+    left: var(--swipe-end-x);
+  }
+
+  .p1-motion-sample[data-gesture="clap"] .p1-motion-hand--left {
+    left: var(--clap-left-end);
+  }
+
+  .p1-motion-sample[data-gesture="clap"] .p1-motion-hand--right {
+    left: var(--clap-right-end);
+    transform: translate(-50%, -50%) scaleX(-1);
+  }
+
+  .p1-motion-sample[data-gesture="clap"][data-variant="contact"] .p1-motion-contact {
+    box-shadow: 0 0 18px rgba(255, 197, 109, 0.65);
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
   }
 }

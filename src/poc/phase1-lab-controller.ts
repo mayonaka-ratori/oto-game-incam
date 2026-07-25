@@ -354,6 +354,7 @@ export class Phase1LabController {
     setText(this.#root, "p1-trial-number", active === null ? "—" : `${active.ordinal} / ${protocol.total}`);
     setText(this.#root, "p1-gesture", gestureLabel(active?.gesture ?? next?.gesture));
     setText(this.#root, "p1-instruction", active?.instruction ?? next?.instruction ?? "セッションを開始してください");
+    renderMotionSample(this.#root, active ?? next);
     setText(this.#root, "p1-event-count", String(snapshot.eventCount));
     setText(this.#root, "p1-rejection-count", String(snapshot.rejectionCount));
     setText(this.#root, "p1-false-trigger-count", String(protocol.falseTriggers.length));
@@ -474,6 +475,45 @@ function outcomeLabel(outcome: string): string {
     "tracking-loss": "手の追跡失敗",
     unclassified: "分類不能",
   }[outcome] ?? outcome;
+}
+
+function renderMotionSample(root: ParentNode, trial: P1TrialDefinition | null): void {
+  const sample = requiredElement(root, "#p1-motion-sample");
+  if (trial === null) {
+    sample.dataset.gesture = "idle";
+    sample.dataset.variant = "none";
+    sample.setAttribute("aria-label", "試行を始めると、ここに手の動きを表示します");
+    setText(root, "p1-motion-caption", "試行を始めると、ここに手の動きを表示します");
+    return;
+  }
+
+  const variant = trial.gesture === "air-tap"
+    ? trial.airTapSide ?? "left"
+    : trial.gesture === "ribbon-swipe"
+      ? trial.swipeDirection ?? "left-to-right"
+      : trial.clapMode ?? "near-clap";
+  const caption = motionSampleCaption(trial);
+  sample.dataset.gesture = trial.gesture;
+  sample.dataset.variant = variant;
+  sample.setAttribute("aria-label", caption);
+  setText(root, "p1-motion-caption", caption);
+}
+
+function motionSampleCaption(trial: P1TrialDefinition): string {
+  if (trial.gesture === "air-tap") {
+    return `${trial.airTapSide === "right" ? "右" : "左"}手の人差し指を、リングの外から中へ通す`;
+  }
+  if (trial.gesture === "ribbon-swipe") {
+    return {
+      "left-to-right": "片手を左から右へ、帯に沿って動かす",
+      "right-to-left": "片手を右から左へ、帯に沿って動かす",
+      "lower-left-to-upper-right": "片手を左下から右上へ、帯に沿って動かす",
+      "lower-right-to-upper-left": "片手を右下から左上へ、帯に沿って動かす",
+    }[trial.swipeDirection ?? "left-to-right"];
+  }
+  return trial.clapMode === "contact"
+    ? "離した両手を中央へ寄せ、手のひらをそっと合わせる"
+    : "離した両手を中央へ寄せ、光球を挟んで触れずに止める";
 }
 
 function resolutionLabel(resolution: string): string {

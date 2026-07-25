@@ -32,7 +32,7 @@ describe("P1 controlled protocol", () => {
     });
   });
 
-  it("requires the detected clap kind to match the controlled trial mode", () => {
+  it("requires observed clap kinds to match the controlled trial mode", () => {
     const runner = new Phase1ControlledRunner([
       P1_CONTROLLED_TRIALS[20]!,
       P1_CONTROLLED_TRIALS[25]!,
@@ -45,6 +45,26 @@ describe("P1 controlled protocol", () => {
     expect(runner.acceptEvent(event("clap", 200, { clapKind: "contact-like" }))).toBe(false);
     expect(runner.acceptEvent(event("clap", 210, { clapKind: "near-clap" }))).toBe(true);
     expect(runner.snapshot).toMatchObject({ completed: 2, falseTriggers: [{}, {}] });
+  });
+
+  it("accepts an occlusion-predicted clap as inferred contact without a false trigger", () => {
+    const runner = new Phase1ControlledRunner([P1_CONTROLLED_TRIALS[20]!]);
+    runner.start();
+    runner.beginNextTrial(null);
+
+    expect(runner.acceptEvent(event("clap", 100, { clapKind: "occlusion-predicted" }))).toBe(true);
+    expect(runner.snapshot).toMatchObject({
+      state: "complete",
+      completed: 1,
+      falseTriggers: [],
+      results: [{
+        outcome: "success",
+        event: {
+          quality: { clapKind: "occlusion-predicted" },
+          reasonCodes: ["target-crossed"],
+        },
+      }],
+    });
   });
 
   it("opens the recognition window before target and derives an absolute deadline", () => {

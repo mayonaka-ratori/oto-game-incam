@@ -1,9 +1,9 @@
 # Phase 1 試行進行・リボンスワイプ信頼性改善 実装計画
 
-- 更新日: 2026-07-24
+- 更新日: 2026-07-26
 - 文書種別: Phase 1 / Step 1.1の不具合分析・実装引き継ぎ計画
-- ステータス: **実装・自動検証・PC実表示完了、対象実機再試験待ち**
-- 対象: P1-Controlledの試行進行、リボンスワイプ状態機械、診断表示、P1 JSON出力
+- ステータス: **iPhone Safari初回実測を分析し、実接触の遮蔽推定受理と動作見本を実装・自動検証・PC実表示完了、修正後実機再試験待ち**
+- 対象: P1-Controlledの試行進行、リボンスワイプ状態機械、実接触クラップの遮蔽推定、動作見本、診断表示、P1 JSON出力
 - 非対象: Phase 2 Interaction POC、90秒MVP、演出、ゲーム採点の作り込み
 
 この文書は実装順序と完了条件を記録する補助計画である。POCの分類・合否は[05_poc_test_protocol.md](./05_poc_test_protocol.md)、技術原則は[02_technical_strategy_and_plan.md](./02_technical_strategy_and_plan.md)、画面方針は[04_mvp_uiux_direction.md](./04_mvp_uiux_direction.md)を正本とする。実装時に仕様を確定する場合は、先に該当正本を更新する。
@@ -493,13 +493,14 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 
 ### 自動検証・PC実表示
 
-- `npm run verify`: 成功
-- `npm run test:e2e`: Chromium 13件成功。skip、自動進行、30件すべてtimeoutでの完走、標準／診断JSON分離、実験profile固定、複数P1比較を含む
+- `npm run verify`: 成功。単体96件、lint、型検査、buildを含む
+- `npm run test:e2e`: Chromium 13件成功。skip、自動進行、30件すべてtimeoutでの完走、標準／診断JSON分離、実験profile固定、複数P1比較、試行に同期する動作見本を含む
 - 合成試験: 左→右／右→左、125ms間隔、150ms以内の欠落、長い開始位置保持、拒否後のrearm、target前非集計、negative offsetに成功
-- 844×390実表示: 状態、残り時間、直近理由、skipが同時にviewport内。skip後に1件だけ完了し、約1秒後に次試行へ進行
+- 実接触合成試験: 厳しい接触閾値へ到達する直前の短い遮蔽を`occlusion-predicted`の品質ラベルを保ったsuccessとして記録し、false triggerへ加えない
+- 844×390実表示: 現在指示、手アイコンの動作見本、状態、残り時間、直近理由、skipが同時にviewport内。横スクロールなし
 - PC実表示: baselineと比較profileの目的、要求設定、未検証表示、P1セッション比較表と自動Passを行わない案内を確認
 - ブラウザconsole error: なし
-- 対象実機: 未実施。以下の表を埋めるまでP1-ControlledをPassにしない
+- 対象実機: iPhone Safariの修正前初回セッションを実施・分析済み。修正後iPhone SafariとAndroid Chromeを実施するまでP1-ControlledをPassにしない
 
 ### Android Chrome
 
@@ -519,19 +520,28 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 
 ### iPhone Safari
 
-| 項目 | 値 |
-|---|---:|
-| tracking Hz | |
-| frame age p95 | |
-| swipe success / 10 | |
-| tracking-lost | |
-| off-axis | |
-| wrong-direction | |
-| candidate-timeout | |
-| trial-timeout | |
-| 30試行完走 | |
-| 標準JSONサイズ | |
-| 診断JSONサイズ | |
+初回セッションは`p1-20260725152222806`、build `0.1.0+src.1d69b12444dc`、profile `baseline-gpu-640x480-60`で実施した。JSON書き出し時だけ縦向きへ変更しており、試行中は横向きだった。
+
+| 項目 | 修正前初回 | 修正後 |
+|---|---:|---:|
+| tracking Hz | 36.85 | 再試験待ち |
+| inference p50 / p95 | 24 / 35ms | 再試験待ち |
+| frame age p95 | 56.05ms | 再試験待ち |
+| air tap success / 10 | 10 | 再試験待ち |
+| swipe success / 10 | 10 | 再試験待ち |
+| clap success / 10 | 7 | 再試験待ち |
+| contact clap success / 5 | 2 | 再試験待ち |
+| near-clap success / 5 | 5 | 再試験待ち |
+| tracking-lost | 32 | 再試験待ち |
+| off-axis | 0 | 再試験待ち |
+| wrong-direction | 56 | 再試験待ち |
+| candidate-timeout | 1 | 再試験待ち |
+| trial-timeout | 3 | 再試験待ち |
+| 30試行完走 | Yes | 再試験待ち |
+| 標準JSONサイズ | 56,939 bytes | 再試験待ち |
+| 診断JSONサイズ | 未確認 | 再試験待ち |
+
+実接触の22試行目で1回、23試行目で3回、厳しい接触閾値の直前まで収束した`occlusion-predicted`と直後の`burst`が記録されていた。修正前は実接触試行が`contact-like`だけを受け付けたため、4回の遮蔽推定クラップと4回の`burst`がfalse triggerへ入り、22・23試行目がtimeoutした。端末負荷は良好であり、ジェスチャー閾値やMediaPipe負荷より先に、実接触試行の遮蔽推定受理と動作説明を修正した。
 
 ## 13. 実装後の判断ルール
 

@@ -45,6 +45,7 @@ test("fits the camera controls in a phone landscape viewport", async ({ page }) 
   await expect(page.getByRole("heading", { name: "単体ジェスチャー制御試験" })).toBeInViewport();
   await expect(page.getByRole("button", { name: "テストを開始" })).toBeInViewport();
   await expect(page.locator("#p1-remaining")).toBeInViewport();
+  await expect(page.locator("#p1-motion-sample")).toBeInViewport();
   await expect(page.getByRole("button", { name: "未成立として次へ" })).toBeInViewport();
   await expect(page.getByRole("heading", { name: "リアルタイム計測値" })).toBeVisible();
   await expect(page.locator("details.diagnostics-panel")).not.toHaveAttribute("open", "");
@@ -342,6 +343,13 @@ test("times out and auto-advances all 30 trials without double-finishing", async
   await expect(page.locator("#tracking-init")).toHaveText("準備完了");
   await page.clock.install();
   await page.getByRole("button", { name: "テストを開始" }).click();
+  const motionSample = page.locator("#p1-motion-sample");
+  await expect(motionSample).toHaveAttribute("data-gesture", "air-tap");
+  await expect(motionSample).toHaveAttribute("data-variant", "left");
+  await expect(page.locator("#p1-motion-caption")).toContainText("リングの外から中へ");
+  await expect.poll(() => page.locator(".p1-motion-hand--single").evaluate(
+    (element) => getComputedStyle(element).animationName,
+  )).toBe("p1-air-tap-sample");
 
   for (let ordinal = 1; ordinal <= 30; ordinal += 1) {
     await page.clock.fastForward(30_001);
@@ -349,6 +357,23 @@ test("times out and auto-advances all 30 trials without double-finishing", async
     if (ordinal < 30) {
       await page.clock.fastForward(1_001);
       await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal + 1} / 30`);
+      if (ordinal === 10) {
+        await expect(motionSample).toHaveAttribute("data-gesture", "ribbon-swipe");
+        await expect(motionSample).toHaveAttribute("data-variant", "left-to-right");
+        await expect.poll(() => page.locator(".p1-motion-hand--single").evaluate(
+          (element) => getComputedStyle(element).animationName,
+        )).toBe("p1-swipe-sample");
+      } else if (ordinal === 20) {
+        await expect(motionSample).toHaveAttribute("data-gesture", "clap");
+        await expect(motionSample).toHaveAttribute("data-variant", "contact");
+        await expect(page.locator("#p1-motion-caption")).toContainText("そっと合わせる");
+        await expect.poll(() => page.locator(".p1-motion-hand--left").evaluate(
+          (element) => getComputedStyle(element).animationName,
+        )).toBe("p1-clap-left-sample");
+      } else if (ordinal === 25) {
+        await expect(motionSample).toHaveAttribute("data-variant", "near-clap");
+        await expect(page.locator("#p1-motion-caption")).toContainText("触れずに止める");
+      }
     }
   }
 

@@ -182,7 +182,7 @@ export function eventMatchesTrial(event: GestureEvent, trial: P1TrialDefinition)
   if (trial.gesture === "clap") {
     if (event.gestureType !== "clap") return false;
     return trial.clapMode === "contact"
-      ? event.quality.clapKind === "contact-like"
+      ? event.quality.clapKind === "contact-like" || event.quality.clapKind === "occlusion-predicted"
       : event.quality.clapKind === "near-clap";
   }
   if (event.gestureType !== trial.gesture) return false;
@@ -199,7 +199,7 @@ function buildTrials(): readonly P1TrialDefinition[] {
       ordinal: trials.length + 1,
       gesture: "air-tap",
       airTapSide: side,
-      instruction: `${side === "left" ? "左" : "右"}のリングを通過する`,
+      instruction: `${side === "left" ? "左" : "右"}手の人差し指を、外からリングの中へ通す`,
     });
   }
   const swipeDirections: readonly RibbonSwipeDirection[] = [
@@ -215,7 +215,7 @@ function buildTrials(): readonly P1TrialDefinition[] {
       ordinal: trials.length + 1,
       gesture: "ribbon-swipe",
       swipeDirection: direction,
-      instruction: swipeDirectionLabel(direction),
+      instruction: `${swipeDirectionLabel(direction)}、片手を帯に沿って素早く動かす`,
     });
   }
   for (let index = 0; index < 10; index += 1) {
@@ -225,7 +225,9 @@ function buildTrials(): readonly P1TrialDefinition[] {
       ordinal: trials.length + 1,
       gesture: "clap",
       clapMode: mode,
-      instruction: mode === "contact" ? "強く叩かずに実接触する" : "中央の光球を挟むニアクラップ",
+      instruction: mode === "contact"
+        ? "両手を肩幅から中央へ寄せ、手のひらをそっと合わせる"
+        : "両手を中央へ寄せ、光球を挟んで触れずに止める",
     });
   }
   return trials;

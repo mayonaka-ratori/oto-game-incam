@@ -612,8 +612,26 @@ const template = `
               <div><dt>直前の結果</dt><dd id="p1-last-result">—</dd></div>
             </dl>
             <div class="p1-instruction" aria-live="polite">
-              <span>次に行うこと</span>
-              <strong id="p1-instruction">セッションを開始してください</strong>
+              <div class="p1-instruction-copy">
+                <span>次に行うこと</span>
+                <strong id="p1-instruction">セッションを開始してください</strong>
+              </div>
+              <div id="p1-motion-sample" class="p1-motion-sample" data-gesture="idle" data-variant="none">
+                <div class="p1-motion-stage" aria-hidden="true">
+                  <span class="p1-motion-path"></span>
+                  <span class="p1-motion-target"></span>
+                  <span class="p1-motion-orb"></span>
+                  <span class="p1-motion-contact"></span>
+                  <span class="p1-motion-hand p1-motion-hand--single">☝️</span>
+                  <span class="p1-motion-hand p1-motion-hand--left">✋</span>
+                  <span class="p1-motion-hand p1-motion-hand--right">✋</span>
+                </div>
+                <div class="p1-motion-copy">
+                  <span>動作見本</span>
+                  <strong id="p1-motion-caption">試行を始めると、ここに手の動きを表示します</strong>
+                  <small>見本を確認 → GOで動く</small>
+                </div>
+              </div>
             </div>
             <div class="p1-live-diagnostic" aria-live="polite">
               <span>直近の拒否理由</span>

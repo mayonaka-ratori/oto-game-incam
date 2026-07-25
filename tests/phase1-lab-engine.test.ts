@@ -203,4 +203,37 @@ describe("Phase1LabEngine", () => {
     expect(engine.snapshot.protocol.results.at(-1)?.event?.quality.clapKind).toBe("contact-like");
     expect(engine.snapshot.protocol.completed).toBe(21);
   });
+
+  it("accepts a short contact-trial occlusion as inferred contact", () => {
+    const engine = new Phase1LabEngine();
+    engine.startSession("contact-occlusion", null);
+    for (let index = 0; index < 20; index += 1) {
+      engine.beginNextTrial(null);
+      engine.recordOutcome("unclassified");
+    }
+    engine.beginNextTrial(null);
+    engine.processFrame(trackingFrame(1, 0, [
+      syntheticHand(0, "left", 0.2),
+      syntheticHand(1, "right", 0.8),
+    ]));
+    engine.processFrame(trackingFrame(2, 100, [
+      syntheticHand(0, "left", 0.445),
+      syntheticHand(1, "right", 0.555),
+    ]));
+    engine.processFrame(trackingFrame(3, 125, [
+      syntheticHand(0, "left", 0.455),
+    ]));
+
+    expect(engine.snapshot.protocol.results.at(-1)).toMatchObject({
+      outcome: "success",
+      trial: { clapMode: "contact" },
+      event: {
+        quality: { clapKind: "occlusion-predicted" },
+        trackingQuality: "short-occlusion-predicted",
+        reasonCodes: ["occlusion-predicted"],
+      },
+    });
+    expect(engine.snapshot.protocol.falseTriggers).toEqual([]);
+    expect(engine.snapshot.protocol.completed).toBe(21);
+  });
 });
