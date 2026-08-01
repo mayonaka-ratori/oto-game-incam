@@ -8,6 +8,10 @@ import type { GestureEvent } from "../src/gestures/gesture-types";
 import { summarizeProtocol } from "../src/poc/phase1-session";
 
 describe("P1 controlled protocol", () => {
+  it("limits each trial to 10 seconds", () => {
+    expect(P1_TRIAL_TIMEOUT_MS).toBe(10_000);
+  });
+
   it("encodes the canonical 10 + 10 + 10 controlled sequence", () => {
     expect(P1_CONTROLLED_TRIALS).toHaveLength(30);
     expect(P1_CONTROLLED_TRIALS.slice(0, 10).map(({ gesture }) => gesture)).toEqual(Array(10).fill("air-tap"));

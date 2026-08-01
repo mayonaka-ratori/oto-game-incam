@@ -5,7 +5,7 @@ import { BeatTimeline } from "../time/beat-timeline";
 import { Metronome } from "../time/metronome";
 import { parseLandmarkReplayImport, type LandmarkReplayDocument } from "../replay/landmark-replay";
 import { Phase1LabEngine, type Phase1LabSnapshot } from "./phase1-lab-engine";
-import type { P1Outcome, P1TrialDefinition } from "./phase1-protocol";
+import { P1_TRIAL_TIMEOUT_MS, type P1Outcome, type P1TrialDefinition } from "./phase1-protocol";
 import type { Phase1TechnicalSummary } from "./phase1-session";
 import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapshot";
 
@@ -453,7 +453,7 @@ function reasonLabel(reason: string): string {
     "off-axis": "ガイドの帯から外れました",
     "wrong-direction": "指定と逆方向へ動きました",
     "candidate-timeout": "スワイプの移動時間が上限を超えました",
-    "trial-timeout": "30秒で未成立として記録しました",
+    "trial-timeout": `${P1_TRIAL_TIMEOUT_MS / 1_000}秒で未成立として記録しました`,
     "manual-skip": "未成立として次へ進みました",
     "identity-conflict": "手の識別が一時的に競合しました",
   }[reason] ?? reason;

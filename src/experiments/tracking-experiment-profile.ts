@@ -45,14 +45,14 @@ export const TRACKING_EXPERIMENT_PROFILES: readonly TrackingExperimentProfile[] 
   {
     id: "baseline-gpu-640x480-60",
     label: "基準条件 · GPU · 640×480 · 最大60fps",
-    purpose: "現行条件。最初のP1セッションはこの条件を使います。",
+    purpose: "最初の基準結果との比較用に残す60fps条件です。",
     camera: { width: 640, height: 480, frameRateIdeal: 60, frameRateMin: 30 },
     tracking: DEFAULT_TRACKING,
   },
   {
     id: "gpu-640x480-30",
     label: "比較条件 · GPU · 640×480 · 30fps",
-    purpose: "カメラ供給を30fpsへ固定した負荷比較候補です。品質は未検証です。",
+    purpose: "Androidの次回試験で使う既定条件です。カメラ供給を30fpsへ固定して負荷を比べます。",
     camera: { width: 640, height: 480, frameRateIdeal: 30, frameRateMin: 30 },
     tracking: DEFAULT_TRACKING,
   },
@@ -79,7 +79,7 @@ export const TRACKING_EXPERIMENT_PROFILES: readonly TrackingExperimentProfile[] 
   },
 ] as const;
 
-export const DEFAULT_TRACKING_EXPERIMENT_PROFILE = TRACKING_EXPERIMENT_PROFILES[0]!;
+export const DEFAULT_TRACKING_EXPERIMENT_PROFILE = TRACKING_EXPERIMENT_PROFILES[1]!;
 
 export function findTrackingExperimentProfile(
   id: string | null | undefined,

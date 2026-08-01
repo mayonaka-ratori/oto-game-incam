@@ -1,8 +1,8 @@
 # Phase 1 試行進行・リボンスワイプ信頼性改善 実装計画
 
-- 更新日: 2026-07-26
+- 更新日: 2026-08-01
 - 文書種別: Phase 1 / Step 1.1の不具合分析・実装引き継ぎ計画
-- ステータス: **iPhone Safari初回実測を分析し、実接触の遮蔽推定受理と動作見本を実装・自動検証・PC実表示完了、修正後実機再試験待ち**
+- ステータス: **Android Chromeの修正後基準試験30件を完走・分析し、単体ジェスチャーの試行時間を30秒から10秒へ短縮**
 - 対象: P1-Controlledの試行進行、リボンスワイプ状態機械、実接触クラップの遮蔽推定、動作見本、診断表示、P1 JSON出力
 - 非対象: Phase 2 Interaction POC、90秒MVP、演出、ゲーム採点の作り込み
 
@@ -50,7 +50,7 @@
 ### 2.4 実装完了条件
 
 - 成功、手動分類、手動スキップ、タイムアウトのいずれでも試行が一度だけ完了する。
-- アクティブ試行が30秒を超えて操作不能なまま残らない。
+- アクティブ試行が10秒を超えて操作不能なまま残らない。
 - タイムアウトと手動スキップは10回の分母へ含まれる。
 - 右→左と左→右の両方が、鏡像、低追跡Hz、100〜150ms以内の短い欠落を含む合成試験で成立する。
 - GO前の準備動作が成功・拒否件数へ混入しない。
@@ -143,7 +143,7 @@ flowchart LR
     C -->|対象イベント| D["success"]
     C -->|手動分類| E["player / machine / tracking / unclassified"]
     C -->|未成立として次へ| F["unclassified + manual-skip"]
-    C -->|30秒| G["unclassified + trial-timeout"]
+    C -->|10秒| G["unclassified + trial-timeout"]
     D --> H["結果を短時間表示"]
     E --> H
     F --> H
@@ -155,11 +155,12 @@ flowchart LR
 
 ### 4.2 タイマー
 
-- 定数名の候補: `P1_TRIAL_TIMEOUT_MS = 30_000`。
+- 定数名: `P1_TRIAL_TIMEOUT_MS = 10_000`。
 - 音声targetがある場合、recognition windowの基準は`targetTimeMs`とする。
 - 早い動作のoffsetも記録するため、window開始は`targetTimeMs - 500ms`を初期値とする。
-- timeout deadlineは`targetTimeMs + 30_000ms`とする。
-- 音声targetがない場合、試行開始時刻をwindow開始とし、そこから30秒とする。
+- timeout deadlineは`targetTimeMs + 10_000ms`とする。
+- 音声targetがない場合、試行開始時刻をwindow開始とし、そこから10秒とする。
+- 10秒で準備と1回の動作を終えられないと実機で確認できた場合だけ、別セッションで13秒を比較する。
 - 残り時間は`performance.now()`等の絶対時刻との差から描画し、interval回数を正本にしない。
 - 成功、手動分類、手動スキップ、新セッション、disposeで必ずtimerを解除する。
 - ページ非表示中に複数試行を自動消化しない。非表示中に期限を超えた場合は、復帰時に現在の1試行だけをtimeout解決し、次の試行開始は画面が表示されてから行う。
@@ -253,7 +254,7 @@ candidateを次の状態へ分ける。
 | `off-axis` | ガイドの帯から外れました |
 | `wrong-direction` | 指定と逆方向へ動きました |
 | `candidate-timeout` | スワイプの移動時間が上限を超えました |
-| `trial-timeout` | 30秒で未成立として記録しました |
+| `trial-timeout` | 10秒で未成立として記録しました |
 | `manual-skip` | 未成立として次へ進みました |
 
 - 同一理由を毎フレーム更新せず、発生時刻と件数を保持する。
@@ -381,7 +382,7 @@ interface P1TrialDiagnosticRecord {
 2. 右→左の状態機械テストを追加する。
 3. 3拍カウント相当の開始位置待機後にスワイプするテストを追加する。
 4. 8Hz相当と1フレーム欠落のテストを追加し、現行実装で失敗を確認する。
-5. protocolの30秒timeoutとmanual skipのテストを追加し、未実装による失敗を確認する。
+5. protocolのtimeoutとmanual skipのテストを追加し、未実装による失敗を確認する。
 
 ### Step B — protocol timing
 
@@ -480,7 +481,7 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 
 - スマホ横画面で残り時間とskipがviewport内にある。
 - skipでprogressが1増え、次trialへ進む。
-- fake clockで30秒進めるとtimeoutして次へ進む。
+- fake clockで10秒進めるとtimeoutして次へ進む。
 - success後に遅延timeoutが追加されない。
 - 30件すべてtimeoutでもcompleteへ到達できる。
 - 標準P1 JSONに`manual-skip`/`trial-timeout`が残る。
@@ -491,32 +492,43 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 
 実装後、条件を混ぜず端末ごとに記録する。
 
+### 修正後再試験の固定条件
+
+- 2026-07-29に、両端末の最初の30試行を`baseline-gpu-640x480-60`で行うと確定した。
+- iPhone SafariとAndroid Chromeで同じapp buildを使い、profile、ジェスチャー閾値を試行中に変更しない。
+- 要求条件と端末が実際に選んだ条件は分けて記録する。
+- 詳細な固定値と例外時の扱いは[POCテスト手順](./05_poc_test_protocol.md#31-修正後p1-controlled再試験の基準プロファイル)を正本とする。
+
 ### 自動検証・PC実表示
 
-- `npm run verify`: 成功。単体96件、lint、型検査、buildを含む
+- `npm run verify`: 成功。単体97件、lint、型検査、buildを含む
 - `npm run test:e2e`: Chromium 13件成功。skip、自動進行、30件すべてtimeoutでの完走、標準／診断JSON分離、実験profile固定、複数P1比較、試行に同期する動作見本を含む
 - 合成試験: 左→右／右→左、125ms間隔、150ms以内の欠落、長い開始位置保持、拒否後のrearm、target前非集計、negative offsetに成功
 - 実接触合成試験: 厳しい接触閾値へ到達する直前の短い遮蔽を`occlusion-predicted`の品質ラベルを保ったsuccessとして記録し、false triggerへ加えない
 - 844×390実表示: 現在指示、手アイコンの動作見本、状態、残り時間、直近理由、skipが同時にviewport内。横スクロールなし
 - PC実表示: baselineと比較profileの目的、要求設定、未検証表示、P1セッション比較表と自動Passを行わない案内を確認
 - ブラウザconsole error: なし
-- 対象実機: iPhone Safariの修正前初回セッションを実施・分析済み。修正後iPhone SafariとAndroid Chromeを実施するまでP1-ControlledをPassにしない
+- 対象実機: iPhone Safariの修正前初回とAndroid Chromeの修正後基準セッションを実施・分析済み。修正後iPhone Safariを実施するまでP1-ControlledをPassにしない
 
 ### Android Chrome
 
+修正後セッションは`p1-20260801062942895`、build `0.1.0+src.9e5b7ebe2469`、profile `baseline-gpu-640x480-60`で実施した。30試行は完走したが、スワイプ中の`tracking-lost`が193件あり、10回中4回の成立に留まった。tracking Hzとframe ageが判断基準を満たさないため、判定幅より先に処理負荷を比較する。
+
+次回のAndroid比較では`gpu-640x480-30`を使う。選び忘れを防ぐため、2026-08-01以降の画面はこのプロファイルを最初から選択する。60fpsの基準プロファイルは比較用に残す。
+
 | 項目 | 実装前 | 実装後 |
 |---|---:|---:|
-| tracking Hz | 8.36 | |
-| frame age p95 | 316.6ms | |
-| swipe success / 10 | 3成功後に停止 | |
-| tracking-lost | 294 | |
-| off-axis | 104 | |
-| wrong-direction | 36 | |
-| candidate-timeout | 18 | |
-| trial-timeout | 未実装 | |
-| 30試行完走 | No | |
-| 標準JSONサイズ | 28.5MB | |
-| 診断JSONサイズ | 同一ファイル | |
+| tracking Hz | 8.36 | 13.68 |
+| frame age p95 | 316.6ms | 255.2ms |
+| swipe success / 10 | 3成功後に停止 | 4 |
+| tracking-lost | 294 | 203（うちスワイプ193） |
+| off-axis | 104 | 1 |
+| wrong-direction | 36 | 34 |
+| candidate-timeout | 18 | 6 |
+| trial-timeout | 未実装 | 7（うちスワイプ6） |
+| 30試行完走 | No | Yes |
+| 標準JSONサイズ | 28.5MB | 73,853 bytes |
+| 診断JSONサイズ | 同一ファイル | 8,675,390 bytes |
 
 ### iPhone Safari
 

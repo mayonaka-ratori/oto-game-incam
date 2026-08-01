@@ -8,11 +8,20 @@ import {
 } from "../src/experiments/tracking-experiment-profile";
 
 describe("tracking experiment profiles", () => {
-  it("keeps the current GPU 640x480 60fps request as the baseline", () => {
+  it("uses the Android GPU 640x480 30fps comparison as the default", () => {
     expect(DEFAULT_TRACKING_EXPERIMENT_PROFILE).toMatchObject({
-      id: "baseline-gpu-640x480-60",
-      camera: { width: 640, height: 480, frameRateIdeal: 60, frameRateMin: 30 },
-      tracking: { preferredDelegate: "GPU" },
+      id: "gpu-640x480-30",
+      camera: { width: 640, height: 480, frameRateIdeal: 30, frameRateMin: 30 },
+      tracking: {
+        preferredDelegate: "GPU",
+        numHands: 2,
+        minHandDetectionConfidence: 0.5,
+        minHandPresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+        packageId: "@mediapipe/tasks-vision@0.10.35",
+        modelId: "hand_landmarker/full/float16/1#fbc2a30080c3",
+        modelPath: "/mediapipe/models/hand_landmarker.task",
+      },
     });
     expect(findTrackingExperimentProfile("unknown")).toBe(DEFAULT_TRACKING_EXPERIMENT_PROFILE);
   });

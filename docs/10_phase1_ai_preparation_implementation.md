@@ -2,7 +2,7 @@
 
 - 実施日: 2026-07-19〜2026-07-24
 - 対象: **Phase 1 — Tracking & Latency Lab / Technical Stage T0**
-- ステータス: **試行進行・スワイプ信頼性改善を含む実装・合成検証・PC実表示完了、対象実機再試験待ち**
+- ステータス: **試行進行・スワイプ信頼性改善を含む実装・合成検証・PC実表示完了、Android修正後基準試験を完走、iPhone修正後試験待ち**
 - 文書種別: 実装結果と引き継ぎ。仕様の正本ではない
 
 現在地、ゲート、試験条件は[資料ガイド](./README.md)、[ロードマップ](./03_mvp_definition_and_roadmap.md)、[POCテスト手順](./05_poc_test_protocol.md)を正本とする。本書は実機確認できない期間に先行した実装を記録するもので、P1-ControlledのPassを宣言しない。
@@ -89,7 +89,7 @@ API値は最終的な知覚遅延を保証しない。同期感と外部遅延�
 - 音声targetの500ms前からrecognition windowを開き、準備期間のevent／rejectionを試行結果へ混入させない
 - 準備期間はリボンスワイプの開始位置armingだけを許可し、エアタップのcooldownやクラップの圧縮状態を判定期間へ持ち越さない
 - window境界を跨いで補間されたeventも`eventTime`で再検証し、window外なら件数・JSONへ保存しない
-- targetまたは試行開始から30秒のdeadline、絶対時刻差による残り秒数、手動「未成立として次へ」を追加
+- 当初はtargetまたは試行開始から30秒のdeadlineを追加した。2026-08-01のAndroid実測後、現行値は10秒へ短縮した。絶対時刻差による残り秒数と手動「未成立として次へ」は維持する
 - timeoutと手動skipは`unclassified`の分母へ含め、`trial-timeout`／`manual-skip`のresolutionを保存
 - success、手動分類、skip、timeoutを冪等にし、最初に確定した一件だけを保存
 - 解決後は約1秒の結果表示を挟んで次のtargetを新規予約し、非表示中は連続消化しない
@@ -144,7 +144,7 @@ API値は最終的な知覚遅延を保証しない。同期感と外部遅延�
 - Chromiumブラウザ試験: 13件成功
 - MediaPipe Worker smoke、mock 0／1／2手、回復可能エラー、rVFC、P1 JSON分離、skip、30件timeout完走、profile固定、複数P1比較を確認
 - MediaPipe固定資産のSHA-256検証: 成功
-- 844×390の実ブラウザ表示で状態、残り30秒、直近理由、skipを同時表示し、skip後の一度だけ完了と約1秒後の自動進行を確認
+- 844×390の実ブラウザ表示で状態、残り時間、直近理由、skipを同時表示し、skip後の一度だけ完了と約1秒後の自動進行を確認
 - 実ブラウザのconsole error: なし
 
 ## 4. 対象実機が戻った時の実施順

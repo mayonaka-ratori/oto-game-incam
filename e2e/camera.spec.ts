@@ -92,8 +92,7 @@ test("locks the selected experiment profile while the camera is active", async (
   await page.goto("/?tracking=mock");
   await page.locator("details.diagnostics-panel > summary").click();
   const profile = page.getByLabel("実験プロファイル");
-  await expect(profile).toHaveValue("baseline-gpu-640x480-60");
-  await profile.selectOption("gpu-640x480-30");
+  await expect(profile).toHaveValue("gpu-640x480-30");
   await expect(page.locator("#requested-profile")).toHaveText("gpu-640x480-30");
   await expect(page.locator("#requested-fps")).toHaveText("30–30 fps");
 
@@ -352,7 +351,7 @@ test("times out and auto-advances all 30 trials without double-finishing", async
   )).toBe("p1-air-tap-sample");
 
   for (let ordinal = 1; ordinal <= 30; ordinal += 1) {
-    await page.clock.fastForward(30_001);
+    await page.clock.fastForward(10_001);
     await expect(page.locator("#p1-progress")).toHaveText(`${ordinal} / 30`);
     if (ordinal < 30) {
       await page.clock.fastForward(1_001);
@@ -378,7 +377,7 @@ test("times out and auto-advances all 30 trials without double-finishing", async
   }
 
   await expect(page.locator("#p1-state")).toHaveText("完了");
-  await expect(page.locator("#p1-latest-rejection")).toHaveText("30秒で未成立として記録しました");
+  await expect(page.locator("#p1-latest-rejection")).toHaveText("10秒で未成立として記録しました");
   await expect(page.getByRole("button", { name: "未成立として次へ" })).toBeDisabled();
 
   const downloadPromise = page.waitForEvent("download");

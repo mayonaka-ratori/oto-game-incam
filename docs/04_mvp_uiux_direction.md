@@ -1,6 +1,6 @@
 # 空間ジェスチャー音楽ゲーム MVP UI/UX方針
 
-- 更新日: 2026-07-26
+- 更新日: 2026-08-01
 - 文書種別: POC / MVP向け画面・操作・フィードバック方針
 - ステータス: v0.3（Phase 1動作見本追加）
 
@@ -85,7 +85,7 @@ Phase 1では最低限、`framing`、`ready`、`playing`、`one-hand-lost`、`bo
 | `off-axis` | ガイドの帯から外れました |
 | `wrong-direction` | 指定と逆方向へ動きました |
 | `candidate-timeout` | スワイプの移動時間が上限を超えました |
-| `trial-timeout` | 30秒で未成立として記録しました |
+| `trial-timeout` | 10秒で未成立として記録しました |
 | `manual-skip` | 未成立として次へ進みました |
 
 「未成立として次へ」は罰する表現やMISS表示を使わず、`unclassified`として次の試行へ進める操作とする。`PERFORMANCE LOW`時は、P1操作欄にも「追跡出力が低いためジェスチャーが途切れる可能性があります」と短く表示する。

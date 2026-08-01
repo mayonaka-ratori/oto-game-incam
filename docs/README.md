@@ -1,12 +1,12 @@
 # プロジェクト資料ガイド
 
-- 更新日: 2026-07-26
+- 更新日: 2026-08-01
 - 現在のプロダクトフェーズ: **Phase 1 — Tracking & Latency Lab**
 - 現在の技術ステージ: **Technical Stage T0 — Measurement Lab**
 - 現在のステップ: **1.1 — TypeScript / Viteの最小Webアプリ、カメラ許可、計測画面を作る**
-- 実装先行状況: **iPhone Safari初回30試行を分析し、実接触クラップの短い遮蔽推定をsuccessとして保持する修正と、全ジェスチャーの手アイコン動作見本を追加した。型付き実験profile、build ID、P1記録・比較を含め、単体96件・E2E 13件・844×390実表示を完了**
-- 次の作業: **baseline profileを固定し、修正後iPhone SafariとAndroid ChromeでP1-Controlledを各30試行実施する。比較画面で完走、両方向スワイプ、実接触／ニアクラップ、拒否理由、技術値、標準／診断JSONサイズを確認する**
-- 次の判断: 両端末で30試行を完走して失敗理由を説明できるか。追跡15Hz未満またはframe age p95 140ms超が続く場合は、ジェスチャー閾値より先にMediaPipe処理負荷を変更するか
+- 実装先行状況: **Android Chromeの修正後基準セッション30試行を完走・分析した。スワイプは4/10で、tracking Hz 13.68、frame age p95 255.2ms、スワイプ中のtracking-lost 193件だった。1試行の時間切れを10秒へ短縮し、Androidの次回比較用`gpu-640x480-30`を画面の既定値にした**
+- 次の作業: **10秒・30fps既定版を実機へ反映し、Android Chromeで新しいsessionIdの30試行を行う。修正後iPhone Safariの基準セッションでは60fpsの基準プロファイルを手動で選ぶ。ジェスチャー閾値は同じセッション中に変更しない**
+- 次の判断: Androidの処理負荷変更でtracking Hz 15以上、frame age p95 140ms以下へ近づき、スワイプのtracking-lostと成立待ちが減るか。10秒で準備と1回の動作を終えられない場合だけ13秒を別セッションで比較する
 
 Codexで作業を継続する場合、リポジトリ直下の [`AGENTS.md`](../AGENTS.md) が自動引き継ぎの入口となる。そこから本書を読み、現在地と依頼に関係する正本だけを確認して作業を始める。
 

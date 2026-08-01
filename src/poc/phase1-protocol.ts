@@ -1,7 +1,7 @@
 import type { GestureEvent, RibbonSwipeDirection } from "../gestures/gesture-types";
 
 export type P1Gesture = "air-tap" | "ribbon-swipe" | "clap";
-export const P1_TRIAL_TIMEOUT_MS = 30_000;
+export const P1_TRIAL_TIMEOUT_MS = 10_000;
 export const P1_EARLY_WINDOW_MS = 500;
 
 export type P1Outcome =
