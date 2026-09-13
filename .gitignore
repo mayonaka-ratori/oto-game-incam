@@ -6,3 +6,7 @@ test-results/
 .vite/
 *.local
 
+
+# Claude Code: 個人用設定はコミットしない
+.claude/settings.local.json
+CLAUDE.local.md
