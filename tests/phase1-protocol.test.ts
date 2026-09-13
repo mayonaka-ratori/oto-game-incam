@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   P1_CONTROLLED_TRIALS,
+  P1_LEGACY_CLAP_TRIALS,
   P1_TRIAL_TIMEOUT_MS,
   Phase1ControlledRunner,
 } from "../src/poc/phase1-protocol";
@@ -16,8 +17,9 @@ describe("P1 controlled protocol", () => {
     expect(P1_CONTROLLED_TRIALS).toHaveLength(30);
     expect(P1_CONTROLLED_TRIALS.slice(0, 10).map(({ gesture }) => gesture)).toEqual(Array(10).fill("air-tap"));
     expect(P1_CONTROLLED_TRIALS.slice(10, 20).map(({ gesture }) => gesture)).toEqual(Array(10).fill("ribbon-swipe"));
-    expect(P1_CONTROLLED_TRIALS.slice(20).filter(({ clapMode }) => clapMode === "contact")).toHaveLength(5);
-    expect(P1_CONTROLLED_TRIALS.slice(20).filter(({ clapMode }) => clapMode === "near-clap")).toHaveLength(5);
+    expect(P1_CONTROLLED_TRIALS.slice(20).map(({ gesture }) => gesture)).toEqual(Array(10).fill("bloom"));
+    expect(P1_LEGACY_CLAP_TRIALS.filter(({ clapMode }) => clapMode === "contact")).toHaveLength(5);
+    expect(P1_LEGACY_CLAP_TRIALS.filter(({ clapMode }) => clapMode === "near-clap")).toHaveLength(5);
   });
 
   it("records event offset separately from outcome and false triggers", () => {
@@ -38,8 +40,8 @@ describe("P1 controlled protocol", () => {
 
   it("requires observed clap kinds to match the controlled trial mode", () => {
     const runner = new Phase1ControlledRunner([
-      P1_CONTROLLED_TRIALS[20]!,
-      P1_CONTROLLED_TRIALS[25]!,
+      P1_LEGACY_CLAP_TRIALS[0]!,
+      P1_LEGACY_CLAP_TRIALS[5]!,
     ]);
     runner.start();
     runner.beginNextTrial(null);
@@ -52,7 +54,7 @@ describe("P1 controlled protocol", () => {
   });
 
   it("accepts an occlusion-predicted clap as inferred contact without a false trigger", () => {
-    const runner = new Phase1ControlledRunner([P1_CONTROLLED_TRIALS[20]!]);
+    const runner = new Phase1ControlledRunner([P1_LEGACY_CLAP_TRIALS[0]!]);
     runner.start();
     runner.beginNextTrial(null);
 

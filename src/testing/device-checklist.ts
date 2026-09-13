@@ -54,6 +54,14 @@ export interface ControlledGestureResult {
   readonly offsetSummary: string;
 }
 
+export interface DeviceCheckControlledResults {
+  readonly airTap: ControlledGestureResult;
+  readonly ribbonSwipe: ControlledGestureResult;
+  readonly bloom: ControlledGestureResult;
+  /** Preserved only when an older report used the retired clap field. */
+  readonly legacyClapNearClap?: ControlledGestureResult;
+}
+
 export interface DeviceCheckFormValues {
   readonly sessionId: string;
   readonly testerId: string;
@@ -71,7 +79,7 @@ export interface DeviceCheckFormValues {
   readonly sleeves: string;
   readonly speakerVolume: string;
   readonly checkStatuses: Readonly<Record<string, DeviceCheckStatus>>;
-  readonly controlled: Readonly<Record<"airTap" | "ribbonSwipe" | "clapNearClap", ControlledGestureResult>>;
+  readonly controlled: DeviceCheckControlledResults;
   readonly subjective: {
     readonly syncRating: number | null;
     readonly latencySense: "none" | "late" | "early" | "variable" | "unsure";
@@ -95,8 +103,9 @@ export interface DeviceCheckFormValues {
 }
 
 export interface DeviceCheckReport {
-  readonly schemaVersion: "2.1";
+  readonly schemaVersion: "2.2";
   readonly reportType: "phase1-device-check";
+  readonly controlledGesture: "bloom";
   readonly exportedAt: string;
   readonly session: Omit<DeviceCheckFormValues, "checkStatuses" | "controlled" | "subjective" | "decision" | "notes">;
   readonly progress: {
@@ -141,8 +150,9 @@ export function createDeviceCheckReport(
   const count = (status: DeviceCheckStatus): number => checks.filter((item) => item.status === status).length;
   const completed = checks.filter((item) => item.status !== "pending").length;
   return {
-    schemaVersion: "2.1",
+    schemaVersion: "2.2",
     reportType: "phase1-device-check",
+    controlledGesture: "bloom",
     exportedAt,
     session: {
       sessionId: values.sessionId,
@@ -186,7 +196,7 @@ export function parseDeviceCheckReport(text: string): DeviceCheckReport {
   if (!isRecord(value) || value.reportType !== "phase1-device-check") {
     throw new TypeError("Phase 1実機確認JSONではありません。");
   }
-  if (value.schemaVersion === "2.0" || value.schemaVersion === "2.1") return parseVersion2(value);
+  if (value.schemaVersion === "2.0" || value.schemaVersion === "2.1" || value.schemaVersion === "2.2") return parseVersion2(value);
   if (value.schemaVersion === "1.0") return migrateVersion1(value);
   throw new TypeError("対応していない実機確認JSONのバージョンです。");
 }
@@ -268,7 +278,7 @@ export class DeviceChecklistController {
     const gestureStatuses = [
       controlledRowStatus(this.#form, "エアタップ", "airTap"),
       controlledRowStatus(this.#form, "リボンスワイプ", "ribbonSwipe"),
-      controlledRowStatus(this.#form, "クラップ／ニアクラップ", "clapNearClap"),
+      controlledRowStatus(this.#form, "Bloom", "bloom"),
     ];
     controlledStatus.textContent = gestureStatuses.join(" · ");
     controlledStatus.dataset.complete = String(gestureStatuses.every((status) => status.includes("10/10")));
@@ -325,7 +335,12 @@ export class DeviceChecklistController {
       if (!isRecord(byGesture)) throw new TypeError("P1集計がありません。");
       applyGestureSummary(this.#form, "airTap", byGesture["air-tap"]);
       applyGestureSummary(this.#form, "ribbonSwipe", byGesture["ribbon-swipe"]);
-      applyGestureSummary(this.#form, "clapNearClap", byGesture.clap);
+      const thirdGesture = value.schemaVersion === 4
+        && isRecord(value.gestureVocabulary)
+        && value.gestureVocabulary.thirdGesture === "bloom"
+        ? "bloom"
+        : "clap";
+      if (thirdGesture === "bloom") applyGestureSummary(this.#form, "bloom", byGesture.bloom);
       if (isRecord(value.technicalSnapshot)) {
         const technical = parseTechnical(value.technicalSnapshot);
         const sessionId = isRecord(value.session)
@@ -344,9 +359,11 @@ export class DeviceChecklistController {
         if (sessionId !== null) setFormValue(this.#form, "sessionId", sessionId);
         if (technical.appBuildId.length > 0) setFormValue(this.#form, "appVersion", technical.appBuildId);
         this.#renderTechnicalSource();
-        this.#status.textContent = "P1セッションから3ジェスチャーとスマホの自動計測値を取り込みました。PCで記入してもスマホ値を保持します。";
+        this.#status.textContent = thirdGesture === "bloom"
+          ? "P1セッションから3入力（Bloomを含む）とスマホの自動計測値を取り込みました。PCで記入してもスマホ値を保持します。"
+          : "旧P1セッションからair-tap／ribbon-swipeを取り込みました。旧clap結果は比較画面でBloomと分けて扱います。";
       } else {
-        this.#status.textContent = "3ジェスチャーを取り込みましたが、この旧P1 JSONには端末の自動計測値がありません。最終保存は計測したスマホで行ってください。";
+        this.#status.textContent = "3入力を取り込みましたが、この旧P1 JSONには端末の自動計測値がありません。最終保存は計測したスマホで行ってください。";
       }
     } catch (error) {
       this.#status.textContent = `P1結果を読み込めません: ${describeError(error)}`;
@@ -402,7 +419,7 @@ export class DeviceChecklistController {
       controlled: {
         airTap: readGestureResult(data, "airTap"),
         ribbonSwipe: readGestureResult(data, "ribbonSwipe"),
-        clapNearClap: readGestureResult(data, "clapNearClap"),
+        bloom: readGestureResult(data, "bloom"),
       },
       subjective: {
         syncRating: nullableNumber(data.get("syncRating")),
@@ -611,10 +628,12 @@ function parseTechnicalSource(value: unknown, report: Record<string, unknown>): 
 
 function parseControlled(value: unknown): DeviceCheckFormValues["controlled"] {
   const record = isRecord(value) ? value : {};
+  const hasLegacyClap = isRecord(record.clapNearClap);
   return {
     airTap: parseGestureResult(record.airTap),
     ribbonSwipe: parseGestureResult(record.ribbonSwipe),
-    clapNearClap: parseGestureResult(record.clapNearClap),
+    bloom: parseGestureResult(record.bloom),
+    ...(hasLegacyClap ? { legacyClapNearClap: parseGestureResult(record.clapNearClap) } : {}),
   };
 }
 
@@ -702,7 +721,7 @@ function emptyValues(): DeviceCheckFormValues {
   return {
     sessionId: "", testerId: "", participantType: "other", device: "", osName: "", osVersion: "", browserName: "", browserVersion: "", appVersion: "", distanceCm: null, orientation: "landscape", lighting: "", background: "", sleeves: "", speakerVolume: "",
     checkStatuses: {},
-    controlled: { airTap: emptyGesture(), ribbonSwipe: emptyGesture(), clapNearClap: emptyGesture() },
+    controlled: { airTap: emptyGesture(), ribbonSwipe: emptyGesture(), bloom: emptyGesture() },
     subjective: { syncRating: null, latencySense: "unsure", unclearMoments: "", ignoredMoments: "", memorableAction: "", retryIntent: "unsure", shoulderFatigue: null, wristFatigue: null, eyeFatigue: null, headFatigue: null, painOrDiscomfort: "" },
     decision: { p1: "pending", nextChange: "", reason: "", nextFixedConditions: "" },
     notes: "",

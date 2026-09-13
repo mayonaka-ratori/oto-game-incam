@@ -453,6 +453,12 @@ function reasonLabel(reason: string): string {
     "off-axis": "ガイドの帯から外れました",
     "wrong-direction": "指定と逆方向へ動きました",
     "candidate-timeout": "スワイプの移動時間が上限を超えました",
+    "bloom-not-outward": "両手を左右外向きへ開く動きになっていません",
+    "bloom-not-upward": "両手を斜め上へ開く動きになっていません",
+    "bloom-outward-distance-insufficient": "左右への開きが足りません",
+    "bloom-upward-distance-insufficient": "上向きの移動が足りません",
+    "bloom-sync-expired": "両手の開くタイミングが離れすぎています",
+    "movement-too-slow": "動きがゆっくりすぎます",
     "trial-timeout": `${P1_TRIAL_TIMEOUT_MS / 1_000}秒で未成立として記録しました`,
     "manual-skip": "未成立として次へ進みました",
     "identity-conflict": "手の識別が一時的に競合しました",
@@ -463,7 +469,8 @@ function gestureLabel(gesture: string | null | undefined): string {
   return {
     "air-tap": "エアタップ",
     "ribbon-swipe": "リボンスワイプ",
-    clap: "クラップ／ニアクラップ",
+    bloom: "Bloom",
+    clap: "旧クラップ",
   }[gesture ?? ""] ?? "—";
 }
 
@@ -491,7 +498,7 @@ function renderMotionSample(root: ParentNode, trial: P1TrialDefinition | null): 
     ? trial.airTapSide ?? "left"
     : trial.gesture === "ribbon-swipe"
       ? trial.swipeDirection ?? "left-to-right"
-      : trial.clapMode ?? "near-clap";
+      : "open-up";
   const caption = motionSampleCaption(trial);
   sample.dataset.gesture = trial.gesture;
   sample.dataset.variant = variant;
@@ -511,9 +518,7 @@ function motionSampleCaption(trial: P1TrialDefinition): string {
       "lower-right-to-upper-left": "片手を右下から左上へ、帯に沿って動かす",
     }[trial.swipeDirection ?? "left-to-right"];
   }
-  return trial.clapMode === "contact"
-    ? "離した両手を中央へ寄せ、手のひらをそっと合わせる"
-    : "離した両手を中央へ寄せ、光球を挟んで触れずに止める";
+  return "両手を中央寄りに構え、左右斜め上へ開いて花を咲かせる";
 }
 
 function resolutionLabel(resolution: string): string {

@@ -25,6 +25,21 @@ describe("P1 session comparison", () => {
     expect(session.findings).toEqual([]);
   });
 
+  it("accepts schema v4 only when Bloom is explicitly declared as the third input", () => {
+    const session = parseP1SessionForComparison(
+      JSON.stringify(p1Document({ schemaVersion: 4, thirdGesture: "bloom" })),
+      "bloom.json",
+    );
+
+    expect(session).toMatchObject({
+      schemaVersion: 4,
+      thirdGesture: "bloom",
+      dataComplete: true,
+      controlledCriterionCandidate: true,
+    });
+    expect(session.gestures.bloom.success).toBe(8);
+  });
+
   it("reports incomplete counts, outcome mismatch, duplicate trials, and privacy errors", () => {
     const document = p1Document() as MutableDocument;
     const airTap = document.summary.byGesture["air-tap"]!;
@@ -107,10 +122,28 @@ describe("P1 session comparison", () => {
       "legacy-schema",
     ]));
   });
+
+  it("does not combine legacy clap and current Bloom sessions", () => {
+    const legacy = parseP1SessionForComparison(JSON.stringify(p1Document()), "legacy-clap.json");
+    const bloom = parseP1SessionForComparison(
+      JSON.stringify(p1Document({ sessionId: "session-b", schemaVersion: 4, thirdGesture: "bloom" })),
+      "bloom.json",
+    );
+
+    const result = compareP1Sessions([legacy, bloom]);
+
+    expect(result.controlledCriterionCandidate).toBe(false);
+    expect(result.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "mixed-third-gestures" }),
+    ]));
+    expect(result.nextAction).toContain("旧clapと新Bloom");
+  });
 });
 
 interface P1DocumentOptions {
   readonly sessionId?: string;
+  readonly schemaVersion?: 2 | 3 | 4;
+  readonly thirdGesture?: "clap" | "bloom";
   readonly profileId?: string;
   readonly userAgent?: string;
   readonly trackingHz?: number;
@@ -118,6 +151,8 @@ interface P1DocumentOptions {
 }
 
 function p1Document(options: P1DocumentOptions = {}): unknown {
+  const schemaVersion = options.schemaVersion ?? 3;
+  const thirdGesture = options.thirdGesture ?? "clap";
   const gesture = {
     completed: 10,
     success: 8,
@@ -133,7 +168,8 @@ function p1Document(options: P1DocumentOptions = {}): unknown {
   };
   return {
     schema: "oto-motion-p1-controlled",
-    schemaVersion: 3,
+    schemaVersion,
+    ...(schemaVersion === 4 ? { gestureVocabulary: { thirdGesture: "bloom" } } : {}),
     createdAtIso: "2026-07-24T00:00:00.000Z",
     session: {
       sessionId: options.sessionId ?? "session-a",
@@ -164,7 +200,7 @@ function p1Document(options: P1DocumentOptions = {}): unknown {
               ? "air-tap"
               : index < 20
                 ? "ribbon-swipe"
-                : "clap",
+                : thirdGesture,
           },
           outcome: position < 8
             ? "success"
@@ -179,7 +215,7 @@ function p1Document(options: P1DocumentOptions = {}): unknown {
       byGesture: {
         "air-tap": { ...gesture },
         "ribbon-swipe": { ...gesture },
-        clap: { ...gesture },
+        [thirdGesture]: { ...gesture },
       },
       falseTriggers: 0,
       diagnosticReasonCounts: {},

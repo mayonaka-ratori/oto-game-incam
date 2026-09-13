@@ -1,9 +1,9 @@
 # Phase 1 試行進行・リボンスワイプ信頼性改善 実装計画
 
-- 更新日: 2026-08-01
+- 更新日: 2026-09-14
 - 文書種別: Phase 1 / Step 1.1の不具合分析・実装引き継ぎ計画
-- ステータス: **Android Chromeの修正後基準試験30件を完走・分析し、単体ジェスチャーの試行時間を30秒から10秒へ短縮**
-- 対象: P1-Controlledの試行進行、リボンスワイプ状態機械、実接触クラップの遮蔽推定、動作見本、診断表示、P1 JSON出力
+- ステータス: **30件の試行進行を維持し、第三入力を旧clapからBloomへ切り替えた。Bloomの状態機械・診断・schema v4を実装済み、実機再試験待ち**
+- 対象: P1-Controlledの試行進行、リボンスワイプ状態機械、Bloomの中央準備・両手開放、動作見本、診断表示、P1 JSON出力
 - 非対象: Phase 2 Interaction POC、90秒MVP、演出、ゲーム採点の作り込み
 
 この文書は実装順序と完了条件を記録する補助計画である。POCの分類・合否は[05_poc_test_protocol.md](./05_poc_test_protocol.md)、技術原則は[02_technical_strategy_and_plan.md](./02_technical_strategy_and_plan.md)、画面方針は[04_mvp_uiux_direction.md](./04_mvp_uiux_direction.md)を正本とする。実装時に仕様を確定する場合は、先に該当正本を更新する。
@@ -44,7 +44,7 @@
 - 最初の修正では、実機データを無視してスワイプ閾値を一括で緩めない。
 - 850ms、中心通過、軌跡長、横ずれ等は、状態遷移の不具合を直した後に一項目ずつ評価する。
 - Android Chromeだけへ特化せず、iPhone Safariでも同じ試行モデルを使える設計にする。
-- 既存P1 schema version 2とlandmark replay schema version 1の読み込み互換を残す。
+- 既存P1 schema version 2／3（旧clap）とlandmark replay schema version 1の読み込み互換を残す。現行出力はschema v4でBloomを明示する。
 - 通常のP1結果と詳細診断リプレイを分離しても、PCの実機確認レポートへ集計値を取り込めること。
 
 ### 2.4 実装完了条件
@@ -58,6 +58,7 @@
 - 通常のP1結果JSONに生映像・音声・全フレームリプレイを含めない。
 - 詳細リプレイは明示操作時だけ別ファイルとして保存できる。
 - lint、型検査、単体テスト、build、E2E、844×390相当の実表示確認が成功する。
+- 現行Bloomを含む30試行を実機で行い、8/10、同期感、短いgap継続、長いtracking-lostの分類を確認する。
 
 ## 3. 実機ログから確認できた事実
 
@@ -305,7 +306,7 @@ interface P1TrialDiagnosticRecord {
 }
 ```
 
-### 7.3 P1 session schema version 3
+### 7.3 P1 session schema version 4
 
 通常結果は次を含む。
 
@@ -317,7 +318,7 @@ interface P1TrialDiagnosticRecord {
 - privacy宣言
 - replayの有無と別ファイル名を示すmetadata
 
-通常結果には全frame配列を埋め込まない。既存version 2のP1 JSONは、実機確認レポートとリプレイ読込で引き続き受け付ける。
+通常結果には全frame配列を埋め込まない。現行version 4は`gestureVocabulary.thirdGesture = "bloom"`を持つ。既存version 2／3の旧clap P1 JSONは読み込めるが、Bloomとの比較へ混ぜない。
 
 ## 8. JSONサイズ改善
 
@@ -362,9 +363,9 @@ interface P1TrialDiagnosticRecord {
 | `src/poc/phase1-lab-controller.ts` | timer、skip、auto advance、visibility、cleanup |
 | `src/gestures/ribbon-swipe-state-machine.ts` | seeking/armed/traversing/gap状態 |
 | `src/gestures/gesture-types.ts` | 必要なreason code型 |
-| `src/poc/phase1-session.ts` | schema v3、replay分離、summary互換 |
+| `src/poc/phase1-session.ts` | schema v4、Bloom vocabulary、replay分離、旧summary互換 |
 | `src/replay/landmark-replay.ts` | schema v2、2Dのみ、trial window、v1互換parser |
-| `src/testing/device-checklist.ts` | P1 v2/v3のsummary取込互換 |
+| `src/testing/device-checklist.ts` | P1 v2/v3旧clap・v4 Bloomのsummary取込互換 |
 | `src/ui/lab-view.ts` | 残り時間、状態、最新理由、skip、別download |
 | `src/ui/styles.css` | 横画面で主要操作を1画面へ収める |
 | `tests/phase1-protocol.test.ts` | timeout/skip/二重finish防止 |
@@ -411,11 +412,11 @@ interface P1TrialDiagnosticRecord {
 
 ### Step E — export分離
 
-1. P1 session schema v3を作る。
+1. P1 session schema v4を作る。
 2. 標準結果からreplay framesを外す。
 3. optional diagnostic replay v2を作る。
 4. recorderをtrial window方式へ変更する。
-5. v2 P1 / v1 replay import互換をテストする。
+5. v2／v3旧clap P1、v4 Bloom、v1 replay import互換をテストする。
 6. 標準JSONと診断JSONのサイズをテストへ記録する。
 
 ### Step F — 全検証と実機再試験
@@ -440,7 +441,7 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 | RTL clean | 0.70→0.52→0.30 | 1 event |
 | start hold | 開始位置で1.5秒保持後に移動 | 保持中timeoutなし、移動でevent |
 | pre-target | targetより1秒以上前に動く | success/rejectionへ加算しない |
-| preparation state | target前にtap／clap／swipeする | cooldown／compressed／traversingをactiveへ持ち越さない |
+| preparation state | target前にtap／旧clap／Bloom／swipeする | cooldown／compressed／traversingをactiveへ持ち越さない |
 | boundary interpolation | window前sampleからwindow内frameで中心通過 | eventTimeがwindow外ならevent件数へ加算しない |
 | early target | target-300msで成立 | success、negative offset |
 | 8Hz | 125ms間隔の3〜5sample | event |
@@ -451,6 +452,21 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 | traverse timeout | 動作開始後850ms超 | candidate-timeoutを1回 |
 | center jump | 低Hzで中心を跨ぐ | eventTime補間 |
 | mirrored engine | raw x減少をpreview x増加へ変換 | 指示と同方向でevent |
+
+### 11.1.1 BloomStateMachine
+
+| Case | 入力 | 期待 |
+|---|---|---|
+| central preparation | 中央寄りの二手から左右斜め上へ開く | 1 Bloom event、`eventTime`補間 |
+| reverse order | 左右の終点到達順を入れ替える | 同期幅内なら1 event |
+| one hand | 一手だけ | eventなし |
+| inward / downward | 内向きまたは下向き | `bloom-not-outward`／`bloom-not-upward` |
+| insufficient distance | 外向き／上向きのどちらか不足 | 不足理由を固定長診断へ保存 |
+| sync expiry | 片手だけ先に閾値到達 | `bloom-sync-expired`を1回、rearm可能 |
+| short gap | 100〜150ms程度の追跡欠落 | candidate維持、復帰後に成立可能 |
+| long gap | 150ms超の欠落 | `tracking-lost`を1回、次の中央準備でrearm |
+| preparation carry | window前に開き切る | activeへ持ち越さない |
+| repeated frame | 成立後も終点を保持 | eventは1回、再成立には中央準備が必要 |
 
 ### 11.2 Phase1ControlledRunner / controller
 
@@ -469,12 +485,12 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 
 ### 11.3 Export / import
 
-- P1 v3標準結果にraw camera/audio/replay framesがない。
+- P1 v4標準結果にraw camera/audio/replay framesがなく、`gestureVocabulary`がBloomを明示する。
 - privacy宣言がfalse/falseのまま。
 - optional replay v2に2D landmarkとtrial windowだけがある。
 - P1 v2埋込replayを引き続き読める。
 - replay v1を引き続き読める。
-- P1 v2とv3のsummaryをPC実機確認フォームへ取り込める。
+- P1 v2／v3旧clapとv4 BloomのsummaryをPC実機確認フォームへ取り込める。
 - compact JSONを保存し、標準結果が数百KB以下である。
 
 ### 11.4 E2E
@@ -490,7 +506,7 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 
 ## 12. 実機再試験の記録欄
 
-実装後、条件を混ぜず端末ごとに記録する。
+実装後、条件を混ぜず端末ごとに記録する。以下の旧clap実機結果は歴史資料として保持し、現行P1／MVPのBloomの合否や成功率へ混ぜない。
 
 ### 修正後再試験の固定条件
 
@@ -501,16 +517,16 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 
 ### 自動検証・PC実表示
 
-- `npm run verify`: 成功。単体97件、lint、型検査、buildを含む
+- `npm run verify`: 成功。単体118件、lint、型検査、buildを含む
 - `npm run test:e2e`: Chromium 13件成功。skip、自動進行、30件すべてtimeoutでの完走、標準／診断JSON分離、実験profile固定、複数P1比較、試行に同期する動作見本を含む
 - 合成試験: 左→右／右→左、125ms間隔、150ms以内の欠落、長い開始位置保持、拒否後のrearm、target前非集計、negative offsetに成功
-- 実接触合成試験: 厳しい接触閾値へ到達する直前の短い遮蔽を`occlusion-predicted`の品質ラベルを保ったsuccessとして記録し、false triggerへ加えない
+- 旧clap互換合成試験: 厳しい接触閾値へ到達する直前の短い遮蔽を`occlusion-predicted`の品質ラベルを保ったsuccessとして記録し、false triggerへ加えない
 - 844×390実表示: 現在指示、手アイコンの動作見本、状態、残り時間、直近理由、skipが同時にviewport内。横スクロールなし
 - PC実表示: baselineと比較profileの目的、要求設定、未検証表示、P1セッション比較表と自動Passを行わない案内を確認
 - ブラウザconsole error: なし
 - 対象実機: iPhone Safariの修正前初回とAndroid Chromeの修正後基準セッションを実施・分析済み。修正後iPhone Safariを実施するまでP1-ControlledをPassにしない
 
-### Android Chrome
+### 12.1 旧clap実機セッションの履歴 — Android Chrome
 
 修正後セッションは`p1-20260801062942895`、build `0.1.0+src.9e5b7ebe2469`、profile `baseline-gpu-640x480-60`で実施した。30試行は完走したが、スワイプ中の`tracking-lost`が193件あり、10回中4回の成立に留まった。tracking Hzとframe ageが判断基準を満たさないため、判定幅より先に処理負荷を比較する。
 
@@ -530,7 +546,7 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 | 標準JSONサイズ | 28.5MB | 73,853 bytes |
 | 診断JSONサイズ | 同一ファイル | 8,675,390 bytes |
 
-### iPhone Safari
+### 12.2 旧clap実機セッションの履歴 — iPhone Safari
 
 初回セッションは`p1-20260725152222806`、build `0.1.0+src.1d69b12444dc`、profile `baseline-gpu-640x480-60`で実施した。JSON書き出し時だけ縦向きへ変更しており、試行中は横向きだった。
 
@@ -555,6 +571,10 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 
 実接触の22試行目で1回、23試行目で3回、厳しい接触閾値の直前まで収束した`occlusion-predicted`と直後の`burst`が記録されていた。修正前は実接触試行が`contact-like`だけを受け付けたため、4回の遮蔽推定クラップと4回の`burst`がfalse triggerへ入り、22・23試行目がtimeoutした。端末負荷は良好であり、ジェスチャー閾値やMediaPipe負荷より先に、実接触試行の遮蔽推定受理と動作説明を修正した。
 
+### 12.3 現行Bloomの実機再試験
+
+現行の実機出口は、旧clapの履歴とは別の新しいセッションで、air-tap／ribbon-swipe／Bloomを各10試行行うことである。Bloomについては中央準備、左右斜め上への開放、到達時刻の同期、短いgapの継続、長い追跡欠落の`tracking-lost`を記録する。現時点ではBloomの実機結果は未実施であり、旧clapの成功率をBloomの結果として扱わない。
+
 ## 13. 実装後の判断ルール
 
 1. 30試行が止まらず完走し、理由が記録できれば、試行進行の不具合は解消とする。
@@ -573,3 +593,12 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 - world landmarkが将来ジェスチャーで必要になった場合は、通常P1ではなく目的を限定した別計測として戻す。
 
 この未決事項は実装を止めるものではない。初回実装では本書の推奨初期値を使い、実機結果から一項目ずつ見直す。
+
+## 15. 第三入力の方向転換（2026-09-14）
+
+旧clapの実機分析は履歴として保持するが、現行P1の第三入力はBloomへ切り替えた。Bloomは中央寄りの二手準備から、左右それぞれ外側かつ斜め上へ開く。実接触・マイク・接触直前の遮蔽推定を成功条件へ含めない。
+
+- 現行30試行: air-tap 10、ribbon-swipe 10、Bloom 10。
+- Bloom診断: 0／1／2手フレーム数、準備時刻、外向き・上向き距離、閾値到達時刻、同期幅、短いgap、長いtracking-lost、拒否理由。
+- schema: 現行出力はv4、`gestureVocabulary.thirdGesture = "bloom"`を必須化。v2／v3旧clapは読み込むが、比較画面でBloomと混在させない。
+- 次の出口: 両端末でBloomを含む30試行を完走し、各3入力8/10以上、主観的な同期感、追跡喪失とプレイヤー操作の分類を確認する。

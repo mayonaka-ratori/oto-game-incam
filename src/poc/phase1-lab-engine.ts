@@ -1,4 +1,5 @@
 import { AirTapStateMachine } from "../gestures/air-tap-state-machine";
+import { BloomStateMachine } from "../gestures/bloom-state-machine";
 import { ClapBurstStateMachine } from "../gestures/clap-burst-state-machine";
 import type { GestureEvaluation, GestureEvent } from "../gestures/gesture-types";
 import { RibbonSwipeStateMachine } from "../gestures/ribbon-swipe-state-machine";
@@ -14,6 +15,7 @@ import type { HandTrackingFrame, TrackingProviderInfo } from "../tracking/tracki
 import type { TrackedHandFrame } from "../tracking/derived-tracking-types";
 import {
   Phase1ControlledRunner,
+  P1_CONTROLLED_TRIALS,
   eventMatchesTrial,
   type P1Outcome,
   type P1RunnerSnapshot,
@@ -27,7 +29,7 @@ import {
 } from "./phase1-session";
 import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapshot";
 
-type TrialMachine = AirTapStateMachine | RibbonSwipeStateMachine | ClapBurstStateMachine;
+type TrialMachine = AirTapStateMachine | BloomStateMachine | RibbonSwipeStateMachine | ClapBurstStateMachine;
 
 export interface Phase1LabSnapshot {
   readonly protocol: P1RunnerSnapshot;
@@ -50,7 +52,7 @@ export interface Phase1ReplayEvaluation {
 
 export class Phase1LabEngine {
   readonly #pipeline = new HandFeaturePipeline();
-  readonly #runner = new Phase1ControlledRunner();
+  readonly #runner: Phase1ControlledRunner;
   readonly #events: GestureEvent[] = [];
   readonly #diagnostics: P1TrialDiagnosticRecord[] = [];
   #session: LandmarkReplaySession | null = null;
@@ -60,6 +62,10 @@ export class Phase1LabEngine {
   #latestEvaluation: GestureEvaluation | null = null;
   #idConflictCount = 0;
   #rejectionCount = 0;
+
+  constructor(trials: readonly P1TrialDefinition[] = P1_CONTROLLED_TRIALS) {
+    this.#runner = new Phase1ControlledRunner(trials);
+  }
 
   startSession(
     sessionId: string,
@@ -146,6 +152,7 @@ export class Phase1LabEngine {
     }
     if (frame.captureTimeMs < timing.windowOpenedAtMs) {
       this.#latestEvaluation = this.#machine instanceof RibbonSwipeStateMachine
+        || this.#machine instanceof BloomStateMachine
         ? this.#machine.prepare(tracked)
         : null;
       return this.snapshot;
@@ -181,7 +188,11 @@ export class Phase1LabEngine {
     for (const event of evaluation.events) {
       if (event.eventTimeMs < timing.windowOpenedAtMs || event.eventTimeMs > timing.deadlineTimeMs) continue;
       this.#events.push(event);
-      if (this.#runner.acceptEvent(event, this.#currentContactClapDiagnostic())) {
+      if (this.#runner.acceptEvent(
+        event,
+        this.#currentContactClapDiagnostic(),
+        this.#currentBloomDiagnostic(),
+      )) {
         this.#machine = null;
         this.#finishReplayWindow();
         break;
@@ -200,6 +211,7 @@ export class Phase1LabEngine {
       reasonCodes,
       finishedAtMs,
       this.#currentContactClapDiagnostic(finishedAtMs),
+      this.#currentBloomDiagnostic(finishedAtMs),
     );
     if (finished) {
       this.#machine = null;
@@ -209,7 +221,11 @@ export class Phase1LabEngine {
   }
 
   skip(finishedAtMs = performance.now()): boolean {
-    const finished = this.#runner.skip(finishedAtMs, this.#currentContactClapDiagnostic(finishedAtMs));
+    const finished = this.#runner.skip(
+      finishedAtMs,
+      this.#currentContactClapDiagnostic(finishedAtMs),
+      this.#currentBloomDiagnostic(finishedAtMs),
+    );
     if (finished) {
       this.#machine = null;
       this.#finishReplayWindow();
@@ -218,7 +234,11 @@ export class Phase1LabEngine {
   }
 
   timeout(finishedAtMs = performance.now()): boolean {
-    const finished = this.#runner.timeout(finishedAtMs, this.#currentContactClapDiagnostic(finishedAtMs));
+    const finished = this.#runner.timeout(
+      finishedAtMs,
+      this.#currentContactClapDiagnostic(finishedAtMs),
+      this.#currentBloomDiagnostic(finishedAtMs),
+    );
     if (finished) {
       this.#machine = null;
       this.#finishReplayWindow();
@@ -294,6 +314,14 @@ export class Phase1LabEngine {
       ? this.#machine.diagnostic
       : this.#machine.diagnosticAt(finishedAtMs);
   }
+
+  #currentBloomDiagnostic(finishedAtMs?: number) {
+    const trial = this.#runner.snapshot.activeTrial;
+    if (trial?.gesture !== "bloom" || !(this.#machine instanceof BloomStateMachine)) return undefined;
+    return finishedAtMs === undefined
+      ? this.#machine.diagnostic
+      : this.#machine.diagnosticAt(finishedAtMs);
+  }
 }
 
 function createMachine(trial: P1TrialDefinition): TrialMachine {
@@ -305,6 +333,8 @@ function createMachine(trial: P1TrialDefinition): TrialMachine {
       });
     case "ribbon-swipe":
       return new RibbonSwipeStateMachine({ direction: trial.swipeDirection ?? "left-to-right" });
+    case "bloom":
+      return new BloomStateMachine();
     case "clap":
       return new ClapBurstStateMachine(trial.clapMode === "contact"
         ? { triggerDistance: 0.075, contactLikeDistance: 0.075 }

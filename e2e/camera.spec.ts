@@ -229,7 +229,7 @@ test("manages, exports, and resumes the device check as JSON", async ({ page }) 
     privacy: { includesCameraFrames: boolean };
     session: { testerId: string; device: string };
   };
-  expect(report.schemaVersion).toBe("2.1");
+  expect(report.schemaVersion).toBe("2.2");
   expect(report.progress).toMatchObject({ completed: 2, total: 25, issue: 1 });
   expect(report.session).toMatchObject({ testerId: "tester-a", device: "iPhone 15" });
   expect(report.privacy.includesCameraFrames).toBe(false);
@@ -266,13 +266,15 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
   const report = JSON.parse(await readFile(path!, "utf8")) as {
     schema: string;
     schemaVersion: number;
+    gestureVocabulary: { thirdGesture: string };
     privacy: { includesCameraFrames: boolean; includesAudio: boolean; includesReplayFrames: boolean };
     protocol: { completed: number; falseTriggers: unknown[]; results: Array<{ resolution: string }> };
     replay: { available: boolean; schemaVersion: number; frameCount: number };
     technicalSnapshot: { pageUrl: string; userAgent: string; viewport: string };
   };
   expect(report.schema).toBe("oto-motion-p1-controlled");
-  expect(report.schemaVersion).toBe(3);
+  expect(report.schemaVersion).toBe(4);
+  expect(report.gestureVocabulary).toEqual({ thirdGesture: "bloom" });
   expect(report.privacy).toEqual(expect.objectContaining({ includesCameraFrames: false, includesAudio: false }));
   expect(report.privacy.includesReplayFrames).toBe(false);
   expect(report.protocol.completed).toBe(1);
@@ -363,15 +365,12 @@ test("times out and auto-advances all 30 trials without double-finishing", async
           (element) => getComputedStyle(element).animationName,
         )).toBe("p1-swipe-sample");
       } else if (ordinal === 20) {
-        await expect(motionSample).toHaveAttribute("data-gesture", "clap");
-        await expect(motionSample).toHaveAttribute("data-variant", "contact");
-        await expect(page.locator("#p1-motion-caption")).toContainText("そっと合わせる");
+        await expect(motionSample).toHaveAttribute("data-gesture", "bloom");
+        await expect(motionSample).toHaveAttribute("data-variant", "open-up");
+        await expect(page.locator("#p1-motion-caption")).toContainText("花を咲かせる");
         await expect.poll(() => page.locator(".p1-motion-hand--left").evaluate(
           (element) => getComputedStyle(element).animationName,
-        )).toBe("p1-clap-left-sample");
-      } else if (ordinal === 25) {
-        await expect(motionSample).toHaveAttribute("data-variant", "near-clap");
-        await expect(page.locator("#p1-motion-caption")).toContainText("触れずに止める");
+        )).toBe("p1-bloom-left-sample");
       }
     }
   }

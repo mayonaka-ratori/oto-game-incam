@@ -582,7 +582,7 @@ const template = `
           </div>
           <span id="p1-progress" class="check-progress">0 / 30</span>
         </div>
-        <p class="check-intro">正本の順序で、エアタップ10回、リボンスワイプ10回、クラップ／ニアクラップ10回を記録します。この画面の結果だけで合格とは判定しません。</p>
+        <p class="check-intro">正本の順序で、エアタップ10回、リボンスワイプ10回、Bloom10回を記録します。この画面の結果だけで合格とは判定しません。</p>
 
         <div class="p1-grid">
           <article class="p1-card p1-audio-card">
@@ -742,11 +742,11 @@ const template = `
                 <tbody>
                   <tr><th>エアタップ</th><td><input name="airTapSuccess" type="number" min="0" max="10"></td><td><input name="airTapPlayerMiss" type="number" min="0" max="10"></td><td><input name="airTapMachineMiss" type="number" min="0" max="10"></td><td><input name="airTapFalseTrigger" type="number" min="0"></td><td><input name="airTapTrackingLoss" type="number" min="0" max="10"></td><td><input name="airTapUnclassified" type="number" min="0" max="10"></td><td><input name="airTapOffsetSummary" type="text" placeholder="p50 / p95"></td></tr>
                   <tr><th>リボンスワイプ</th><td><input name="ribbonSwipeSuccess" type="number" min="0" max="10"></td><td><input name="ribbonSwipePlayerMiss" type="number" min="0" max="10"></td><td><input name="ribbonSwipeMachineMiss" type="number" min="0" max="10"></td><td><input name="ribbonSwipeFalseTrigger" type="number" min="0"></td><td><input name="ribbonSwipeTrackingLoss" type="number" min="0" max="10"></td><td><input name="ribbonSwipeUnclassified" type="number" min="0" max="10"></td><td><input name="ribbonSwipeOffsetSummary" type="text" placeholder="p50 / p95"></td></tr>
-                  <tr><th>クラップ／ニアクラップ</th><td><input name="clapNearClapSuccess" type="number" min="0" max="10"></td><td><input name="clapNearClapPlayerMiss" type="number" min="0" max="10"></td><td><input name="clapNearClapMachineMiss" type="number" min="0" max="10"></td><td><input name="clapNearClapFalseTrigger" type="number" min="0"></td><td><input name="clapNearClapTrackingLoss" type="number" min="0" max="10"></td><td><input name="clapNearClapUnclassified" type="number" min="0" max="10"></td><td><input name="clapNearClapOffsetSummary" type="text" placeholder="p50 / p95"></td></tr>
+                  <tr><th>Bloom</th><td><input name="bloomSuccess" type="number" min="0" max="10"></td><td><input name="bloomPlayerMiss" type="number" min="0" max="10"></td><td><input name="bloomMachineMiss" type="number" min="0" max="10"></td><td><input name="bloomFalseTrigger" type="number" min="0"></td><td><input name="bloomTrackingLoss" type="number" min="0" max="10"></td><td><input name="bloomUnclassified" type="number" min="0" max="10"></td><td><input name="bloomOffsetSummary" type="text" placeholder="p50 / p95"></td></tr>
                 </tbody>
               </table>
             </div>
-            <p id="device-check-controlled-status" class="report-validation" role="status">エアタップ: 未入力 · リボンスワイプ: 未入力 · クラップ／ニアクラップ: 未入力</p>
+            <p id="device-check-controlled-status" class="report-validation" role="status">エアタップ: 未入力 · リボンスワイプ: 未入力 · Bloom: 未入力</p>
           </details>
 
           <details class="report-section">
@@ -772,7 +772,7 @@ const template = `
             <fieldset class="result-fields report-fields">
               <legend>合格を急がず、要改善なら次に変えるものを一つだけ記録します</legend>
               <label><span>P1制御試験</span><select name="p1Decision"><option value="pending">未判定</option><option value="pass">合格</option><option value="learn">要改善</option><option value="pivot">方針転換</option></select></label>
-              <label><span>次に変えるもの（一つ）</span><input name="nextChange" type="text" placeholder="例: clap triggerDistance"></label>
+              <label><span>次に変えるもの（一つ）</span><input name="nextChange" type="text" placeholder="例: Bloom minimumOutwardDistance"></label>
               <label class="field-wide"><span>判定・変更理由</span><textarea name="decisionReason" rows="3"></textarea></label>
               <label class="field-wide"><span>次セッションで固定する条件</span><textarea name="nextFixedConditions" rows="2"></textarea></label>
               <label class="field-wide"><span>補足メモ</span><textarea name="notes" rows="4" placeholder="問題の発生時刻、端末固有の挙動、再現手順など"></textarea></label>
@@ -795,7 +795,7 @@ const template = `
           </div>
           <span id="p1-comparison-status" class="check-progress" data-candidate="false">0セッション</span>
         </div>
-        <p class="check-intro">Android／iPhone等のP1結果JSONを追加し、30試行、分類合計、プライバシー設定、ビルド／プロファイル条件、技術値を比較します。8/10を満たしても、この画面だけで合格とは判定しません。</p>
+        <p class="check-intro">Android／iPhone等のP1結果JSONを追加し、30試行、3入力（air-tap／ribbon-swipe／Bloom）、分類合計、プライバシー設定、ビルド／プロファイル条件、技術値を比較します。旧clapセッションとBloomセッションは同じ合否条件へ混ぜません。</p>
         <div class="comparison-toolbar">
           <label class="button button--primary" for="p1-comparison-import">P1結果JSONを追加</label>
           <input id="p1-comparison-import" type="file" accept="application/json,.json" multiple hidden>
@@ -812,7 +812,7 @@ const template = `
                 <th>試行数</th>
                 <th>エアタップ</th>
                 <th>スワイプ</th>
-                <th>クラップ</th>
+                <th>第三入力</th>
                 <th>追跡出力</th>
                 <th>フレームの古さ</th>
                 <th>両手検出率</th>

@@ -63,7 +63,7 @@ describe("device check report", () => {
     expect(report.checks.some((item) => item.status === "pending")).toBe(true);
     expect(report.privacy).toEqual({ includesCameraFrames: false, includesAudio: false });
     expect(JSON.parse(JSON.stringify(report))).toMatchObject({
-      schemaVersion: "2.1",
+      schemaVersion: "2.2",
       reportType: "phase1-device-check",
       technicalSource: { mode: "current-device", sessionId: "session-1" },
     });
@@ -80,9 +80,22 @@ describe("device check report", () => {
     legacy.schemaVersion = "2.0";
     delete legacy.technicalSource;
     const parsed = parseDeviceCheckReport(JSON.stringify(legacy));
-    expect(parsed.schemaVersion).toBe("2.1");
+    expect(parsed.schemaVersion).toBe("2.2");
     expect(parsed.technicalSource).toMatchObject({ mode: "report-import", sessionId: "session-1" });
     expect(parsed.technical.userAgent).toBe("test-agent");
+  });
+
+  it("keeps an older clap result separate when reading a 2.1 report", () => {
+    const legacy = JSON.parse(JSON.stringify(createDeviceCheckReport(formValues({}), technical))) as Record<string, unknown>;
+    legacy.schemaVersion = "2.1";
+    const controlled = legacy.controlled as Record<string, unknown>;
+    controlled.clapNearClap = controlled.bloom;
+    delete controlled.bloom;
+
+    const parsed = parseDeviceCheckReport(JSON.stringify(legacy));
+
+    expect(parsed.controlled.bloom.success).toBeNull();
+    expect(parsed.controlled.legacyClapNearClap).toBeDefined();
   });
 
   it("migrates the previous boolean checklist", () => {
@@ -94,7 +107,7 @@ describe("device check report", () => {
       checks: [{ id: "privacy", completed: true }],
       technical,
     }));
-    expect(migrated.schemaVersion).toBe("2.1");
+    expect(migrated.schemaVersion).toBe("2.2");
     expect(migrated.checks.find(({ id }) => id === "privacy")?.status).toBe("pass");
   });
 });
@@ -126,7 +139,7 @@ function formValues(checkStatuses: Readonly<Record<string, "pending" | "pass" | 
     sleeves: "黒い長袖",
     speakerVolume: "8/16",
     checkStatuses,
-    controlled: { airTap: gesture(), ribbonSwipe: gesture(), clapNearClap: gesture() },
+    controlled: { airTap: gesture(), ribbonSwipe: gesture(), bloom: gesture() },
     subjective: {
       syncRating: null,
       latencySense: "unsure",

@@ -1,7 +1,8 @@
 import type { GestureEvent, RibbonSwipeDirection } from "../gestures/gesture-types";
 import type { ClapTrialDiagnostic } from "../gestures/clap-burst-state-machine";
+import type { BloomTrialDiagnostic } from "../gestures/bloom-state-machine";
 
-export type P1Gesture = "air-tap" | "ribbon-swipe" | "clap";
+export type P1Gesture = "air-tap" | "ribbon-swipe" | "bloom" | "clap";
 export const P1_TRIAL_TIMEOUT_MS = 10_000;
 export const P1_EARLY_WINDOW_MS = 500;
 
@@ -49,6 +50,7 @@ export interface P1TrialResult {
   readonly offsetMs: number | null;
   readonly reasonCodes: readonly string[];
   readonly clapDiagnostic?: ClapTrialDiagnostic;
+  readonly bloomDiagnostic?: BloomTrialDiagnostic;
 }
 
 export interface P1RunnerSnapshot {
@@ -63,6 +65,12 @@ export interface P1RunnerSnapshot {
 }
 
 export const P1_CONTROLLED_TRIALS: readonly P1TrialDefinition[] = buildTrials();
+
+/**
+ * Retained only for replaying and interpreting pre-Bloom P1 sessions.
+ * It is deliberately not part of the current 30-trial protocol.
+ */
+export const P1_LEGACY_CLAP_TRIALS: readonly P1TrialDefinition[] = buildLegacyClapTrials();
 
 export class Phase1ControlledRunner {
   readonly #trials: readonly P1TrialDefinition[];
@@ -104,7 +112,11 @@ export class Phase1ControlledRunner {
     return trial;
   }
 
-  acceptEvent(event: GestureEvent, clapDiagnostic?: ClapTrialDiagnostic): boolean {
+  acceptEvent(
+    event: GestureEvent,
+    clapDiagnostic?: ClapTrialDiagnostic,
+    bloomDiagnostic?: BloomTrialDiagnostic,
+  ): boolean {
     const trial = this.#activeTrial;
     const timing = this.#activeTiming;
     if (trial === null || timing === null) return false;
@@ -120,6 +132,7 @@ export class Phase1ControlledRunner {
       event.reasonCodes,
       event.eventTimeMs,
       clapDiagnostic,
+      bloomDiagnostic,
     );
   }
 
@@ -128,16 +141,49 @@ export class Phase1ControlledRunner {
     reasonCodes: readonly string[] = [],
     finishedAtMs = performance.now(),
     clapDiagnostic?: ClapTrialDiagnostic,
+    bloomDiagnostic?: BloomTrialDiagnostic,
   ): boolean {
-    return this.#finish(outcome, "manual-classification", null, reasonCodes, finishedAtMs, clapDiagnostic);
+    return this.#finish(
+      outcome,
+      "manual-classification",
+      null,
+      reasonCodes,
+      finishedAtMs,
+      clapDiagnostic,
+      bloomDiagnostic,
+    );
   }
 
-  skip(finishedAtMs = performance.now(), clapDiagnostic?: ClapTrialDiagnostic): boolean {
-    return this.#finish("unclassified", "manual-skip", null, ["manual-skip"], finishedAtMs, clapDiagnostic);
+  skip(
+    finishedAtMs = performance.now(),
+    clapDiagnostic?: ClapTrialDiagnostic,
+    bloomDiagnostic?: BloomTrialDiagnostic,
+  ): boolean {
+    return this.#finish(
+      "unclassified",
+      "manual-skip",
+      null,
+      ["manual-skip"],
+      finishedAtMs,
+      clapDiagnostic,
+      bloomDiagnostic,
+    );
   }
 
-  timeout(finishedAtMs = performance.now(), clapDiagnostic?: ClapTrialDiagnostic): boolean {
-    return this.#finish("unclassified", "trial-timeout", null, ["trial-timeout"], finishedAtMs, clapDiagnostic);
+  timeout(
+    finishedAtMs = performance.now(),
+    clapDiagnostic?: ClapTrialDiagnostic,
+    bloomDiagnostic?: BloomTrialDiagnostic,
+  ): boolean {
+    return this.#finish(
+      "unclassified",
+      "trial-timeout",
+      null,
+      ["trial-timeout"],
+      finishedAtMs,
+      clapDiagnostic,
+      bloomDiagnostic,
+    );
   }
 
   recordFalseTrigger(event: GestureEvent): void {
@@ -165,6 +211,7 @@ export class Phase1ControlledRunner {
     reasonCodes: readonly string[],
     finishedAtMs: number,
     clapDiagnostic?: ClapTrialDiagnostic,
+    bloomDiagnostic?: BloomTrialDiagnostic,
   ): boolean {
     const trial = this.#activeTrial;
     const timing = this.#activeTiming;
@@ -182,12 +229,29 @@ export class Phase1ControlledRunner {
       offsetMs,
       reasonCodes: [...reasonCodes],
       ...(clapDiagnostic === undefined ? {} : { clapDiagnostic: cloneClapDiagnostic(clapDiagnostic) }),
+      ...(bloomDiagnostic === undefined ? {} : { bloomDiagnostic: cloneBloomDiagnostic(bloomDiagnostic) }),
     });
     this.#activeTrial = null;
     this.#activeTiming = null;
     if (this.#results.length >= this.#trials.length) this.#state = "complete";
     return true;
   }
+}
+
+function cloneBloomDiagnostic(diagnostic: BloomTrialDiagnostic): BloomTrialDiagnostic {
+  return {
+    observationFrameCounts: { ...diagnostic.observationFrameCounts },
+    lastTwoHandObservedAtMs: diagnostic.lastTwoHandObservedAtMs,
+    armedAtMs: diagnostic.armedAtMs,
+    triggerTimeMs: diagnostic.triggerTimeMs,
+    maximumSyncSpreadMs: diagnostic.maximumSyncSpreadMs,
+    preparationSpan: diagnostic.preparationSpan,
+    hands: diagnostic.hands.map((hand) => ({ ...hand })),
+    latestTrackingGap: diagnostic.latestTrackingGap === null
+      ? null
+      : { ...diagnostic.latestTrackingGap, handIds: [...diagnostic.latestTrackingGap.handIds] },
+    rejectionReasonCodes: [...diagnostic.rejectionReasonCodes],
+  };
 }
 
 function cloneClapDiagnostic(diagnostic: ClapTrialDiagnostic): ClapTrialDiagnostic {
@@ -225,6 +289,7 @@ function cloneClapDiagnostic(diagnostic: ClapTrialDiagnostic): ClapTrialDiagnost
 }
 
 export function eventMatchesTrial(event: GestureEvent, trial: P1TrialDefinition): boolean {
+  if (trial.gesture === "bloom") return event.gestureType === "bloom";
   if (trial.gesture === "clap") {
     if (event.gestureType !== "clap") return false;
     return trial.clapMode === "contact"
@@ -265,18 +330,26 @@ function buildTrials(): readonly P1TrialDefinition[] {
     });
   }
   for (let index = 0; index < 10; index += 1) {
-    const mode = index < 5 ? "contact" : "near-clap";
     trials.push({
-      id: `clap-${index + 1}`,
+      id: `bloom-${index + 1}`,
       ordinal: trials.length + 1,
-      gesture: "clap",
-      clapMode: mode,
-      instruction: mode === "contact"
-        ? "両手を肩幅から中央へ寄せ、手のひらをそっと合わせる"
-        : "両手を中央へ寄せ、光球を挟んで触れずに止める",
+      gesture: "bloom",
+      instruction: "両手を中央寄りに構え、左右斜め上へ開いて花を咲かせる",
     });
   }
   return trials;
+}
+
+function buildLegacyClapTrials(): readonly P1TrialDefinition[] {
+  return Array.from({ length: 10 }, (_, index) => ({
+    id: `legacy-clap-${index + 1}`,
+    ordinal: index + 1,
+    gesture: "clap" as const,
+    clapMode: index < 5 ? "contact" as const : "near-clap" as const,
+    instruction: index < 5
+      ? "両手を中央へ寄せ、手のひらをそっと合わせる（旧クラップ）"
+      : "両手を中央へ寄せ、光球を挟んで止める（旧ニアクラップ）",
+  }));
 }
 
 export function swipeDirectionLabel(direction: RibbonSwipeDirection): string {

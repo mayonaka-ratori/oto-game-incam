@@ -1,13 +1,13 @@
 # プロジェクト資料ガイド
 
-- 更新日: 2026-08-01
+- 更新日: 2026-09-14
 - 現在のプロダクトフェーズ: **Phase 1 — Tracking & Latency Lab**
 - 現在の技術ステージ: **Technical Stage T0 — Measurement Lab**
 - 現在のステップ: **1.1 — TypeScript / Viteの最小Webアプリ、カメラ許可、計測画面を作る**
-- 実装先行状況: **Android Chromeの修正後基準セッション30試行を完走・分析した。スワイプは4/10で、tracking Hz 13.68、frame age p95 255.2ms、スワイプ中のtracking-lost 193件だった。1試行の時間切れを10秒へ短縮し、Androidの次回比較用`gpu-640x480-30`を画面の既定値にした**
-- 次の作業: **10秒・30fps既定版を実機へ反映し、Android Chromeで新しいsessionIdの30試行を行う。修正後iPhone Safariの基準セッションでは60fpsの基準プロファイルを手動で選ぶ。ジェスチャー閾値は同じセッション中に変更しない**
-- 次回の実接触clap確認: **標準結果JSONの試行別`clapDiagnostic`で、0手／1手／2手、遮蔽と再取得、距離・速度・ID競合、不成立理由を確認する。これだけでPhase 1 `Pass`とはしない**
-- 次の判断: Androidの処理負荷変更でtracking Hz 15以上、frame age p95 140ms以下へ近づき、スワイプのtracking-lostと成立待ちが減るか。10秒で準備と1回の動作を終えられない場合だけ13秒を別セッションで比較する
+- 実装先行状況: **air-tap／ribbon-swipeを維持し、第三入力を実接触前提の旧clapから、中央準備後に両手を左右斜め上へ開くBloomへ切り替えた。現行P1結果はschema v4で第三入力を明示し、旧v2／v3 clap結果は別語彙として読み込む**
+- 次の作業: **Bloom版はローカル実装、PC／E2E確認、公開版への反映まで完了している。次にiPhone Safari／Android Chromeで同じbuild・profile・閾値を固定し、Bloomを含む30試行を実施する。Bloomは10試行中8回以上を出発点とし、短い追跡欠落と長い追跡喪失を試行別診断で確認する**
+- 旧clap分析の扱い: **[`12_p1_session_analysis_20260913144422125.md`](./12_p1_session_analysis_20260913144422125.md)の実機分析は履歴として保持する。旧clapと新Bloomを同じ第三入力の合否へ混ぜない**
+- 次の判断: **Bloomの成立率・同期感・tracking-lostを実機で確認し、8/10未達なら閾値、画角、ガイド、状態機械のうち一項目だけを次セッションで変更する。追跡喪失はプレイヤーMISSへ分類しない**
 
 Codexで作業を継続する場合、リポジトリ直下の [`AGENTS.md`](../AGENTS.md) が自動引き継ぎの入口となる。Claude Codeでは [`CLAUDE.md`](../CLAUDE.md) が入口で、そこから `AGENTS.md` を取り込む。どちらも本書を読み、現在地と依頼に関係する正本だけを確認して作業を始める。
 
@@ -20,7 +20,7 @@ Codexで作業を継続する場合、リポジトリ直下の [`AGENTS.md`](../
 - 二手カーソルと開発用ランドマーク表示
 - latest-frame-onlyのカメラ／Worker経路
 - Web Audioクロックと追跡フレーム時刻の対応
-- エアタップ、リボンスワイプ、クラップ／ニアクラップの単体試験
+- エアタップ、リボンスワイプ、Bloomの単体試験（旧クラップ実装は互換読込・履歴用）
 - 端末・環境・誤認識・遅延感を残せる計測ログ
 
 実機確認できない期間に先行した実装と、未実施の実機項目は[Phase 1 AI先行実装結果](./10_phase1_ai_preparation_implementation.md)にまとめる。この実装済みという事実だけでP1-ControlledをPass扱いにはしない。

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AirTapStateMachine } from "../src/gestures/air-tap-state-machine";
+import { BloomStateMachine } from "../src/gestures/bloom-state-machine";
 import { ClapBurstStateMachine } from "../src/gestures/clap-burst-state-machine";
 import { GestureArbiter } from "../src/gestures/gesture-arbiter";
 import { RibbonSwipeStateMachine } from "../src/gestures/ribbon-swipe-state-machine";
@@ -121,6 +122,229 @@ describe("RibbonSwipeStateMachine", () => {
     const rejected = machine.process(trackedFrame(2_451, [trackedHand("a", 0.45, 0.5)]));
 
     expect(rejected.rejections).toEqual([expect.objectContaining({ reasonCodes: ["candidate-timeout"] })]);
+  });
+});
+
+describe("BloomStateMachine", () => {
+  it("opens from a central preparation with symmetric diagonal motion and interpolates event time", () => {
+    const machine = new BloomStateMachine();
+    machine.process(trackedFrame(0, [
+      trackedHand("left", 0.42, 0.56),
+      trackedHand("right", 0.58, 0.56),
+    ]));
+    machine.process(trackedFrame(100, [
+      trackedHand("right", 0.7, 0.48),
+      trackedHand("left", 0.3, 0.48),
+    ]));
+    const result = machine.process(trackedFrame(200, [
+      trackedHand("left", 0.24, 0.44),
+      trackedHand("right", 0.76, 0.44),
+    ]));
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      gestureType: "bloom",
+      handIds: ["left", "right"],
+      reasonCodes: ["bloom-opened"],
+      quality: {
+        outwardDistance: expect.closeTo(0.18, 8),
+        upwardDistance: expect.closeTo(0.12, 8),
+        preparationSpan: expect.closeTo(0.16, 8),
+      },
+    });
+    expect(result.events[0]?.eventTimeMs).toBeCloseTo(166.67, 1);
+  });
+
+  it("accepts the hands reaching the end point in reverse order within the sync window", () => {
+    const machine = new BloomStateMachine();
+    machine.process(trackedFrame(0, [
+      trackedHand("left", 0.42, 0.56),
+      trackedHand("right", 0.58, 0.56),
+    ]));
+    machine.process(trackedFrame(100, [
+      trackedHand("left", 0.3, 0.48),
+      trackedHand("right", 0.62, 0.52),
+    ]));
+    const result = machine.process(trackedFrame(250, [
+      trackedHand("right", 0.76, 0.44),
+      trackedHand("left", 0.24, 0.44),
+    ]));
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]?.quality.syncSpreadMs).toBeLessThan(420);
+  });
+
+  it("does not trigger with one hand only", () => {
+    const machine = new BloomStateMachine();
+    machine.process(trackedFrame(0, [trackedHand("left", 0.42, 0.56)]));
+    const result = machine.process(trackedFrame(200, [trackedHand("left", 0.2, 0.35)]));
+
+    expect(result.events).toHaveLength(0);
+    expect(result.rejections).toHaveLength(0);
+    expect(machine.diagnostic.observationFrameCounts).toEqual({ zeroHands: 0, oneHand: 2, twoHands: 0 });
+  });
+
+  it("rejects inward and downward motion with distinct reasons", () => {
+    const inward = new BloomStateMachine();
+    inward.process(trackedFrame(0, [
+      trackedHand("left", 0.42, 0.56),
+      trackedHand("right", 0.58, 0.56),
+    ]));
+    const inwardResult = inward.process(trackedFrame(100, [
+      trackedHand("left", 0.45, 0.54),
+      trackedHand("right", 0.68, 0.54),
+    ]));
+
+    const downward = new BloomStateMachine();
+    downward.process(trackedFrame(0, [
+      trackedHand("left", 0.42, 0.5),
+      trackedHand("right", 0.58, 0.5),
+    ]));
+    const downwardResult = downward.process(trackedFrame(100, [
+      trackedHand("left", 0.3, 0.56),
+      trackedHand("right", 0.7, 0.56),
+    ]));
+
+    expect(inwardResult.rejections).toEqual([expect.objectContaining({ reasonCodes: ["bloom-not-outward"] })]);
+    expect(downwardResult.rejections).toEqual([expect.objectContaining({ reasonCodes: ["bloom-not-upward"] })]);
+  });
+
+  it("reports insufficient distances when the armed pair times out", () => {
+    const machine = new BloomStateMachine();
+    machine.process(trackedFrame(0, [
+      trackedHand("left", 0.42, 0.56),
+      trackedHand("right", 0.58, 0.56),
+    ]));
+    const result = machine.process(trackedFrame(1_401, [
+      trackedHand("left", 0.45, 0.55),
+      trackedHand("right", 0.55, 0.55),
+    ]));
+
+    expect(result.rejections).toEqual([expect.objectContaining({
+      reasonCodes: ["bloom-outward-distance-insufficient", "bloom-upward-distance-insufficient"],
+    })]);
+  });
+
+  it("rejects a hand that reaches the threshold too far ahead of the other", () => {
+    const machine = new BloomStateMachine();
+    machine.process(trackedFrame(0, [
+      trackedHand("left", 0.42, 0.56),
+      trackedHand("right", 0.58, 0.56),
+    ]));
+    machine.process(trackedFrame(100, [
+      trackedHand("left", 0.24, 0.44),
+      trackedHand("right", 0.58, 0.56),
+    ]));
+    const result = machine.process(trackedFrame(600, [
+      trackedHand("left", 0.24, 0.44),
+      trackedHand("right", 0.76, 0.44),
+    ]));
+
+    expect(result.rejections).toEqual([expect.objectContaining({ reasonCodes: ["bloom-sync-expired"] })]);
+  });
+
+  it("continues through a short tracking gap", () => {
+    const machine = new BloomStateMachine();
+    machine.process(trackedFrame(0, [
+      trackedHand("left", 0.42, 0.56),
+      trackedHand("right", 0.58, 0.56),
+    ]));
+    machine.process(trackedFrame(100, [
+      trackedHand("left", 0.3, 0.48),
+      trackedHand("right", 0.7, 0.48),
+    ]));
+    const gap = machine.process(trackedFrame(200, []));
+    const result = machine.process(trackedFrame(225, [
+      trackedHand("left", 0.24, 0.44),
+      trackedHand("right", 0.76, 0.44),
+    ]));
+
+    expect(gap.rejections).toHaveLength(0);
+    expect(result.events).toHaveLength(1);
+    expect(machine.diagnostic.latestTrackingGap).toMatchObject({
+      startedAtMs: 200,
+      reacquiredAtMs: 225,
+      durationMs: 25,
+    });
+  });
+
+  it("emits one tracking-lost rejection after a long gap and can rearm", () => {
+    const machine = new BloomStateMachine();
+    machine.process(trackedFrame(0, [
+      trackedHand("left", 0.42, 0.56),
+      trackedHand("right", 0.58, 0.56),
+    ]));
+    machine.process(trackedFrame(100, [
+      trackedHand("left", 0.3, 0.48),
+      trackedHand("right", 0.7, 0.48),
+    ]));
+    const lost = machine.process(trackedFrame(251, []));
+    const stillLost = machine.process(trackedFrame(400, []));
+    machine.process(trackedFrame(500, [
+      trackedHand("left", 0.42, 0.56),
+      trackedHand("right", 0.58, 0.56),
+    ]));
+    const result = machine.process(trackedFrame(600, [
+      trackedHand("left", 0.24, 0.44),
+      trackedHand("right", 0.76, 0.44),
+    ]));
+
+    expect(lost.rejections).toEqual([expect.objectContaining({ reasonCodes: ["tracking-lost"] })]);
+    expect(stillLost.rejections).toHaveLength(0);
+    expect(result.events).toHaveLength(1);
+  });
+
+  it("does not carry preparation motion into the active recognition window", () => {
+    const machine = new BloomStateMachine();
+    machine.prepare(trackedFrame(0, [
+      trackedHand("left", 0.42, 0.56),
+      trackedHand("right", 0.58, 0.56),
+    ]));
+    machine.prepare(trackedFrame(100, [
+      trackedHand("left", 0.24, 0.44),
+      trackedHand("right", 0.76, 0.44),
+    ]));
+    expect(machine.process(trackedFrame(200, [
+      trackedHand("left", 0.24, 0.44),
+      trackedHand("right", 0.76, 0.44),
+    ])).events).toHaveLength(0);
+
+    machine.process(trackedFrame(300, [
+      trackedHand("left", 0.42, 0.56),
+      trackedHand("right", 0.58, 0.56),
+    ]));
+    const result = machine.process(trackedFrame(400, [
+      trackedHand("left", 0.24, 0.44),
+      trackedHand("right", 0.76, 0.44),
+    ]));
+    expect(result.events).toHaveLength(1);
+  });
+
+  it("requires a new central preparation before a second event", () => {
+    const machine = new BloomStateMachine();
+    machine.process(trackedFrame(0, [
+      trackedHand("left", 0.42, 0.56),
+      trackedHand("right", 0.58, 0.56),
+    ]));
+    const first = machine.process(trackedFrame(100, [
+      trackedHand("left", 0.24, 0.44),
+      trackedHand("right", 0.76, 0.44),
+    ]));
+    const held = machine.process(trackedFrame(200, [
+      trackedHand("left", 0.24, 0.44),
+      trackedHand("right", 0.76, 0.44),
+    ]));
+
+    expect(first.events).toHaveLength(1);
+    expect(held.events).toHaveLength(0);
+    machine.process(trackedFrame(500, [
+      trackedHand("left", 0.42, 0.56),
+      trackedHand("right", 0.58, 0.56),
+    ]));
+    expect(machine.process(trackedFrame(600, [
+      trackedHand("left", 0.24, 0.44),
+      trackedHand("right", 0.76, 0.44),
+    ])).events).toHaveLength(1);
   });
 });
 

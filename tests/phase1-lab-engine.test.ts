@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Phase1LabEngine } from "../src/poc/phase1-lab-engine";
+import { P1_CONTROLLED_TRIALS, P1_LEGACY_CLAP_TRIALS } from "../src/poc/phase1-protocol";
 import { LandmarkReplayRecorder } from "../src/replay/landmark-replay";
 import { syntheticHand, trackingFrame } from "./helpers/tracking-fixtures";
 
@@ -57,12 +58,45 @@ describe("Phase1LabEngine", () => {
       trackingError: null,
     });
     expect(document.protocol.results[0]?.outcome).toBe("success");
-    expect(document.schemaVersion).toBe(3);
+    expect(document.schemaVersion).toBe(4);
+    expect(document.gestureVocabulary).toEqual({ thirdGesture: "bloom" });
     expect(document.replay).toMatchObject({ available: true, schemaVersion: 2 });
     expect(JSON.stringify(document)).not.toContain('"frames"');
     expect(engine.createDiagnosticReplay().frames).toHaveLength(2);
     expect(document.privacy.includesCameraFrames).toBe(false);
     expect(document.technicalSnapshot.userAgent).toBe("smartphone-test-agent");
+  });
+
+  it("recognizes the current Bloom trial and stores its independent diagnostic", () => {
+    const engine = new Phase1LabEngine();
+    engine.startSession("bloom", null);
+    for (let index = 0; index < 20; index += 1) {
+      engine.beginNextTrial(null, index);
+      engine.recordOutcome("unclassified", [], index);
+    }
+    engine.beginNextTrial(null, 0);
+    engine.processFrame(trackingFrame(1, 0, [
+      syntheticHand(0, "left", 0.58, 0.56),
+      syntheticHand(1, "right", 0.42, 0.56),
+    ]));
+    engine.processFrame(trackingFrame(2, 100, [
+      syntheticHand(0, "left", 0.7, 0.48),
+      syntheticHand(1, "right", 0.3, 0.48),
+    ]));
+    engine.processFrame(trackingFrame(3, 200, [
+      syntheticHand(0, "left", 0.76, 0.44),
+      syntheticHand(1, "right", 0.24, 0.44),
+    ]));
+
+    expect(engine.snapshot.protocol.results.at(-1)).toMatchObject({
+      outcome: "success",
+      trial: { gesture: "bloom" },
+      event: { gestureType: "bloom", reasonCodes: ["bloom-opened"] },
+      bloomDiagnostic: {
+        observationFrameCounts: { twoHands: 3 },
+        triggerTimeMs: expect.any(Number),
+      },
+    });
   });
 
   it("does not count events or rejections before the recognition window", () => {
@@ -179,7 +213,7 @@ describe("Phase1LabEngine", () => {
   });
 
   it("waits for the contact threshold in a contact-clap trial", () => {
-    const engine = new Phase1LabEngine();
+    const engine = new Phase1LabEngine(legacyClapTrials());
     engine.startSession("contact", null);
     for (let index = 0; index < 20; index += 1) {
       engine.beginNextTrial(null);
@@ -211,7 +245,7 @@ describe("Phase1LabEngine", () => {
   });
 
   it("accepts a short contact-trial occlusion as inferred contact", () => {
-    const engine = new Phase1LabEngine();
+    const engine = new Phase1LabEngine(legacyClapTrials());
     engine.startSession("contact-occlusion", null);
     for (let index = 0; index < 20; index += 1) {
       engine.beginNextTrial(null);
@@ -249,7 +283,7 @@ describe("Phase1LabEngine", () => {
   });
 
   it("exports failed contact prediction reasons on a timed-out contact trial", () => {
-    const engine = new Phase1LabEngine();
+    const engine = new Phase1LabEngine(legacyClapTrials());
     engine.startSession("contact-timeout", null);
     for (let index = 0; index < 20; index += 1) {
       engine.beginNextTrial(null);
@@ -280,7 +314,7 @@ describe("Phase1LabEngine", () => {
   });
 
   it("finalizes an open contact occlusion at timeout when no more frames arrive", () => {
-    const engine = new Phase1LabEngine();
+    const engine = new Phase1LabEngine(legacyClapTrials());
     engine.startSession("contact-open-gap-timeout", null);
     for (let index = 0; index < 20; index += 1) {
       engine.beginNextTrial(null);
@@ -307,3 +341,10 @@ describe("Phase1LabEngine", () => {
       .toContain("occlusion-grace-expired");
   });
 });
+
+function legacyClapTrials() {
+  return [
+    ...P1_CONTROLLED_TRIALS.slice(0, 20),
+    ...P1_LEGACY_CLAP_TRIALS.map((trial, index) => ({ ...trial, ordinal: index + 21 })),
+  ];
+}

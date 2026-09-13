@@ -25,8 +25,11 @@ export interface P1TrialDiagnosticRecord {
 
 export interface Phase1SessionDocument {
   readonly schema: "oto-motion-p1-controlled";
-  readonly schemaVersion: 3;
+  readonly schemaVersion: 4;
   readonly createdAtIso: string;
+  readonly gestureVocabulary: {
+    readonly thirdGesture: "bloom";
+  };
   readonly session: LandmarkReplaySession;
   readonly privacy: {
     readonly includesCameraFrames: false;
@@ -65,7 +68,12 @@ export interface Phase1GestureSummary {
 }
 
 export interface Phase1ProtocolSummary {
-  readonly byGesture: Readonly<Record<P1Gesture, Phase1GestureSummary>>;
+  readonly byGesture: Readonly<{
+    "air-tap": Phase1GestureSummary;
+    "ribbon-swipe": Phase1GestureSummary;
+    bloom: Phase1GestureSummary;
+    clap?: Phase1GestureSummary;
+  }>;
   readonly falseTriggers: number;
   readonly diagnosticReasonCounts: Readonly<Record<string, number>>;
 }
@@ -83,8 +91,9 @@ export function createPhase1SessionDocument(
   const suggestedFilename = `${session.sessionId}-diagnostic-replay.json`;
   return {
     schema: "oto-motion-p1-controlled",
-    schemaVersion: 3,
+    schemaVersion: 4,
     createdAtIso: now.toISOString(),
+    gestureVocabulary: { thirdGesture: "bloom" },
     session: { ...session, provider: session.provider === null ? null : { ...session.provider } },
     privacy: {
       includesCameraFrames: false,
@@ -121,7 +130,10 @@ export function summarizeProtocol(
     byGesture: {
       "air-tap": summarizeGesture(protocol, "air-tap"),
       "ribbon-swipe": summarizeGesture(protocol, "ribbon-swipe"),
-      clap: summarizeGesture(protocol, "clap"),
+      bloom: summarizeGesture(protocol, "bloom"),
+      ...(protocol.results.some((result) => result.trial.gesture === "clap")
+        ? { clap: summarizeGesture(protocol, "clap") }
+        : {}),
     },
     falseTriggers: protocol.falseTriggers.length,
     diagnosticReasonCounts: countReasons(diagnostics),

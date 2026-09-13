@@ -526,58 +526,55 @@ summary:focus-visible {
   animation: p1-swipe-sample 1.8s ease-in-out infinite;
 }
 
-.p1-motion-sample[data-gesture="clap"] {
-  --clap-left-end: 46%;
-  --clap-right-end: 54%;
+.p1-motion-sample[data-gesture="bloom"] {
+  --bloom-end-y: 20%;
+  --bloom-left-end: 15%;
+  --bloom-right-end: 85%;
 }
 
-.p1-motion-sample[data-gesture="clap"][data-variant="near-clap"] {
-  --clap-left-end: 38%;
-  --clap-right-end: 62%;
-}
-
-.p1-motion-sample[data-gesture="clap"] .p1-motion-path {
-  top: 50%;
-  left: 15%;
-  width: 70%;
+.p1-motion-sample[data-gesture="bloom"] .p1-motion-path {
+  top: 56%;
+  left: 50%;
+  width: 30%;
+  border-top: 0;
   opacity: 1;
 }
 
-.p1-motion-sample[data-gesture="clap"] .p1-motion-path::before,
-.p1-motion-sample[data-gesture="clap"] .p1-motion-path::after {
+.p1-motion-sample[data-gesture="bloom"] .p1-motion-path::before,
+.p1-motion-sample[data-gesture="bloom"] .p1-motion-path::after {
   position: absolute;
-  top: -1.1rem;
-  color: rgba(220, 233, 231, 0.28);
-  font-size: 1.8rem;
-  content: "✋";
+  left: 0;
+  width: 100%;
+  border-top: 2px dashed rgba(98, 242, 220, 0.56);
+  content: "";
+  transform-origin: left center;
 }
 
-.p1-motion-sample[data-gesture="clap"] .p1-motion-path::before {
-  left: -1.1rem;
+.p1-motion-sample[data-gesture="bloom"] .p1-motion-path::before {
+  transform: rotate(-34deg);
 }
 
-.p1-motion-sample[data-gesture="clap"] .p1-motion-path::after {
-  right: -1.1rem;
-  transform: scaleX(-1);
+.p1-motion-sample[data-gesture="bloom"] .p1-motion-path::after {
+  transform: rotate(-146deg);
 }
 
-.p1-motion-sample[data-gesture="clap"] .p1-motion-hand--left,
-.p1-motion-sample[data-gesture="clap"] .p1-motion-hand--right {
-  top: 50%;
+.p1-motion-sample[data-gesture="bloom"] .p1-motion-hand--left,
+.p1-motion-sample[data-gesture="bloom"] .p1-motion-hand--right {
+  top: 58%;
   opacity: 1;
 }
 
-.p1-motion-sample[data-gesture="clap"] .p1-motion-hand--left {
-  left: 15%;
-  animation: p1-clap-left-sample 1.8s ease-in-out infinite;
+.p1-motion-sample[data-gesture="bloom"] .p1-motion-hand--left {
+  left: 46%;
+  animation: p1-bloom-left-sample 1.8s ease-in-out infinite;
 }
 
-.p1-motion-sample[data-gesture="clap"] .p1-motion-hand--right {
-  left: 85%;
-  animation: p1-clap-right-sample 1.8s ease-in-out infinite;
+.p1-motion-sample[data-gesture="bloom"] .p1-motion-hand--right {
+  left: 54%;
+  animation: p1-bloom-right-sample 1.8s ease-in-out infinite;
 }
 
-.p1-motion-sample[data-gesture="clap"][data-variant="near-clap"] .p1-motion-orb {
+.p1-motion-sample[data-gesture="bloom"] .p1-motion-orb {
   width: 24px;
   height: 24px;
   border: 2px solid var(--cyan);
@@ -585,15 +582,6 @@ summary:focus-visible {
   box-shadow: 0 0 18px rgba(98, 242, 220, 0.52);
   opacity: 1;
   animation: p1-orb-pulse 1.8s ease-in-out infinite;
-}
-
-.p1-motion-sample[data-gesture="clap"][data-variant="contact"] .p1-motion-contact {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--warning);
-  border-radius: 50%;
-  opacity: 1;
-  animation: p1-contact-flash 1.8s ease-in-out infinite;
 }
 
 @keyframes p1-air-tap-sample {
@@ -646,40 +634,43 @@ summary:focus-visible {
   }
 }
 
-@keyframes p1-clap-left-sample {
+@keyframes p1-bloom-left-sample {
   0%,
   18% {
-    left: 15%;
+    top: 58%;
+    left: 46%;
     opacity: 0.45;
   }
   62%,
   82% {
-    left: var(--clap-left-end);
+    top: 20%;
+    left: 15%;
     opacity: 1;
   }
   100% {
-    left: 15%;
+    top: 58%;
+    left: 46%;
     opacity: 0.25;
   }
 }
 
-@keyframes p1-clap-right-sample {
+@keyframes p1-bloom-right-sample {
   0%,
   18% {
-    left: 85%;
+    top: 58%;
+    left: 54%;
     opacity: 0.45;
-    transform: translate(-50%, -50%) scaleX(-1);
   }
   62%,
   82% {
-    left: var(--clap-right-end);
+    top: 20%;
+    left: 85%;
     opacity: 1;
-    transform: translate(-50%, -50%) scaleX(-1);
   }
   100% {
-    left: 85%;
+    top: 58%;
+    left: 54%;
     opacity: 0.25;
-    transform: translate(-50%, -50%) scaleX(-1);
   }
 }
 
@@ -2357,18 +2348,14 @@ details[open] summary {
     left: var(--swipe-end-x);
   }
 
-  .p1-motion-sample[data-gesture="clap"] .p1-motion-hand--left {
-    left: var(--clap-left-end);
+  .p1-motion-sample[data-gesture="bloom"] .p1-motion-hand--left {
+    top: var(--bloom-end-y);
+    left: var(--bloom-left-end);
   }
 
-  .p1-motion-sample[data-gesture="clap"] .p1-motion-hand--right {
-    left: var(--clap-right-end);
+  .p1-motion-sample[data-gesture="bloom"] .p1-motion-hand--right {
+    top: var(--bloom-end-y);
+    left: var(--bloom-right-end);
     transform: translate(-50%, -50%) scaleX(-1);
-  }
-
-  .p1-motion-sample[data-gesture="clap"][data-variant="contact"] .p1-motion-contact {
-    box-shadow: 0 0 18px rgba(255, 197, 109, 0.65);
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
   }
 }

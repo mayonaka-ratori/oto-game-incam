@@ -1,10 +1,11 @@
 import type { TrackedHandFrame } from "../tracking/derived-tracking-types";
 
-export type GestureType = "air-tap" | "ribbon-swipe" | "clap" | "burst";
+export type GestureType = "air-tap" | "ribbon-swipe" | "bloom" | "clap" | "burst";
 
 export type GestureReasonCode =
   | "target-crossed"
   | "center-crossed"
+  | "bloom-opened"
   | "near-clap-distance"
   | "contact-like-distance"
   | "occlusion-predicted"
@@ -14,6 +15,11 @@ export type GestureReasonCode =
   | "wrong-direction"
   | "off-axis"
   | "candidate-timeout"
+  | "bloom-not-outward"
+  | "bloom-not-upward"
+  | "bloom-outward-distance-insufficient"
+  | "bloom-upward-distance-insufficient"
+  | "bloom-sync-expired"
   | "tracking-lost"
   | "manual-observation";
 
@@ -22,6 +28,10 @@ export interface GestureQuality {
   readonly pathDistance?: number;
   readonly perpendicularError?: number;
   readonly minimumHandDistance?: number;
+  readonly outwardDistance?: number;
+  readonly upwardDistance?: number;
+  readonly syncSpreadMs?: number;
+  readonly preparationSpan?: number;
   readonly direction?: RibbonSwipeDirection;
   readonly clapKind?: "contact-like" | "near-clap" | "occlusion-predicted";
 }
