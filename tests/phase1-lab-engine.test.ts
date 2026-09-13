@@ -201,6 +201,12 @@ describe("Phase1LabEngine", () => {
       syntheticHand(1, "right", 0.535),
     ]));
     expect(engine.snapshot.protocol.results.at(-1)?.event?.quality.clapKind).toBe("contact-like");
+    expect(engine.snapshot.protocol.results.at(-1)?.clapDiagnostic).toMatchObject({
+      observationFrameCounts: { zeroHands: 0, oneHand: 0, twoHands: 3 },
+      triggerDistanceReachedAtMs: expect.closeTo(118.88888888888889, 8),
+      contactLikeDistanceReachedAtMs: expect.closeTo(118.88888888888889, 8),
+      minimumPalmDistance: { atMs: 120 },
+    });
     expect(engine.snapshot.protocol.completed).toBe(21);
   });
 
@@ -235,5 +241,69 @@ describe("Phase1LabEngine", () => {
     });
     expect(engine.snapshot.protocol.falseTriggers).toEqual([]);
     expect(engine.snapshot.protocol.completed).toBe(21);
+    expect(engine.snapshot.protocol.results.at(-1)?.clapDiagnostic).toMatchObject({
+      observationFrameCounts: { zeroHands: 0, oneHand: 1, twoHands: 2 },
+      occlusionPrediction: { status: "succeeded", reasonCodes: ["occlusion-predicted"] },
+      latestOcclusion: { startedAtMs: 125, lastTwoHandObservedAtMs: 100 },
+    });
+  });
+
+  it("exports failed contact prediction reasons on a timed-out contact trial", () => {
+    const engine = new Phase1LabEngine();
+    engine.startSession("contact-timeout", null);
+    for (let index = 0; index < 20; index += 1) {
+      engine.beginNextTrial(null);
+      engine.recordOutcome("unclassified");
+    }
+    engine.beginNextTrial(null);
+    engine.processFrame(trackingFrame(1, 0, [
+      syntheticHand(0, "left", 0.2),
+      syntheticHand(1, "right", 0.8),
+    ]));
+    engine.processFrame(trackingFrame(2, 100, [
+      syntheticHand(0, "left", 0.375),
+      syntheticHand(1, "right", 0.625),
+    ]));
+    engine.processFrame(trackingFrame(3, 200, [syntheticHand(0, "left", 0.375)]));
+    engine.processFrame(trackingFrame(4, 300, []));
+    expect(engine.timeout(400)).toBe(true);
+
+    expect(engine.snapshot.protocol.results.at(-1)?.clapDiagnostic).toMatchObject({
+      occlusionPrediction: { status: "failed" },
+      latestOcclusion: {
+        startedAtMs: 200,
+        lastTwoHandObservedAtMs: 100,
+        reacquiredAtMs: null,
+      },
+    });
+    expect(engine.snapshot.protocol.results.at(-1)?.outcome).toBe("unclassified");
+  });
+
+  it("finalizes an open contact occlusion at timeout when no more frames arrive", () => {
+    const engine = new Phase1LabEngine();
+    engine.startSession("contact-open-gap-timeout", null);
+    for (let index = 0; index < 20; index += 1) {
+      engine.beginNextTrial(null);
+      engine.recordOutcome("unclassified");
+    }
+    engine.beginNextTrial(null);
+    engine.processFrame(trackingFrame(1, 0, [
+      syntheticHand(0, "left", 0.2),
+      syntheticHand(1, "right", 0.8),
+    ]));
+    engine.processFrame(trackingFrame(2, 100, [syntheticHand(0, "left", 0.2)]));
+
+    expect(engine.timeout(400)).toBe(true);
+    expect(engine.snapshot.protocol.results.at(-1)?.clapDiagnostic).toMatchObject({
+      observationFrameCounts: { zeroHands: 0, oneHand: 1, twoHands: 1 },
+      latestOcclusion: {
+        startedAtMs: 100,
+        reacquiredAtMs: null,
+        durationMs: 300,
+      },
+      occlusionPrediction: { status: "failed" },
+    });
+    expect(engine.snapshot.protocol.results.at(-1)?.clapDiagnostic?.occlusionPrediction.reasonCodes)
+      .toContain("occlusion-grace-expired");
   });
 });

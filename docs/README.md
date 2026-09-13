@@ -6,6 +6,7 @@
 - 現在のステップ: **1.1 — TypeScript / Viteの最小Webアプリ、カメラ許可、計測画面を作る**
 - 実装先行状況: **Android Chromeの修正後基準セッション30試行を完走・分析した。スワイプは4/10で、tracking Hz 13.68、frame age p95 255.2ms、スワイプ中のtracking-lost 193件だった。1試行の時間切れを10秒へ短縮し、Androidの次回比較用`gpu-640x480-30`を画面の既定値にした**
 - 次の作業: **10秒・30fps既定版を実機へ反映し、Android Chromeで新しいsessionIdの30試行を行う。修正後iPhone Safariの基準セッションでは60fpsの基準プロファイルを手動で選ぶ。ジェスチャー閾値は同じセッション中に変更しない**
+- 次回の実接触clap確認: **標準結果JSONの試行別`clapDiagnostic`で、0手／1手／2手、遮蔽と再取得、距離・速度・ID競合、不成立理由を確認する。これだけでPhase 1 `Pass`とはしない**
 - 次の判断: Androidの処理負荷変更でtracking Hz 15以上、frame age p95 140ms以下へ近づき、スワイプのtracking-lostと成立待ちが減るか。10秒で準備と1回の動作を終えられない場合だけ13秒を別セッションで比較する
 
 Codexで作業を継続する場合、リポジトリ直下の [`AGENTS.md`](../AGENTS.md) が自動引き継ぎの入口となる。Claude Codeでは [`CLAUDE.md`](../CLAUDE.md) が入口で、そこから `AGENTS.md` を取り込む。どちらも本書を読み、現在地と依頼に関係する正本だけを確認して作業を始める。
@@ -25,6 +26,8 @@ Codexで作業を継続する場合、リポジトリ直下の [`AGENTS.md`](../
 実機確認できない期間に先行した実装と、未実施の実機項目は[Phase 1 AI先行実装結果](./10_phase1_ai_preparation_implementation.md)にまとめる。この実装済みという事実だけでP1-ControlledをPass扱いにはしない。
 
 現在の最優先再試験は[Phase 1 試行進行・リボンスワイプ信頼性改善 実装計画](./11_phase1_trial_progression_and_swipe_reliability_plan.md)を正とする。実機途中結果、原因分析、実装内容、schema方針、テスト、再試験記録欄を同文書へ集約している。
+
+最新のiPhone Safari実機セッションの分析と改善プランは、[P1-Controlled 実機セッション分析](./12_p1_session_analysis_20260913144422125.md)に記録している。
 
 現在の出口条件:
 

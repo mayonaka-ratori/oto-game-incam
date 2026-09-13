@@ -181,7 +181,7 @@ export class Phase1LabEngine {
     for (const event of evaluation.events) {
       if (event.eventTimeMs < timing.windowOpenedAtMs || event.eventTimeMs > timing.deadlineTimeMs) continue;
       this.#events.push(event);
-      if (this.#runner.acceptEvent(event)) {
+      if (this.#runner.acceptEvent(event, this.#currentContactClapDiagnostic())) {
         this.#machine = null;
         this.#finishReplayWindow();
         break;
@@ -195,7 +195,12 @@ export class Phase1LabEngine {
     reasonCodes: readonly string[] = [],
     finishedAtMs = performance.now(),
   ): boolean {
-    const finished = this.#runner.recordOutcome(outcome, reasonCodes, finishedAtMs);
+    const finished = this.#runner.recordOutcome(
+      outcome,
+      reasonCodes,
+      finishedAtMs,
+      this.#currentContactClapDiagnostic(finishedAtMs),
+    );
     if (finished) {
       this.#machine = null;
       this.#finishReplayWindow();
@@ -204,7 +209,7 @@ export class Phase1LabEngine {
   }
 
   skip(finishedAtMs = performance.now()): boolean {
-    const finished = this.#runner.skip(finishedAtMs);
+    const finished = this.#runner.skip(finishedAtMs, this.#currentContactClapDiagnostic(finishedAtMs));
     if (finished) {
       this.#machine = null;
       this.#finishReplayWindow();
@@ -213,7 +218,7 @@ export class Phase1LabEngine {
   }
 
   timeout(finishedAtMs = performance.now()): boolean {
-    const finished = this.#runner.timeout(finishedAtMs);
+    const finished = this.#runner.timeout(finishedAtMs, this.#currentContactClapDiagnostic(finishedAtMs));
     if (finished) {
       this.#machine = null;
       this.#finishReplayWindow();
@@ -276,6 +281,18 @@ export class Phase1LabEngine {
       resolution: result.resolution,
       finishedAtMs: result.timing.finishedAtMs,
     });
+  }
+
+  #currentContactClapDiagnostic(finishedAtMs?: number) {
+    const trial = this.#runner.snapshot.activeTrial;
+    if (trial?.gesture !== "clap"
+      || trial.clapMode !== "contact"
+      || !(this.#machine instanceof ClapBurstStateMachine)) {
+      return undefined;
+    }
+    return finishedAtMs === undefined
+      ? this.#machine.diagnostic
+      : this.#machine.diagnosticAt(finishedAtMs);
   }
 }
 

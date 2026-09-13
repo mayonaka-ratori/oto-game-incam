@@ -1,4 +1,5 @@
 import type { GestureEvent, RibbonSwipeDirection } from "../gestures/gesture-types";
+import type { ClapTrialDiagnostic } from "../gestures/clap-burst-state-machine";
 
 export type P1Gesture = "air-tap" | "ribbon-swipe" | "clap";
 export const P1_TRIAL_TIMEOUT_MS = 10_000;
@@ -47,6 +48,7 @@ export interface P1TrialResult {
   readonly event: GestureEvent | null;
   readonly offsetMs: number | null;
   readonly reasonCodes: readonly string[];
+  readonly clapDiagnostic?: ClapTrialDiagnostic;
 }
 
 export interface P1RunnerSnapshot {
@@ -102,7 +104,7 @@ export class Phase1ControlledRunner {
     return trial;
   }
 
-  acceptEvent(event: GestureEvent): boolean {
+  acceptEvent(event: GestureEvent, clapDiagnostic?: ClapTrialDiagnostic): boolean {
     const trial = this.#activeTrial;
     const timing = this.#activeTiming;
     if (trial === null || timing === null) return false;
@@ -111,23 +113,31 @@ export class Phase1ControlledRunner {
       this.#falseTriggers.push(event);
       return false;
     }
-    return this.#finish("success", "gesture-event", event, event.reasonCodes, event.eventTimeMs);
+    return this.#finish(
+      "success",
+      "gesture-event",
+      event,
+      event.reasonCodes,
+      event.eventTimeMs,
+      clapDiagnostic,
+    );
   }
 
   recordOutcome(
     outcome: Exclude<P1Outcome, "success">,
     reasonCodes: readonly string[] = [],
     finishedAtMs = performance.now(),
+    clapDiagnostic?: ClapTrialDiagnostic,
   ): boolean {
-    return this.#finish(outcome, "manual-classification", null, reasonCodes, finishedAtMs);
+    return this.#finish(outcome, "manual-classification", null, reasonCodes, finishedAtMs, clapDiagnostic);
   }
 
-  skip(finishedAtMs = performance.now()): boolean {
-    return this.#finish("unclassified", "manual-skip", null, ["manual-skip"], finishedAtMs);
+  skip(finishedAtMs = performance.now(), clapDiagnostic?: ClapTrialDiagnostic): boolean {
+    return this.#finish("unclassified", "manual-skip", null, ["manual-skip"], finishedAtMs, clapDiagnostic);
   }
 
-  timeout(finishedAtMs = performance.now()): boolean {
-    return this.#finish("unclassified", "trial-timeout", null, ["trial-timeout"], finishedAtMs);
+  timeout(finishedAtMs = performance.now(), clapDiagnostic?: ClapTrialDiagnostic): boolean {
+    return this.#finish("unclassified", "trial-timeout", null, ["trial-timeout"], finishedAtMs, clapDiagnostic);
   }
 
   recordFalseTrigger(event: GestureEvent): void {
@@ -154,6 +164,7 @@ export class Phase1ControlledRunner {
     event: GestureEvent | null,
     reasonCodes: readonly string[],
     finishedAtMs: number,
+    clapDiagnostic?: ClapTrialDiagnostic,
   ): boolean {
     const trial = this.#activeTrial;
     const timing = this.#activeTiming;
@@ -170,12 +181,47 @@ export class Phase1ControlledRunner {
       event,
       offsetMs,
       reasonCodes: [...reasonCodes],
+      ...(clapDiagnostic === undefined ? {} : { clapDiagnostic: cloneClapDiagnostic(clapDiagnostic) }),
     });
     this.#activeTrial = null;
     this.#activeTiming = null;
     if (this.#results.length >= this.#trials.length) this.#state = "complete";
     return true;
   }
+}
+
+function cloneClapDiagnostic(diagnostic: ClapTrialDiagnostic): ClapTrialDiagnostic {
+  return {
+    observationFrameCounts: { ...diagnostic.observationFrameCounts },
+    lastTwoHandObservedAtMs: diagnostic.lastTwoHandObservedAtMs,
+    minimumPalmDistance: diagnostic.minimumPalmDistance === null
+      ? null
+      : {
+        distance: diagnostic.minimumPalmDistance.distance,
+        atMs: diagnostic.minimumPalmDistance.atMs,
+        hands: diagnostic.minimumPalmDistance.hands.map((hand) => ({ ...hand })),
+      },
+    maximumConvergenceSpeed: diagnostic.maximumConvergenceSpeed,
+    convergenceSpeedAtTriggerDistance: diagnostic.convergenceSpeedAtTriggerDistance,
+    triggerDistanceReachedAtMs: diagnostic.triggerDistanceReachedAtMs,
+    contactLikeDistanceReachedAtMs: diagnostic.contactLikeDistanceReachedAtMs,
+    identityConflictCount: diagnostic.identityConflictCount,
+    identityConflictCountBeforeContact: diagnostic.identityConflictCountBeforeContact,
+    latestOcclusion: diagnostic.latestOcclusion === null
+      ? null
+      : {
+        lastTwoHandObservedAtMs: diagnostic.latestOcclusion.lastTwoHandObservedAtMs,
+        startedAtMs: diagnostic.latestOcclusion.startedAtMs,
+        reacquiredAtMs: diagnostic.latestOcclusion.reacquiredAtMs,
+        durationMs: diagnostic.latestOcclusion.durationMs,
+        before: diagnostic.latestOcclusion.before.map((hand) => ({ ...hand })),
+        after: diagnostic.latestOcclusion.after.map((hand) => ({ ...hand })),
+      },
+    occlusionPrediction: {
+      status: diagnostic.occlusionPrediction.status,
+      reasonCodes: [...diagnostic.occlusionPrediction.reasonCodes],
+    },
+  };
 }
 
 export function eventMatchesTrial(event: GestureEvent, trial: P1TrialDefinition): boolean {
