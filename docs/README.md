@@ -6,9 +6,9 @@
 - 現在のステップ: **1.1 — TypeScript / Viteの最小Webアプリ、カメラ許可、計測画面を作る**
 - 実装先行状況: **air-tap／ribbon-swipeを維持し、第三入力を実接触前提の旧clapから、中央準備後に両手を左右斜め上へ開くBloomへ切り替えた。現行P1結果はschema v4で第三入力を明示し、旧v2／v3 clap結果は別語彙として読み込む**
 - テスター画面: **標準URLはカメラ、テスト音、動作見本、30試行、結果JSON保存、誤反応の記録へ限定する。重ね表示設定、詳細計測、手動分類、リプレイ、記入式レポート、複数セッション比較は表示せず、開発者が必要な場合だけ`?view=analysis`で全機能を開く**
-- 次の作業: **Bloom版はローカル実装、PC／E2E確認、公開版への反映まで完了している。次にiPhone Safari／Android Chromeで同じbuild・profile・閾値を固定し、Bloomを含む30試行を実施する。Bloomは10試行中8回以上を出発点とし、短い追跡欠落と長い追跡喪失を試行別診断で確認する**
+- 次の作業: **最新のBloom実機結果を受け、[13_p1_five_gesture_50_trial_revision_plan.md](./13_p1_five_gesture_50_trial_revision_plan.md)に沿ってTechnical Labを5動作・50試行へ改訂する。Bloomへ準備完了後に合図する進行を追加し、新候補Lift／Spotlightを各10回実測できるようにする。5動作すべてをMVP採用とはせず、実測後に3〜4動作へ絞る**
 - 旧clap分析の扱い: **[`12_p1_session_analysis_20260913144422125.md`](./12_p1_session_analysis_20260913144422125.md)の実機分析は履歴として保持する。旧clapと新Bloomを同じ第三入力の合否へ混ぜない**
-- 次の判断: **Bloomの成立率・同期感・tracking-lostを実機で確認し、8/10未達なら閾値、画角、ガイド、状態機械のうち一項目だけを次セッションで変更する。追跡喪失はプレイヤーMISSへ分類しない**
+- 次の判断: **5動作・50試行の実測後、各動作8/10以上、誤発火、タイミング、疲労、分かりやすさを比較し、Interaction POCへ持ち込む3〜4動作を選ぶ。Bloomは準備状態の改訂効果を別に確認し、追跡喪失はプレイヤーMISSへ分類しない**
 
 Codexで作業を継続する場合、リポジトリ直下の [`AGENTS.md`](../AGENTS.md) が自動引き継ぎの入口となる。Claude Codeでは [`CLAUDE.md`](../CLAUDE.md) が入口で、そこから `AGENTS.md` を取り込む。どちらも本書を読み、現在地と依頼に関係する正本だけを確認して作業を始める。
 
@@ -29,6 +29,8 @@ Codexで作業を継続する場合、リポジトリ直下の [`AGENTS.md`](../
 現在の最優先再試験は[Phase 1 試行進行・リボンスワイプ信頼性改善 実装計画](./11_phase1_trial_progression_and_swipe_reliability_plan.md)を正とする。実機途中結果、原因分析、実装内容、schema方針、テスト、再試験記録欄を同文書へ集約している。
 
 最新のiPhone Safari実機セッションの分析と改善プランは、[P1-Controlled 実機セッション分析](./12_p1_session_analysis_20260913144422125.md)に記録している。
+
+Bloom 10/10成立後の次回改訂方針は、[Phase 1 — 5動作・50試行 改訂計画](./13_p1_five_gesture_50_trial_revision_plan.md)に記録している。現行正本の3動作・30試行を実装時に改訂するための計画であり、5動作すべてのMVP採用を確定するものではない。
 
 現在の出口条件:
 
