@@ -91,11 +91,11 @@ Phase 1では最低限、`framing`、`ready`、`playing`、`one-hand-lost`、`bo
 
 「未成立として次へ」は罰する表現やMISS表示を使わず、`unclassified`として次の試行へ進める操作とする。`PERFORMANCE LOW`時は、P1操作欄にも「追跡出力が低いためジェスチャーが途切れる可能性があります」と短く表示する。
 
-全メトリクスは表示し続けなくてよい。追跡Hz、推論時間、frame age、coverage、queue状態等はバックグラウンドで収集してJSONへ保存し、画面上のLive diagnosticsは初期状態で折りたたむ。Developer overlay設定と詳細診断はトラブル調査時だけ開く。実機確認レポートはPC記入を主とし、スマートフォンの最初の画面へ入れない。
+全メトリクスは表示し続けなくてよい。追跡Hz、推論時間、frame age、coverage、queue状態等はバックグラウンドで収集してP1結果JSONへ保存する。標準URLはテスター用とし、Developer overlay設定、Live diagnostics、詳細な手動分類、ランドマークリプレイ、診断リプレイ保存、記入式の実機確認レポートを表示しない。テスターが行うのはカメラ開始、テスト音の有効化、動作見本の確認、30試行、誤反応の記録、P1結果JSON保存までとする。
 
 Live diagnostics内には、カメラ開始前だけ操作できる「実験プロファイル」を置く。既定のbaseline以外は未検証の比較条件であることを表示し、カメラ動作中は変更できないようにする。選択したprofile IDと要求値、ブラウザが選んだ実設定、app build IDを結果JSONへ保存する。
 
-実機確認レポートの後に、PC向けの「P1セッション比較」を置く。複数のP1 JSONを読み込み、セッション、build、profile、30試行の整合、3入力（air-tap／ribbon-swipe／Bloom）のsuccess、tracking Hz、frame age p95、二手coverage、警告を横並びで確認できるようにする。比較結果は次の表現を使う。
+隠した開発用操作、記入式レポート、PC向け「P1セッション比較」は、開発者が必要な場合だけ`?view=analysis`で表示する。比較画面では複数のP1 JSONを読み込み、セッション、build、profile、30試行の整合、3入力（air-tap／ribbon-swipe／Bloom）のsuccess、tracking Hz、frame age p95、二手coverage、警告を横並びで確認できるようにする。比較結果は次の表現を使う。
 
 - 不完全または条件混在: 何が不足・相違しているかを具体的に表示する。
 - 負荷変更候補: tracking Hzまたはframe ageから、次セッションで処理負荷を一項目比較する候補を示す。

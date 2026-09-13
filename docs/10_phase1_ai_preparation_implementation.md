@@ -118,6 +118,8 @@ API値は最終的な知覚遅延を保証しない。同期感と外部遅延�
 - Developer overlay、全telemetry、実機確認レポートは初期画面から外し、必要時にスクロール／展開
 - Live diagnosticsは折りたたんでも計測とJSON記録を継続
 
+2026-09-14のテスター画面整理で、記入式の実機確認レポートとP1セッション比較は標準URLから完全に外した。P1結果JSONへ自動計測値を含める方針は維持し、旧レポート／比較UIは開発者向け`?view=analysis`でのみ表示する。
+
 ### 2.9 P1結果と診断リプレイの分離
 
 - 通常のP1結果をschema version 3へ更新し、trial timing／resolution、summary、gesture event、trial diagnostic、technical snapshotをcompact JSONで保存

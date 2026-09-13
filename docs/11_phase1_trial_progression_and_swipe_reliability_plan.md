@@ -45,7 +45,7 @@
 - 850ms、中心通過、軌跡長、横ずれ等は、状態遷移の不具合を直した後に一項目ずつ評価する。
 - Android Chromeだけへ特化せず、iPhone Safariでも同じ試行モデルを使える設計にする。
 - 既存P1 schema version 2／3（旧clap）とlandmark replay schema version 1の読み込み互換を残す。現行出力はschema v4でBloomを明示する。
-- 通常のP1結果と詳細診断リプレイを分離しても、PCの実機確認レポートへ集計値を取り込めること。
+- 通常のP1結果と詳細診断リプレイを分離し、標準テスター画面ではP1結果JSONだけを保存できること。旧実機確認レポートへの取込は`?view=analysis`の開発者向け互換機能として残す。
 
 ### 2.4 実装完了条件
 
@@ -522,7 +522,7 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 - 合成試験: 左→右／右→左、125ms間隔、150ms以内の欠落、長い開始位置保持、拒否後のrearm、target前非集計、negative offsetに成功
 - 旧clap互換合成試験: 厳しい接触閾値へ到達する直前の短い遮蔽を`occlusion-predicted`の品質ラベルを保ったsuccessとして記録し、false triggerへ加えない
 - 844×390実表示: 現在指示、手アイコンの動作見本、状態、残り時間、直近理由、skipが同時にviewport内。横スクロールなし
-- PC実表示: baselineと比較profileの目的、要求設定、未検証表示、P1セッション比較表と自動Passを行わない案内を確認
+- PC実表示: 標準URLに記入式レポートと比較表が出ないこと、`?view=analysis`では旧比較機能が開くこと、baselineと比較profileの目的、要求設定、未検証表示を確認
 - ブラウザconsole error: なし
 - 対象実機: iPhone Safariの修正前初回とAndroid Chromeの修正後基準セッションを実施・分析済み。修正後iPhone Safariを実施するまでP1-ControlledをPassにしない
 

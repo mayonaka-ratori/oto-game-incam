@@ -32,6 +32,10 @@ export interface LabViewModel {
   readonly orientationMessage: string;
 }
 
+export interface LabViewOptions {
+  readonly showAnalysisPanels?: boolean;
+}
+
 export class LabView {
   readonly video: HTMLVideoElement;
   readonly overlay: HTMLCanvasElement;
@@ -53,9 +57,14 @@ export class LabView {
   readonly #experimentProfileSelect: HTMLSelectElement;
   readonly #overlayInputs: readonly HTMLInputElement[];
 
-  constructor(root: HTMLElement, callbacks: LabViewCallbacks) {
+  constructor(root: HTMLElement, callbacks: LabViewCallbacks, options: LabViewOptions = {}) {
     this.#root = root;
     root.innerHTML = template;
+    if (options.showAnalysisPanels !== true) {
+      root.querySelector(".test-checklist-panel")?.remove();
+      root.querySelector(".p1-comparison-panel")?.remove();
+      configureTesterView(root);
+    }
 
     this.video = requiredElement(root, "#camera-preview", HTMLVideoElement);
     this.overlay = requiredElement(root, "#tracking-overlay", HTMLCanvasElement);
@@ -139,6 +148,43 @@ export class LabView {
     renderSupport(this.#root, model.support);
     renderMetrics(this.#root, model.metrics);
     renderTrackingMetrics(this.#root, model.tracking);
+  }
+}
+
+function configureTesterView(root: HTMLElement): void {
+  const hiddenSelectors = [
+    ".overlay-controls",
+    ".diagnostics-panel",
+    ".p1-audio-card .p1-mini-metrics",
+    ".p1-observation-row > span",
+    "[data-p1-outcome]",
+    ".p1-counters",
+    ".p1-replay-block",
+    "#p1-export-replay",
+    "#p1-replay-export-status",
+  ];
+  for (const selector of hiddenSelectors) {
+    for (const element of root.querySelectorAll<HTMLElement>(selector)) element.hidden = true;
+  }
+
+  const sectionIndex = root.querySelector<HTMLElement>(".p1-heading .section-index");
+  if (sectionIndex !== null) sectionIndex.textContent = "02 / 動作テスト";
+  const heading = root.querySelector<HTMLElement>("#p1-heading");
+  if (heading !== null) heading.textContent = "動作テスト";
+  const audioLabel = root.querySelector<HTMLElement>(".p1-audio-card .p1-card-heading span");
+  if (audioLabel !== null) audioLabel.textContent = "テスト音";
+  const rejectionLabel = root.querySelector<HTMLElement>(".p1-live-diagnostic span");
+  if (rejectionLabel !== null) rejectionLabel.textContent = "直前の案内";
+
+  const skipButton = root.querySelector<HTMLButtonElement>("#p1-skip");
+  if (skipButton !== null) skipButton.textContent = "反応しなかったので次へ";
+  const falseTriggerButton = root.querySelector<HTMLButtonElement>("#p1-false-trigger");
+  if (falseTriggerButton !== null) falseTriggerButton.textContent = "意図せず反応した";
+  const exportButton = root.querySelector<HTMLButtonElement>("#p1-export");
+  if (exportButton !== null) {
+    exportButton.textContent = "結果JSONを保存";
+    exportButton.classList.remove("button--quiet");
+    exportButton.classList.add("button--primary");
   }
 }
 

@@ -42,12 +42,12 @@ test("fits the camera controls in a phone landscape viewport", async ({ page }) 
   await page.goto("/");
 
   await expect(page.getByRole("button", { name: "カメラを開始" })).toBeInViewport();
-  await expect(page.getByRole("heading", { name: "単体ジェスチャー制御試験" })).toBeInViewport();
+  await expect(page.getByRole("heading", { name: "動作テスト" })).toBeInViewport();
   await expect(page.getByRole("button", { name: "テストを開始" })).toBeInViewport();
   await expect(page.locator("#p1-remaining")).toBeInViewport();
   await expect(page.locator("#p1-motion-sample")).toBeInViewport();
-  await expect(page.getByRole("button", { name: "未成立として次へ" })).toBeInViewport();
-  await expect(page.getByRole("heading", { name: "リアルタイム計測値" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "反応しなかったので次へ" })).toBeInViewport();
+  await expect(page.getByRole("heading", { name: "リアルタイム計測値" })).toBeHidden();
   await expect(page.locator("details.diagnostics-panel")).not.toHaveAttribute("open", "");
   await expect(page.locator("#orientation-notice")).toBeHidden();
   const previewBox = await page.locator("#preview-shell").boundingBox();
@@ -59,12 +59,12 @@ test("fits the camera controls in a phone landscape viewport", async ({ page }) 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator("#orientation-notice")).toBeVisible();
   await expect(page.getByRole("button", { name: "横向き表示を試す" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "単体ジェスチャー制御試験" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "動作テスト" })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test("renders two mock hands and exposes tracking queue diagnostics", async ({ page }) => {
-  await page.goto("/?tracking=mock");
+  await page.goto("/?tracking=mock&view=analysis");
   await page.getByRole("button", { name: "カメラを開始" }).click();
 
   await expect(page.getByText("両手を追跡しています")).toBeVisible();
@@ -89,7 +89,7 @@ test("renders two mock hands and exposes tracking queue diagnostics", async ({ p
 });
 
 test("locks the selected experiment profile while the camera is active", async ({ page }) => {
-  await page.goto("/?tracking=mock");
+  await page.goto("/?tracking=mock&view=analysis");
   await page.locator("details.diagnostics-panel > summary").click();
   const profile = page.getByLabel("実験プロファイル");
   await expect(profile).toHaveValue("gpu-640x480-30");
@@ -203,8 +203,22 @@ test("continues rVFC tracking while the raw preview is hidden", async ({ page })
   await expect.poll(completedCount).toBeGreaterThan(beforeHide);
 });
 
+test("shows only the tester workflow on the standard URL", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: "インカメ映像" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "動作テスト" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "リアルタイム計測値" })).toBeHidden();
+  await expect(page.getByText("検証用の重ね表示")).toBeHidden();
+  await expect(page.getByRole("button", { name: "結果JSONを保存" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "診断リプレイを保存" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "意図せず反応した" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "実機確認レポート" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "P1セッション比較" })).toHaveCount(0);
+});
+
 test("manages, exports, and resumes the device check as JSON", async ({ page }) => {
-  await page.goto("/?tracking=mock");
+  await page.goto("/?tracking=mock&view=analysis");
   await page.getByLabel("確認した人（匿名ID）").fill("tester-a");
   await page.locator('[name="device"]').selectOption("iPhone 15");
   await page.getByLabel("OS名").fill("iOS");
@@ -243,7 +257,7 @@ test("manages, exports, and resumes the device check as JSON", async ({ page }) 
 });
 
 test("runs and exports a P1 controlled trial without raw media", async ({ page }) => {
-  await page.goto("/?tracking=mock");
+  await page.goto("/?tracking=mock&view=analysis");
   await page.getByRole("button", { name: "カメラを開始" }).click();
   await expect(page.locator("#tracking-init")).toHaveText("準備完了");
   await page.getByRole("button", { name: "テストを開始" }).click();
@@ -377,10 +391,10 @@ test("times out and auto-advances all 30 trials without double-finishing", async
 
   await expect(page.locator("#p1-state")).toHaveText("完了");
   await expect(page.locator("#p1-latest-rejection")).toHaveText("10秒で未成立として記録しました");
-  await expect(page.getByRole("button", { name: "未成立として次へ" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "反応しなかったので次へ" })).toBeDisabled();
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "P1結果JSONを保存" }).click();
+  await page.getByRole("button", { name: "結果JSONを保存" }).click();
   const download = await downloadPromise;
   const path = await download.path();
   expect(path).not.toBeNull();
@@ -394,7 +408,7 @@ test("times out and auto-advances all 30 trials without double-finishing", async
 });
 
 test("compares multiple complete P1 sessions without declaring an automatic pass", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?view=analysis");
   await page.locator("#p1-comparison-import").setInputFiles([
     {
       name: "android.json",

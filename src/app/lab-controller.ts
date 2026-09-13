@@ -10,6 +10,7 @@ import {
   type CameraSupportSnapshot,
 } from "../camera/camera-support";
 import { FrameMetricsCollector, type FrameMetricsSnapshot } from "../metrics/frame-metrics";
+import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapshot";
 import type { TrackingMetricsSnapshot } from "../metrics/tracking-metrics";
 import { DEFAULT_OVERLAY_LAYERS, OverlayRenderer } from "../rendering/overlay-renderer";
 import { Phase1LabController } from "../poc/phase1-lab-controller";
@@ -17,10 +18,7 @@ import type { Phase1TechnicalSummary } from "../poc/phase1-session";
 import { LabView } from "../ui/lab-view";
 import { requestLandscapeMode } from "../ui/landscape-mode";
 import { TrackingWorkerClient } from "../worker/tracking-worker-client";
-import {
-  DeviceChecklistController,
-  type DeviceCheckTechnicalSnapshot,
-} from "../testing/device-checklist";
+import { DeviceChecklistController } from "../testing/device-checklist";
 import { P1SessionComparisonController } from "../testing/p1-session-comparison";
 import { APP_BUILD_ID } from "./app-build";
 import {
@@ -48,7 +46,9 @@ export class LabController {
   #disposed = false;
 
   constructor(root: HTMLElement) {
-    const requestedProfileId = new URLSearchParams(window.location.search).get("profile");
+    const searchParams = new URLSearchParams(window.location.search);
+    const requestedProfileId = searchParams.get("profile");
+    const showAnalysisPanels = searchParams.get("view") === "analysis";
     this.#experimentProfile = findTrackingExperimentProfile(requestedProfileId);
     this.#support = inspectCameraSupport();
     this.#camera = new CameraController((event) => this.#handleTrackEvent(event));
@@ -59,7 +59,7 @@ export class LabController {
       onTogglePreview: () => this.#togglePreview(),
       onOverlayLayersChange: (layers) => this.#overlayRenderer.setLayers(layers),
       onExperimentProfileChange: (id) => this.#changeExperimentProfile(id),
-    });
+    }, { showAnalysisPanels });
     this.#overlayRenderer = new OverlayRenderer(this.#view.video, this.#view.overlay);
     this.#overlayRenderer.setLayers(DEFAULT_OVERLAY_LAYERS);
     this.#phase1Controller = new Phase1LabController(root, {
@@ -72,8 +72,10 @@ export class LabController {
       requestLandscape: () => this.#requestLandscape(),
       onGuideChange: (trial) => this.#overlayRenderer.setP1Guide(trial),
     });
-    new DeviceChecklistController(root, () => this.#technicalSnapshot());
-    new P1SessionComparisonController(root);
+    if (showAnalysisPanels) {
+      new DeviceChecklistController(root, () => this.#technicalSnapshot());
+      new P1SessionComparisonController(root);
+    }
 
     const issues = getBlockingSupportIssues(this.#support);
     this.#state = transitionLabState(
@@ -230,7 +232,7 @@ export class LabController {
     document.removeEventListener("visibilitychange", this.#render);
   };
 
-  #technicalSnapshot(): DeviceCheckTechnicalSnapshot {
+  #technicalSnapshot(): DeviceTechnicalSnapshot {
     const scheduler = this.#tracking?.scheduler;
     const actualCamera = this.#session?.track.getSettings();
     const profile = this.#experimentProfile;
