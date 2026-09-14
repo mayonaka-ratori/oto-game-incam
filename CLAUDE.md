@@ -35,13 +35,19 @@
 - `src/worker/` MediaPipeを動かす専用Worker（`?tracking=mock` で合成fixtureのmock Workerに切替）
 - `src/tracking/` 安定trackIdと派生特徴量、`src/gestures/` ジェスチャー状態機械と調停
 - `src/time/` Web Audioクロック、拍タイムライン、メトロノーム
-- `src/poc/` P1-Controlled制御試験のエンジンとセッション保存、`src/testing/` 実機確認レポートとセッション比較
-- `src/ui/` 画面と横向きモード、`src/app/` 画面状態とコントローラ
-- `build/` Viteプラグイン（Cloudflare Sites用の出力とbuild ID）
+- `src/experiments/` 追跡の実験profile（解像度・fps・GPU/CPUの組。既定は `gpu-640x480-30`）
+- `src/metrics/` フレーム・追跡の計測値、統計、端末のtechnical snapshot
+- `src/poc/` P1-Controlled制御試験の定義（`phase1-protocol.ts` が試行数・時間切れ・準備完了の正本）、エンジン、セッション保存
+- `src/testing/` 実機確認レポート（device checklist）とP1セッション比較
+- `src/replay/` 診断リプレイ（ランドマークの再生）、`src/rendering/` 重ね表示、手のひらカーソル、座標変換
+- `src/ui/` 画面と横向きモード、`src/app/` 画面状態とコントローラとbuild ID
+- `build/` Viteプラグイン（静的Sites配信用の出力とbuild ID。配信先URLはリポジトリに置かない）
 
 ## ハーネス（`.claude/`）
 
-- `settings.json`: 権限とhooks。編集後にESLint、応答終了時に型検査と単体テストが自動で走る。`git push` は拒否、`git commit` と `assets:prepare` は確認付き。
-- `rules/`: `docs/` `src/` `tests/` を触るときだけ読み込まれる決まり。
-- `skills/verify`: `/verify` で検証一式を実行して結果を報告する。
-- `agents/doc-consistency-checker`: 正本文書同士の矛盾を読み取り専用で点検する。
+- `settings.json`: 権限とhooks。セッション開始時に `docs/README.md` の現在地を読み上げ、編集後にESLint、応答終了時に（未コミット変更があるときだけ）型検査と単体テストが自動で走る。`git push` は拒否、`git commit` と `assets:prepare` は確認付き。
+- `rules/`: `docs/` `src/` `tests/` `.claude/` を触るときだけ読み込まれる決まり。
+- `skills/verify`: `/verify` で検証一式を実行して結果を報告する。`/verify e2e` でブラウザ自動試験まで。
+- `skills/handoff`: `/handoff` で作業の締め。`docs/README.md` の現在地と文書のステータスを更新し、整合を点検し、差分と検証結果を報告する。commitはしない。
+- `agents/doc-consistency-checker`: 正本文書同士と、文書とコードの試験条件の矛盾を読み取り専用で点検する。
+- `launch.json`: ブラウザ確認用の起動定義（`vite-dev` は5173、`vite-preview` は4173。previewは先に `npm run build` が要る）。

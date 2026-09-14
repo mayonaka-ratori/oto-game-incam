@@ -1,8 +1,8 @@
 # Phase 1 試行進行・リボンスワイプ信頼性改善 実装計画
 
-- 更新日: 2026-09-14
+- 更新日: 2026-09-15
 - 文書種別: Phase 1 / Step 1.1の不具合分析・実装引き継ぎ計画
-- ステータス: **30件の試行進行を維持し、第三入力を旧clapからBloomへ切り替えた。Bloomの状態機械・診断・schema v4を実装済み、実機再試験待ち。2026-09-14以降の5動作・50試行（schema v5）への改訂は[13_p1_five_gesture_50_trial_revision_plan.md](./13_p1_five_gesture_50_trial_revision_plan.md)を参照する**
+- ステータス: **履歴。30件の試行進行を維持し、第三入力を旧clapからBloomへ切り替え、Bloomの状態機械・診断・schema v4を実装した時点の記録。本文の「現行」「次の出口」はこの時点のもの。2026-09-14以降の5動作・50試行（schema v5）への改訂と現在の出口は[13_p1_five_gesture_50_trial_revision_plan.md](./13_p1_five_gesture_50_trial_revision_plan.md)を参照する**
 - 対象: P1-Controlledの試行進行、リボンスワイプ状態機械、Bloomの中央準備・両手開放、動作見本、診断表示、P1 JSON出力
 - 非対象: Phase 2 Interaction POC、90秒MVP、演出、ゲーム採点の作り込み
 
@@ -17,9 +17,7 @@
 5. 既存の未コミット変更を`git diff`と`git status`で確認し、`AGENTS.md`の変更を保持したまま実装を始める。
 6. 本書11章のテストを先に追加し、現在の失敗を再現してから実装する。
 
-対象実機再試験を別チャットで続ける場合は、次を使える。
-
-> `docs/11_phase1_trial_progression_and_swipe_reliability_plan.md`に従い、Android ChromeとiPhone SafariのP1-Controlled再試験結果を記録してください。条件と閾値はセッション中に変更しないでください。
+実機再試験を別チャットで続ける場合は、本書ではなく[POCテスト手順](./05_poc_test_protocol.md)の5章と[13](./13_p1_five_gesture_50_trial_revision_plan.md)に従う。本書の30試行の手順は改訂前のものである。
 
 ## 2. 目的・文脈・制約・完了条件
 
@@ -44,7 +42,7 @@
 - 最初の修正では、実機データを無視してスワイプ閾値を一括で緩めない。
 - 850ms、中心通過、軌跡長、横ずれ等は、状態遷移の不具合を直した後に一項目ずつ評価する。
 - Android Chromeだけへ特化せず、iPhone Safariでも同じ試行モデルを使える設計にする。
-- 既存P1 schema version 2／3（旧clap）とlandmark replay schema version 1の読み込み互換を残す。現行出力はschema v4でBloomを明示する。
+- 既存P1 schema version 2／3（旧clap）とlandmark replay schema version 1の読み込み互換を残す。当時の出力はschema v4でBloomを明示する。
 - 通常のP1結果と詳細診断リプレイを分離し、標準テスター画面ではP1結果JSONだけを保存できること。旧実機確認レポートへの取込は`?view=analysis`の開発者向け互換機能として残す。
 
 ### 2.4 実装完了条件
@@ -58,7 +56,7 @@
 - 通常のP1結果JSONに生映像・音声・全フレームリプレイを含めない。
 - 詳細リプレイは明示操作時だけ別ファイルとして保存できる。
 - lint、型検査、単体テスト、build、E2E、844×390相当の実表示確認が成功する。
-- 現行Bloomを含む30試行を実機で行い、8/10、同期感、短いgap継続、長いtracking-lostの分類を確認する。
+- Bloomを含む30試行を実機で行い、8/10、同期感、短いgap継続、長いtracking-lostの分類を確認する（改訂前の条件。Bloom 10/10は達成済みで、現行は50試行。[13](./13_p1_five_gesture_50_trial_revision_plan.md)参照）。
 
 ## 3. 実機ログから確認できた事実
 
@@ -571,9 +569,11 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 
 実接触の22試行目で1回、23試行目で3回、厳しい接触閾値の直前まで収束した`occlusion-predicted`と直後の`burst`が記録されていた。修正前は実接触試行が`contact-like`だけを受け付けたため、4回の遮蔽推定クラップと4回の`burst`がfalse triggerへ入り、22・23試行目がtimeoutした。端末負荷は良好であり、ジェスチャー閾値やMediaPipe負荷より先に、実接触試行の遮蔽推定受理と動作説明を修正した。
 
-### 12.3 現行Bloomの実機再試験
+### 12.3 Bloomの実機再試験（2026-09-14の改訂前の記述）
 
-現行の実機出口は、旧clapの履歴とは別の新しいセッションで、air-tap／ribbon-swipe／Bloomを各10試行行うことである。Bloomについては中央準備、左右斜め上への開放、到達時刻の同期、短いgapの継続、長い追跡欠落の`tracking-lost`を記録する。現時点ではBloomの実機結果は未実施であり、旧clapの成功率をBloomの結果として扱わない。
+この節と13章の「30試行」は改訂前の出口である。現行の出口は[POCテスト手順](./05_poc_test_protocol.md)の5章（5動作・50試行）と[13](./13_p1_five_gesture_50_trial_revision_plan.md)を見る。
+
+改訂前の実機出口は、旧clapの履歴とは別の新しいセッションで、air-tap／ribbon-swipe／Bloomを各10試行行うことである。Bloomについては中央準備、左右斜め上への開放、到達時刻の同期、短いgapの継続、長い追跡欠落の`tracking-lost`を記録する。現時点ではBloomの実機結果は未実施であり、旧clapの成功率をBloomの結果として扱わない。
 
 ## 13. 実装後の判断ルール
 
@@ -598,7 +598,7 @@ commit、push、Sitesデプロイは、この実装を依頼した同じチャ�
 
 旧clapの実機分析は履歴として保持するが、現行P1の第三入力はBloomへ切り替えた。Bloomは中央寄りの二手準備から、左右それぞれ外側かつ斜め上へ開く。実接触・マイク・接触直前の遮蔽推定を成功条件へ含めない。
 
-- 現行30試行: air-tap 10、ribbon-swipe 10、Bloom 10。
+- 改訂前の30試行: air-tap 10、ribbon-swipe 10、Bloom 10。現行は5動作・50試行（[05](./05_poc_test_protocol.md)の5章）。
 - Bloom診断: 0／1／2手フレーム数、準備時刻、外向き・上向き距離、閾値到達時刻、同期幅、短いgap、長いtracking-lost、拒否理由。
 - schema: 現行出力はv4、`gestureVocabulary.thirdGesture = "bloom"`を必須化。v2／v3旧clapは読み込むが、比較画面でBloomと混在させない。
-- 次の出口: 両端末でBloomを含む30試行を完走し、各3入力8/10以上、主観的な同期感、追跡喪失とプレイヤー操作の分類を確認する。
+- 改訂前の次の出口: 両端末でBloomを含む30試行を完走し、各3入力8/10以上、主観的な同期感、追跡喪失とプレイヤー操作の分類を確認する。現行の出口は[13](./13_p1_five_gesture_50_trial_revision_plan.md)の13章。

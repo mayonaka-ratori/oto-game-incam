@@ -1,6 +1,7 @@
 # MediaPipe資産記録
 
 - 確認日: 2026-07-19
+- ステータス: 現行。資産（モデル、WASM、package）を変えたら更新する
 - npm package: `@mediapipe/tasks-vision@0.10.35`
 - task: Hand Landmarker / full / float16 / version 1
 - 公式配布元: https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task

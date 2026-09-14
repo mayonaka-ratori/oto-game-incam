@@ -2,7 +2,7 @@
 
 - 作成日: 2026-07-19
 - 対象: **合意した次工程2〜4 — HandTrackingProvider / latest-frame-only Worker / 二手カーソル・21点表示**
-- ステータス: 自動検証完了（PC実カメラ／対象実機確認待ち）
+- ステータス: 履歴。自動検証完了。「最初の実機チェックポイント」は到達済みで、実機セッションの記録は[11](./11_phase1_trial_progression_and_swipe_reliability_plan.md)と[12](./12_p1_session_analysis_20260913144422125.md)にある
 - 文書種別: 作業計画。仕様の正本ではない
 - 前提成果物: commit `d971b9c`のStep 1.1カメラ診断画面
 

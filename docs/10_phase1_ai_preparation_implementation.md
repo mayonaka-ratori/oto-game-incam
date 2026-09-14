@@ -1,9 +1,11 @@
 # Phase 1 AI先行実装結果
 
 - 実施日: 2026-07-19〜2026-07-24
+- 最終更新日: 2026-09-15
 - 対象: **Phase 1 — Tracking & Latency Lab / Technical Stage T0**
-- ステータス: **試行進行・スワイプ信頼性改善を含む実装・合成検証・PC実表示完了、Android修正後基準試験を完走、iPhone修正後試験待ち**
+- ステータス: **履歴。3入力・30試行（旧clap）時点の先行実装記録。現行の試験条件（5動作・50試行、schema v5）と現在地は[資料ガイド](./README.md)と[POCテスト手順](./05_poc_test_protocol.md)の5章を見る**
 - 文書種別: 実装結果と引き継ぎ。仕様の正本ではない
+- 注記: 本文の「30試行」「クラップ」「schema version 2／3」「実機確認JSON schema 2.1」は2026-07時点の値である。現行は5動作・50試行、Bloom、P1結果schema v5、診断リプレイschema v3、実機確認JSON schema 2.3（[13](./13_p1_five_gesture_50_trial_revision_plan.md)の14章）
 
 現在地、ゲート、試験条件は[資料ガイド](./README.md)、[ロードマップ](./03_mvp_definition_and_roadmap.md)、[POCテスト手順](./05_poc_test_protocol.md)を正本とする。本書は実機確認できない期間に先行した実装を記録するもので、P1-ControlledのPassを宣言しない。
 
@@ -151,13 +153,7 @@ API値は最終的な知覚遅延を保証しない。同期感と外部遅延�
 
 ## 4. 対象実機が戻った時の実施順
 
-1. PC実カメラで鏡像、左右ラベル、21点位置、開始／停止／再開を確認する。
-2. iPhone 15 / SafariとGoogle Pixel 10 Pro XL / Chromeで、端末、OS、ブラウザ完全版、frame source、delegateを記録する。
-3. 各端末で60秒動かし、camera FPS、tracking Hz、in-flight／pending、replaced、推論p50／p95、frame age p95、二手coverageを保存する。
-4. [POCテスト手順](./05_poc_test_protocol.md)どおりP1-Controlledを30試行実施し、各試行がsuccess、手動分類、skip、timeoutのいずれかで停止せず完了することを確認する。
-5. 軽量なP1結果JSONを保存し、必要なセッションだけ診断リプレイを別保存する。結果をsuccess、player miss、machine miss、false trigger、tracking loss、unclassifiedへ分類する。
-6. 両端末で各ジェスチャー8/10以上を出発点としてPass／Learn／Pivotを記録する。
-7. Learnの場合は、画角、取得経路、安定ID、ジェスチャー閾値のうち次に変えるものを一つだけ選ぶ。
+2026-07時点の30試行の手順は現行と異なるため削除した。実機の実施順は[POCテスト手順](./05_poc_test_protocol.md)の4章と5章に従う。
 
 ## 5. 実機まで保留する判断
 

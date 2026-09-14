@@ -2,7 +2,7 @@
 
 - 作成日: 2026-07-19
 - 対象: **Phase 1 — Tracking & Latency Lab / Step 1.1**
-- ステータス: 実装完了（対象実機確認待ち）
+- ステータス: 履歴。実装完了。2026-07-19時点の計画で、本文の未実施チェックはその時点のもの。その後のPC実表示と実機セッションは[10](./10_phase1_ai_preparation_implementation.md)、[11](./11_phase1_trial_progression_and_swipe_reliability_plan.md)、[12](./12_p1_session_analysis_20260913144422125.md)に記録済み
 - 文書種別: 作業計画。仕様の正本ではない
 
 この文書は、[資料ガイド](./README.md)で定める現在地に対する実装順序と完了確認をまとめる。仕様やゲートを変更する文書ではなく、判断が食い違う場合は次の正本を優先する。

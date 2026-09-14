@@ -1,6 +1,6 @@
 # 空間ジェスチャー音楽ゲーム 技術戦略・実装計画
 
-- 更新日: 2026-09-14
+- 更新日: 2026-09-15
 - 文書種別: 技術選定 / アーキテクチャ / 検証計画
 - ステータス: v0.4（P1を5動作・50試行へ拡張。Bloomの準備完了後の合図、Lift／Spotlight候補、schema v5を追加）
 - 対象: PC内蔵・外付けWebカメラ、スマートフォンのインカメ
@@ -464,6 +464,8 @@ Hzだけで層を決めない。フレーム年齢、欠落、イベント時刻
 ゲートの実施方法と記録は`05_poc_test_protocol.md`を正本とする。数値は製品保証ではなく、次フェーズへ進む判断基準である。
 
 **P1-Controlled / P2-Interaction — 少人数POC学習ゲート**
+
+90秒単位の条件（false trigger、machine miss）と同期感はP2-Interactionで判定する。P1-Controlledの合否は各ジェスチャー8/10以上で判定する（`05`の10章）。
 
 - 各ジェスチャー8/10以上を出発点とする。P1では、MVPの3入力（air-tap／ribbon-swipe／Bloom）が対象で、候補動作のLift／Spotlightは含めない。
 - false trigger 90秒に1回以下。
