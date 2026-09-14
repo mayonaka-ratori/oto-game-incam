@@ -2359,3 +2359,271 @@ details[open] summary {
     transform: translate(-50%, -50%) scaleX(-1);
   }
 }
+
+/* P1 five-gesture blocks: progression, rest, pause (added 2026-09-14) */
+.p1-block {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(98, 242, 220, 0.24);
+  border-radius: 12px;
+  background: rgba(98, 242, 220, 0.06);
+}
+
+.p1-block[data-state="rest"] {
+  border-color: rgba(255, 197, 109, 0.5);
+  background: rgba(255, 197, 109, 0.1);
+}
+
+.p1-block[data-state="paused"] {
+  border-color: rgba(229, 122, 217, 0.45);
+  background: rgba(229, 122, 217, 0.08);
+}
+
+.p1-block-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.p1-block-copy span {
+  color: var(--muted);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.p1-block-copy strong {
+  font-size: 0.95rem;
+}
+
+.p1-block-copy small {
+  color: #dce9e7;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.p1-block-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+/* Lift: both hands rise in parallel from the lower start zones. */
+.p1-motion-sample[data-gesture="lift"] .p1-motion-path {
+  top: 24%;
+  bottom: 22%;
+  left: 30%;
+  width: 40%;
+  border-top: 0;
+  border-right: 2px dashed rgba(98, 242, 220, 0.56);
+  border-left: 2px dashed rgba(98, 242, 220, 0.56);
+  opacity: 1;
+}
+
+.p1-motion-sample[data-gesture="lift"] .p1-motion-hand--left,
+.p1-motion-sample[data-gesture="lift"] .p1-motion-hand--right {
+  top: 78%;
+  opacity: 1;
+  animation: p1-lift-sample 1.8s ease-in-out infinite;
+}
+
+.p1-motion-sample[data-gesture="lift"] .p1-motion-hand--left {
+  left: 30%;
+}
+
+.p1-motion-sample[data-gesture="lift"] .p1-motion-hand--right {
+  left: 70%;
+}
+
+/* Spotlight: one hand in the upper zone, the other in the lower zone, then hold. */
+.p1-motion-sample[data-gesture="spotlight"] {
+  --spot-left-y: 25%;
+  --spot-right-y: 75%;
+}
+
+.p1-motion-sample[data-gesture="spotlight"][data-variant="right-up-left-down"] {
+  --spot-left-y: 75%;
+  --spot-right-y: 25%;
+}
+
+.p1-motion-sample[data-gesture="spotlight"] .p1-motion-target,
+.p1-motion-sample[data-gesture="spotlight"] .p1-motion-contact {
+  width: 34%;
+  height: 34%;
+  border: 2px dashed rgba(255, 197, 109, 0.6);
+  border-radius: 10px;
+  background: rgba(255, 197, 109, 0.08);
+  opacity: 1;
+}
+
+.p1-motion-sample[data-gesture="spotlight"] .p1-motion-target {
+  top: var(--spot-left-y);
+  left: 27%;
+}
+
+.p1-motion-sample[data-gesture="spotlight"] .p1-motion-contact {
+  top: var(--spot-right-y);
+  left: 73%;
+}
+
+.p1-motion-sample[data-gesture="spotlight"] .p1-motion-hand--left,
+.p1-motion-sample[data-gesture="spotlight"] .p1-motion-hand--right {
+  top: 50%;
+  opacity: 1;
+}
+
+.p1-motion-sample[data-gesture="spotlight"] .p1-motion-hand--left {
+  left: 27%;
+  animation: p1-spotlight-left-sample 1.8s ease-in-out infinite;
+}
+
+.p1-motion-sample[data-gesture="spotlight"] .p1-motion-hand--right {
+  left: 73%;
+  animation: p1-spotlight-right-sample 1.8s ease-in-out infinite;
+}
+
+@keyframes p1-lift-sample {
+  0%,
+  18% {
+    top: 78%;
+    opacity: 0.45;
+  }
+  62%,
+  82% {
+    top: 24%;
+    opacity: 1;
+  }
+  100% {
+    top: 78%;
+    opacity: 0.25;
+  }
+}
+
+@keyframes p1-spotlight-left-sample {
+  0%,
+  15% {
+    top: 50%;
+    opacity: 0.45;
+  }
+  45%,
+  85% {
+    top: var(--spot-left-y);
+    opacity: 1;
+  }
+  100% {
+    top: 50%;
+    opacity: 0.25;
+  }
+}
+
+@keyframes p1-spotlight-right-sample {
+  0%,
+  15% {
+    top: 50%;
+    opacity: 0.45;
+  }
+  45%,
+  85% {
+    top: var(--spot-right-y);
+    opacity: 1;
+  }
+  100% {
+    top: 50%;
+    opacity: 0.25;
+  }
+}
+
+@media (max-width: 1100px) and (max-height: 600px) and (orientation: landscape) {
+  .p1-block {
+    margin-top: 4px;
+    padding: 3px 6px;
+    border-radius: 7px;
+    gap: 6px;
+  }
+
+  .p1-block-copy {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 6px;
+    row-gap: 1px;
+  }
+
+  /* Six session metrics in two rows keep the trial actions inside a 390px-high landscape viewport. */
+  .p1-trial-card .p1-mini-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .p1-block-copy span {
+    font-size: 0.5rem;
+  }
+
+  .p1-block-copy strong {
+    font-size: 0.66rem;
+  }
+
+  .p1-block-copy small {
+    flex-basis: 100%;
+    overflow: hidden;
+    font-size: 0.54rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .p1-block-actions .button {
+    min-height: 26px;
+    padding: 3px 8px;
+    font-size: 0.6rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .p1-motion-sample[data-gesture="lift"] .p1-motion-hand--left,
+  .p1-motion-sample[data-gesture="lift"] .p1-motion-hand--right {
+    top: 24%;
+  }
+
+  .p1-motion-sample[data-gesture="spotlight"] .p1-motion-hand--left {
+    top: var(--spot-left-y);
+  }
+
+  .p1-motion-sample[data-gesture="spotlight"] .p1-motion-hand--right {
+    top: var(--spot-right-y);
+  }
+}
+
+/* P1 landscape fixes after the 2026-09-14 review */
+@media (max-width: 1100px) and (max-height: 600px) and (orientation: landscape) {
+  /* Rest, pause, and completion messages carry instructions such as lowering the arms, so they wrap. */
+  .p1-block:not([data-state="running"]) .p1-block-copy small {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  /* The skip button stays at the bottom edge of the panel even when a warning or longer text adds lines above it. */
+  /* No extra height: when everything fits, the layout is the same as without the sticky footer. */
+  .p1-trial-footer {
+    position: sticky;
+    bottom: -1px;
+    z-index: 2;
+    margin: 0 -7px -7px;
+    padding: 0 7px 7px;
+    border-radius: 0 0 9px 9px;
+    background: rgba(3, 10, 13, 0.97);
+    box-shadow: 0 -8px 10px rgba(3, 10, 13, 0.9);
+  }
+
+  .p1-trial-footer .p1-performance-warning {
+    overflow: hidden;
+    margin-bottom: 3px;
+    padding: 2px 6px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

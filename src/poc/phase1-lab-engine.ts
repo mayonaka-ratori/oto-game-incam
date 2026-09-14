@@ -1,8 +1,10 @@
 import { AirTapStateMachine } from "../gestures/air-tap-state-machine";
 import { BloomStateMachine } from "../gestures/bloom-state-machine";
 import { ClapBurstStateMachine } from "../gestures/clap-burst-state-machine";
-import type { GestureEvaluation, GestureEvent } from "../gestures/gesture-types";
+import type { GestureEvaluation, GestureEvent, GestureReadinessObservation } from "../gestures/gesture-types";
+import { LiftStateMachine } from "../gestures/lift-state-machine";
 import { RibbonSwipeStateMachine } from "../gestures/ribbon-swipe-state-machine";
+import { SpotlightStateMachine } from "../gestures/spotlight-state-machine";
 import {
   LandmarkReplayRecorder,
   toHandTrackingFrame,
@@ -15,11 +17,16 @@ import type { HandTrackingFrame, TrackingProviderInfo } from "../tracking/tracki
 import type { TrackedHandFrame } from "../tracking/derived-tracking-types";
 import {
   Phase1ControlledRunner,
-  P1_CONTROLLED_TRIALS,
+  P1_FIVE_GESTURE_PROTOCOL,
+  P1_READINESS_STABLE_MS,
   eventMatchesTrial,
   type P1Outcome,
+  type P1PauseReason,
+  type P1ProtocolDefinition,
+  type P1ReadinessDiagnostic,
   type P1RunnerSnapshot,
   type P1TrialDefinition,
+  type P1TrialExtras,
 } from "./phase1-protocol";
 import {
   createPhase1SessionDocument,
@@ -29,13 +36,25 @@ import {
 } from "./phase1-session";
 import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapshot";
 
-type TrialMachine = AirTapStateMachine | BloomStateMachine | RibbonSwipeStateMachine | ClapBurstStateMachine;
+type TrialMachine =
+  | AirTapStateMachine
+  | BloomStateMachine
+  | RibbonSwipeStateMachine
+  | LiftStateMachine
+  | SpotlightStateMachine
+  | ClapBurstStateMachine;
+
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 export interface Phase1LabSnapshot {
   readonly protocol: P1RunnerSnapshot;
   readonly latestTrackedFrame: TrackedHandFrame | null;
   readonly latestEvaluation: GestureEvaluation | null;
   readonly latestDiagnostic: P1TrialDiagnosticRecord | null;
+  /** Latest start-position check of a readiness-gated trial. */
+  readonly readiness: GestureReadinessObservation | null;
+  /** The start position settled and the recognition window has not been scheduled yet. */
+  readonly readinessReached: boolean;
   readonly eventCount: number;
   readonly rejectionCount: number;
   readonly idConflictCount: number;
@@ -60,11 +79,18 @@ export class Phase1LabEngine {
   #machine: TrialMachine | null = null;
   #latestTrackedFrame: TrackedHandFrame | null = null;
   #latestEvaluation: GestureEvaluation | null = null;
+  #latestReadiness: GestureReadinessObservation | null = null;
+  #pendingReadyAtMs: number | null = null;
+  #readinessStats: Mutable<P1ReadinessDiagnostic> = emptyReadinessStats();
+  #attemptRejectionCount = 0;
+  #attemptTrackingLossCount = 0;
+  /** The first recognition-window frame of the attempt has been handled. */
+  #windowPrimed = false;
   #idConflictCount = 0;
   #rejectionCount = 0;
 
-  constructor(trials: readonly P1TrialDefinition[] = P1_CONTROLLED_TRIALS) {
-    this.#runner = new Phase1ControlledRunner(trials);
+  constructor(protocol: P1ProtocolDefinition | readonly P1TrialDefinition[] = P1_FIVE_GESTURE_PROTOCOL) {
+    this.#runner = new Phase1ControlledRunner(protocol);
   }
 
   startSession(
@@ -78,6 +104,7 @@ export class Phase1LabEngine {
     this.#diagnostics.length = 0;
     this.#latestTrackedFrame = null;
     this.#latestEvaluation = null;
+    this.#resetAttemptState();
     this.#idConflictCount = 0;
     this.#rejectionCount = 0;
     this.#machine = null;
@@ -91,14 +118,41 @@ export class Phase1LabEngine {
     this.#recorder = new LandmarkReplayRecorder(this.#session);
   }
 
+  startBlock(nowMs: number): boolean {
+    return this.#runner.startBlock(nowMs);
+  }
+
   beginNextTrial(targetTimeMs: number | null, preparedAtMs = 0): P1TrialDefinition | null {
     const trial = this.#runner.beginNextTrial(targetTimeMs, preparedAtMs);
-    this.#machine = trial === null ? null : createMachine(trial);
-    const timing = this.#runner.snapshot.activeTiming;
-    if (trial !== null && timing !== null) {
-      this.#recorder?.beginTrial({ trialId: trial.id, ordinal: trial.ordinal, timing });
+    // A refused start (for example while a trial is active) leaves the active attempt untouched.
+    if (trial === null) return null;
+    this.#machine = createMachine(trial);
+    this.#resetAttemptState();
+    const timing = this.#runner.activeTiming;
+    const readiness = this.#runner.activeReadiness;
+    if (timing !== null) {
+      this.#recorder?.beginTrial({ trialId: trial.id, ordinal: trial.ordinal, timing, readiness });
+    } else if (readiness !== null) {
+      this.#recorder?.beginTrial({ trialId: trial.id, ordinal: trial.ordinal, timing: null, readiness });
     }
     return trial;
+  }
+
+  /** Opens the recognition window of a readiness-gated trial after its start position settled. */
+  startRecognition(targetTimeMs: number | null): boolean {
+    const readyAtMs = this.#pendingReadyAtMs;
+    if (readyAtMs === null || !this.#runner.startRecognition(readyAtMs, targetTimeMs)) return false;
+    this.#pendingReadyAtMs = null;
+    const protocol = this.#runner.snapshot;
+    const trial = protocol.activeTrial;
+    if (trial !== null) {
+      this.#recorder?.updateTrial({
+        trialId: trial.id,
+        timing: protocol.activeTiming,
+        readiness: protocol.activeReadiness,
+      });
+    }
+    return true;
   }
 
   processFrame(frame: HandTrackingFrame): Phase1LabSnapshot {
@@ -143,31 +197,53 @@ export class Phase1LabEngine {
     const tracked = toMirroredPreviewFrame(this.#pipeline.process(frame));
     this.#latestTrackedFrame = tracked;
     this.#idConflictCount += tracked.identityConflictCount;
-    const protocol = this.#runner.snapshot;
-    const trial = protocol.activeTrial;
-    const timing = protocol.activeTiming;
-    if (trial === null || timing === null || this.#machine === null) {
+    const trial = this.#runner.activeTrial;
+    const machine = this.#machine;
+    if (trial === null || machine === null) {
       this.#latestEvaluation = null;
       return this.snapshot;
     }
+    const protocol = this.#runner.snapshot;
+    const timing = protocol.activeTiming;
+    if (timing === null) {
+      // Readiness phase: only the start position is observed. Nothing here counts as a rejection.
+      this.#latestEvaluation = null;
+      const readiness = protocol.activeReadiness;
+      if (readiness !== null
+        && this.#pendingReadyAtMs === null
+        && frame.captureTimeMs >= readiness.startedAtMs
+        && frame.captureTimeMs <= readiness.deadlineTimeMs
+        && hasReadinessGate(machine)) {
+        const observation = machine.observeReadiness(tracked);
+        this.#latestReadiness = observation;
+        this.#recordReadiness(observation);
+        if (observation.readyAtMs !== null) this.#pendingReadyAtMs = observation.readyAtMs;
+      }
+      return this.snapshot;
+    }
     if (frame.captureTimeMs < timing.windowOpenedAtMs) {
-      this.#latestEvaluation = this.#machine instanceof RibbonSwipeStateMachine
-        || this.#machine instanceof BloomStateMachine
-        ? this.#machine.prepare(tracked)
-        : null;
+      this.#latestEvaluation = preparesBeforeWindow(machine) ? machine.prepare(tracked) : null;
       return this.snapshot;
     }
     if (frame.captureTimeMs > timing.deadlineTimeMs) {
       this.#latestEvaluation = null;
       return this.snapshot;
     }
-    const evaluation = this.#machine.process(tracked);
+    if (!this.#windowPrimed) {
+      this.#windowPrimed = true;
+      // Without a GO target the window opens with the trial, so its first frame stands in for the count-in:
+      // a Spotlight pose already formed then must be released and formed again.
+      if (timing.targetTimeMs === null && machine instanceof SpotlightStateMachine) machine.prepare(tracked);
+    }
+    const evaluation = machine.process(tracked);
     this.#latestEvaluation = evaluation;
+    const attempt = this.#runner.activeAttempt;
 
     if (tracked.identityConflictCount > 0) {
       this.#diagnostics.push({
         trialId: trial.id,
         ordinal: trial.ordinal,
+        attempt,
         timeMs: frame.captureTimeMs,
         kind: "identity-conflict",
         handIds: tracked.hands.map(({ trackId }) => trackId),
@@ -175,12 +251,17 @@ export class Phase1LabEngine {
       });
     }
     for (const rejection of evaluation.rejections) {
+      // Tracking losses are machine-side failures: recorded, but never counted as rejections of the player's motion.
+      const trackingLoss = rejection.reasonCodes.includes("tracking-lost");
       this.#rejectionCount += 1;
+      if (trackingLoss) this.#attemptTrackingLossCount += 1;
+      else this.#attemptRejectionCount += 1;
       this.#diagnostics.push({
         trialId: trial.id,
         ordinal: trial.ordinal,
+        attempt,
         timeMs: rejection.timeMs,
-        kind: rejection.reasonCodes.includes("tracking-lost") ? "tracking-gap" : "rejection",
+        kind: trackingLoss ? "tracking-gap" : "rejection",
         handIds: [...rejection.handIds],
         reasonCodes: [...rejection.reasonCodes],
       });
@@ -188,13 +269,8 @@ export class Phase1LabEngine {
     for (const event of evaluation.events) {
       if (event.eventTimeMs < timing.windowOpenedAtMs || event.eventTimeMs > timing.deadlineTimeMs) continue;
       this.#events.push(event);
-      if (this.#runner.acceptEvent(
-        event,
-        this.#currentContactClapDiagnostic(),
-        this.#currentBloomDiagnostic(),
-      )) {
-        this.#machine = null;
-        this.#finishReplayWindow();
+      if (this.#runner.acceptEvent(event, this.#extras())) {
+        this.#afterTrialFinished(frame.captureTimeMs);
         break;
       }
     }
@@ -206,44 +282,37 @@ export class Phase1LabEngine {
     reasonCodes: readonly string[] = [],
     finishedAtMs = performance.now(),
   ): boolean {
-    const finished = this.#runner.recordOutcome(
-      outcome,
-      reasonCodes,
-      finishedAtMs,
-      this.#currentContactClapDiagnostic(finishedAtMs),
-      this.#currentBloomDiagnostic(finishedAtMs),
-    );
-    if (finished) {
-      this.#machine = null;
-      this.#finishReplayWindow();
-    }
+    const finished = this.#runner.recordOutcome(outcome, reasonCodes, finishedAtMs, this.#extras(finishedAtMs));
+    if (finished) this.#afterTrialFinished();
     return finished;
   }
 
   skip(finishedAtMs = performance.now()): boolean {
-    const finished = this.#runner.skip(
-      finishedAtMs,
-      this.#currentContactClapDiagnostic(finishedAtMs),
-      this.#currentBloomDiagnostic(finishedAtMs),
-    );
-    if (finished) {
-      this.#machine = null;
-      this.#finishReplayWindow();
-    }
+    const finished = this.#runner.skip(finishedAtMs, this.#extras(finishedAtMs));
+    if (finished) this.#afterTrialFinished();
     return finished;
   }
 
+  /** Readiness deadline before the count-in, recognition deadline afterwards. */
   timeout(finishedAtMs = performance.now()): boolean {
-    const finished = this.#runner.timeout(
-      finishedAtMs,
-      this.#currentContactClapDiagnostic(finishedAtMs),
-      this.#currentBloomDiagnostic(finishedAtMs),
-    );
-    if (finished) {
-      this.#machine = null;
-      this.#finishReplayWindow();
-    }
+    const finished = this.#runner.timeout(finishedAtMs, this.#extras(finishedAtMs));
+    if (finished) this.#afterTrialFinished();
     return finished;
+  }
+
+  /** Pauses inside a started block. An active attempt is discarded, and its pause time never counts as trial time. */
+  pause(nowMs: number, reason: P1PauseReason = "manual"): boolean {
+    const result = this.#runner.pause(nowMs, reason);
+    if (result.abandonedTrial !== null) {
+      this.#recorder?.abandonTrial({ trialId: result.abandonedTrial.id, abandonedAtMs: nowMs });
+      this.#machine = null;
+      this.#resetAttemptState();
+    }
+    return result.paused;
+  }
+
+  resume(nowMs: number): boolean {
+    return this.#runner.resume(nowMs);
   }
 
   recordFalseTrigger(event: GestureEvent): void {
@@ -282,46 +351,91 @@ export class Phase1LabEngine {
   }
 
   get snapshot(): Phase1LabSnapshot {
+    const protocol = this.#runner.snapshot;
     return {
-      protocol: this.#runner.snapshot,
+      protocol,
       latestTrackedFrame: this.#latestTrackedFrame,
       latestEvaluation: this.#latestEvaluation,
       latestDiagnostic: this.#diagnostics.at(-1) ?? null,
+      readiness: protocol.activeReadiness === null ? null : this.#latestReadiness,
+      readinessReached: this.#pendingReadyAtMs !== null
+        && protocol.activeTrial !== null
+        && protocol.activeTiming === null,
       eventCount: this.#events.length,
       rejectionCount: this.#rejectionCount,
       idConflictCount: this.#idConflictCount,
     };
   }
 
-  #finishReplayWindow(): void {
+  #afterTrialFinished(confirmedAtMs: number | null = null): void {
+    this.#machine = null;
     const result = this.#runner.snapshot.results.at(-1);
-    if (result === undefined) return;
-    this.#recorder?.finishTrial({
-      trialId: result.trial.id,
-      resolution: result.resolution,
-      finishedAtMs: result.timing.finishedAtMs,
-    });
-  }
-
-  #currentContactClapDiagnostic(finishedAtMs?: number) {
-    const trial = this.#runner.snapshot.activeTrial;
-    if (trial?.gesture !== "clap"
-      || trial.clapMode !== "contact"
-      || !(this.#machine instanceof ClapBurstStateMachine)) {
-      return undefined;
+    if (result !== undefined) {
+      this.#recorder?.finishTrial({
+        trialId: result.trial.id,
+        resolution: result.resolution,
+        // Post-roll follows the frame that confirmed the result; a Spotlight hold is confirmed after its entry time.
+        finishedAtMs: confirmedAtMs === null ? result.finishedAtMs : Math.max(result.finishedAtMs, confirmedAtMs),
+      });
     }
-    return finishedAtMs === undefined
-      ? this.#machine.diagnostic
-      : this.#machine.diagnosticAt(finishedAtMs);
+    this.#resetAttemptState();
   }
 
-  #currentBloomDiagnostic(finishedAtMs?: number) {
-    const trial = this.#runner.snapshot.activeTrial;
-    if (trial?.gesture !== "bloom" || !(this.#machine instanceof BloomStateMachine)) return undefined;
-    return finishedAtMs === undefined
-      ? this.#machine.diagnostic
-      : this.#machine.diagnosticAt(finishedAtMs);
+  #resetAttemptState(): void {
+    this.#latestReadiness = null;
+    this.#pendingReadyAtMs = null;
+    this.#readinessStats = emptyReadinessStats();
+    this.#attemptRejectionCount = 0;
+    this.#attemptTrackingLossCount = 0;
+    this.#windowPrimed = false;
   }
+
+  #recordReadiness(observation: GestureReadinessObservation): void {
+    const stats = this.#readinessStats;
+    stats.frameCount += 1;
+    if (observation.visibleHands >= 2) stats.twoHandFrameCount += 1;
+    if (observation.inZone) stats.inZoneFrameCount += 1;
+    stats.longestStableMs = Math.max(stats.longestStableMs, observation.stableMs);
+    stats.lastVisibleHands = observation.visibleHands;
+    stats.lastInZone = observation.inZone;
+  }
+
+  #extras(finishedAtMs?: number): P1TrialExtras {
+    const trial = this.#runner.activeTrial;
+    const machine = this.#machine;
+    const recognitionStarted = this.#runner.activeTiming !== null;
+    return {
+      // A gesture diagnostic is saved only when the recognition window opened; otherwise it would be all zeros.
+      ...(trial === null || machine === null || !recognitionStarted ? {} : machineDiagnostics(machine, trial, finishedAtMs)),
+      rejectionCount: this.#attemptRejectionCount,
+      trackingLossCount: this.#attemptTrackingLossCount,
+      ...(trial?.requiresReadiness === true ? { readinessDiagnostic: { ...this.#readinessStats } } : {}),
+      ...(trial !== null && !recognitionStarted
+        ? { readinessReasonCodes: readinessTimeoutReasons(trial, this.#readinessStats) }
+        : {}),
+    };
+  }
+}
+
+function emptyReadinessStats(): Mutable<P1ReadinessDiagnostic> {
+  return {
+    frameCount: 0,
+    twoHandFrameCount: 0,
+    inZoneFrameCount: 0,
+    longestStableMs: 0,
+    lastVisibleHands: null,
+    lastInZone: null,
+  };
+}
+
+/** Why the start position never settled: hands missing, hands outside the zone, or hands not held still. */
+function readinessTimeoutReasons(trial: P1TrialDefinition, stats: P1ReadinessDiagnostic): readonly string[] {
+  const cause = stats.twoHandFrameCount === 0
+    ? "readiness-hands-missing"
+    : stats.inZoneFrameCount === 0
+      ? "readiness-outside-zone"
+      : "readiness-not-still";
+  return trial.gesture === "lift" ? [cause, "lift-not-ready"] : [cause];
 }
 
 function createMachine(trial: P1TrialDefinition): TrialMachine {
@@ -334,12 +448,50 @@ function createMachine(trial: P1TrialDefinition): TrialMachine {
     case "ribbon-swipe":
       return new RibbonSwipeStateMachine({ direction: trial.swipeDirection ?? "left-to-right" });
     case "bloom":
-      return new BloomStateMachine();
+      return new BloomStateMachine({ readinessStableMs: P1_READINESS_STABLE_MS.bloom });
+    case "lift":
+      return new LiftStateMachine({ readinessStableMs: P1_READINESS_STABLE_MS.lift });
+    case "spotlight":
+      return new SpotlightStateMachine({ variant: trial.spotlightVariant ?? "left-up-right-down" });
     case "clap":
       return new ClapBurstStateMachine(trial.clapMode === "contact"
         ? { triggerDistance: 0.075, contactLikeDistance: 0.075 }
         : undefined);
   }
+}
+
+function hasReadinessGate(machine: TrialMachine): machine is BloomStateMachine | LiftStateMachine {
+  return machine instanceof BloomStateMachine || machine instanceof LiftStateMachine;
+}
+
+function preparesBeforeWindow(
+  machine: TrialMachine,
+): machine is RibbonSwipeStateMachine | BloomStateMachine | LiftStateMachine | SpotlightStateMachine {
+  return machine instanceof RibbonSwipeStateMachine
+    || machine instanceof BloomStateMachine
+    || machine instanceof LiftStateMachine
+    || machine instanceof SpotlightStateMachine;
+}
+
+function machineDiagnostics(
+  machine: TrialMachine,
+  trial: P1TrialDefinition,
+  finishedAtMs: number | undefined,
+): P1TrialExtras {
+  if (machine instanceof ClapBurstStateMachine) {
+    if (trial.gesture !== "clap" || trial.clapMode !== "contact") return {};
+    return { clapDiagnostic: finishedAtMs === undefined ? machine.diagnostic : machine.diagnosticAt(finishedAtMs) };
+  }
+  if (machine instanceof BloomStateMachine) {
+    return { bloomDiagnostic: finishedAtMs === undefined ? machine.diagnostic : machine.diagnosticAt(finishedAtMs) };
+  }
+  if (machine instanceof LiftStateMachine) {
+    return { liftDiagnostic: finishedAtMs === undefined ? machine.diagnostic : machine.diagnosticAt(finishedAtMs) };
+  }
+  if (machine instanceof SpotlightStateMachine) {
+    return { spotlightDiagnostic: finishedAtMs === undefined ? machine.diagnostic : machine.diagnosticAt(finishedAtMs) };
+  }
+  return {};
 }
 
 function toMirroredPreviewFrame(frame: TrackedHandFrame): TrackedHandFrame {

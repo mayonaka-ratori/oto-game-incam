@@ -3,6 +3,7 @@ import {
   createDeviceCheckReport,
   DEVICE_CHECK_ITEMS,
   parseDeviceCheckReport,
+  readP1SessionForChecklist,
   type ControlledGestureResult,
   type DeviceCheckFormValues,
   type DeviceCheckTechnicalSnapshot,
@@ -45,6 +46,96 @@ const technical: DeviceCheckTechnicalSnapshot = {
   trackingError: null,
 };
 
+describe("P1 result import for the device check", () => {
+  function gestureSummary(success: number): Record<string, number> {
+    return {
+      completed: 10,
+      success,
+      playerMiss: 0,
+      machineMiss: 0,
+      falseTrigger: 0,
+      trackingLoss: 0,
+      unclassified: 10 - success,
+      offsetP50Ms: 12,
+      offsetP95Ms: 30,
+    };
+  }
+
+  function p1Document(schemaVersion: number): Record<string, unknown> {
+    const thirdGesture = schemaVersion >= 4 ? "bloom" : "clap";
+    return {
+      schema: "oto-motion-p1-controlled",
+      schemaVersion,
+      createdAtIso: "2026-09-14T00:00:00.000Z",
+      ...(schemaVersion >= 4 ? { gestureVocabulary: { thirdGesture: "bloom" } } : {}),
+      session: { sessionId: `session-v${schemaVersion}` },
+      protocol: { id: schemaVersion === 5 ? "p1-five-gesture-50" : "p1-custom" },
+      summary: {
+        byGesture: {
+          "air-tap": gestureSummary(9),
+          "ribbon-swipe": gestureSummary(8),
+          [thirdGesture]: gestureSummary(7),
+        },
+      },
+    };
+  }
+
+  it("reads the three current inputs and the procedure of a five-gesture session", () => {
+    expect(readP1SessionForChecklist(p1Document(5))).toMatchObject({
+      schemaVersion: 5,
+      protocolId: "p1-five-gesture-50",
+      thirdGesture: "bloom",
+      airTap: { success: 9, offsetSummary: "p50 12ms / p95 30ms" },
+      ribbonSwipe: { success: 8 },
+      bloom: { success: 7 },
+      sessionId: "session-v5",
+      technical: null,
+    });
+  });
+
+  it("leaves the Bloom row empty for a legacy clap session and names its procedure", () => {
+    expect(readP1SessionForChecklist(p1Document(3))).toMatchObject({
+      schemaVersion: 3,
+      protocolId: "p1-legacy-clap-30",
+      thirdGesture: "clap",
+      bloom: null,
+    });
+  });
+
+  it("refuses unknown schema versions and a new schema without Bloom as the third input", () => {
+    const withoutVocabulary = p1Document(5);
+    delete withoutVocabulary.gestureVocabulary;
+
+    expect(() => readP1SessionForChecklist(p1Document(6))).toThrow(/schema version/);
+    expect(() => readP1SessionForChecklist(withoutVocabulary)).toThrow(/第三入力/);
+  });
+
+  it("keeps the P1 procedure in the technical source and reads 2.2 reports without it", () => {
+    const report = createDeviceCheckReport(formValues({}), technical, "2026-09-14T00:00:00.000Z", {
+      mode: "p1-import",
+      capturedAt: "2026-09-14T00:00:00.000Z",
+      sessionId: "session-v5",
+      p1SchemaVersion: 5,
+      p1ProtocolId: "p1-five-gesture-50",
+    });
+    const legacy = JSON.parse(JSON.stringify(report)) as Record<string, unknown>;
+    legacy.schemaVersion = "2.2";
+    const legacySource = legacy.technicalSource as Record<string, unknown>;
+    delete legacySource.p1SchemaVersion;
+    delete legacySource.p1ProtocolId;
+
+    expect(parseDeviceCheckReport(JSON.stringify(report)).technicalSource).toMatchObject({
+      p1SchemaVersion: 5,
+      p1ProtocolId: "p1-five-gesture-50",
+    });
+    expect(parseDeviceCheckReport(JSON.stringify(legacy)).technicalSource).toMatchObject({
+      mode: "p1-import",
+      p1SchemaVersion: null,
+      p1ProtocolId: null,
+    });
+  });
+});
+
 describe("device check report", () => {
   it("keeps pending and issue items and explicitly excludes raw media", () => {
     const values = formValues({
@@ -63,7 +154,7 @@ describe("device check report", () => {
     expect(report.checks.some((item) => item.status === "pending")).toBe(true);
     expect(report.privacy).toEqual({ includesCameraFrames: false, includesAudio: false });
     expect(JSON.parse(JSON.stringify(report))).toMatchObject({
-      schemaVersion: "2.2",
+      schemaVersion: "2.3",
       reportType: "phase1-device-check",
       technicalSource: { mode: "current-device", sessionId: "session-1" },
     });
@@ -80,7 +171,7 @@ describe("device check report", () => {
     legacy.schemaVersion = "2.0";
     delete legacy.technicalSource;
     const parsed = parseDeviceCheckReport(JSON.stringify(legacy));
-    expect(parsed.schemaVersion).toBe("2.2");
+    expect(parsed.schemaVersion).toBe("2.3");
     expect(parsed.technicalSource).toMatchObject({ mode: "report-import", sessionId: "session-1" });
     expect(parsed.technical.userAgent).toBe("test-agent");
   });
@@ -107,7 +198,7 @@ describe("device check report", () => {
       checks: [{ id: "privacy", completed: true }],
       technical,
     }));
-    expect(migrated.schemaVersion).toBe("2.2");
+    expect(migrated.schemaVersion).toBe("2.3");
     expect(migrated.checks.find(({ id }) => id === "privacy")?.status).toBe("pass");
   });
 });

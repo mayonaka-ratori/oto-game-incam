@@ -52,7 +52,7 @@ export const TRACKING_EXPERIMENT_PROFILES: readonly TrackingExperimentProfile[] 
   {
     id: "gpu-640x480-30",
     label: "比較条件 · GPU · 640×480 · 30fps",
-    purpose: "Androidの次回試験で使う既定条件です。カメラ供給を30fpsへ固定して負荷を比べます。",
+    purpose: "5動作・50試行で両端末に使う画面の既定条件です（docs/05の3.2）。カメラ供給を30fpsへ固定します。実測前です。",
     camera: { width: 640, height: 480, frameRateIdeal: 30, frameRateMin: 30 },
     tracking: DEFAULT_TRACKING,
   },

@@ -29,7 +29,7 @@ describe("landmark replay", () => {
       derivedLandmarksOnly: true,
     });
     expect(document.frames[0]!.hands[0]!.landmarks2D).toHaveLength(21);
-    expect(document.schemaVersion).toBe(2);
+    expect(document.schemaVersion).toBe(3);
     expect(document.frames[0]!.hands[0]).not.toHaveProperty("landmarksWorld");
     expect(JSON.stringify(document)).not.toContain("data:image");
   });
@@ -81,7 +81,7 @@ describe("landmark replay", () => {
     recorder.beginTrial({
       trialId: "trial-1",
       ordinal: 1,
-      timing: { preparedAtMs: 500, windowOpenedAtMs: 500, targetTimeMs: null, deadlineTimeMs: 30_500 },
+      timing: { preparedAtMs: 500, readyAtMs: null, windowOpenedAtMs: 500, targetTimeMs: null, deadlineTimeMs: 30_500 },
     });
     recorder.addFrame(trackingFrame(3, 500, []));
     recorder.finishTrial({
@@ -126,7 +126,7 @@ describe("landmark replay", () => {
     recorder.beginTrial({
       trialId: "trial-late",
       ordinal: 1,
-      timing: { preparedAtMs: 1_000, windowOpenedAtMs: 1_000, targetTimeMs: null, deadlineTimeMs: 31_000 },
+      timing: { preparedAtMs: 1_000, readyAtMs: null, windowOpenedAtMs: 1_000, targetTimeMs: null, deadlineTimeMs: 31_000 },
     });
     recorder.addFrame(trackingFrame(2, 1_000, []));
 
@@ -145,6 +145,6 @@ function beginTrialWindow(recorder: LandmarkReplayRecorder): void {
   recorder.beginTrial({
     trialId: "trial-1",
     ordinal: 1,
-    timing: { preparedAtMs: 0, windowOpenedAtMs: 0, targetTimeMs: null, deadlineTimeMs: 30_000 },
+    timing: { preparedAtMs: 0, readyAtMs: null, windowOpenedAtMs: 0, targetTimeMs: null, deadlineTimeMs: 30_000 },
   });
 }

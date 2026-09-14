@@ -1,5 +1,8 @@
-type P1ComparisonGesture = "air-tap" | "ribbon-swipe" | "clap" | "bloom";
+import { P1_FIVE_GESTURE_PROTOCOL_ID } from "../poc/phase1-protocol";
+
+type P1ComparisonGesture = "air-tap" | "ribbon-swipe" | "clap" | "bloom" | "lift" | "spotlight";
 type P1ThirdGesture = "clap" | "bloom";
+type P1SchemaVersion = 2 | 3 | 4 | 5;
 type FindingSeverity = "error" | "warning" | "info";
 
 export interface P1ComparisonFinding {
@@ -20,8 +23,12 @@ export interface P1ComparisonGestureSummary {
 
 export interface P1ComparisonSession {
   readonly fileName: string;
-  readonly schemaVersion: 2 | 3 | 4;
+  readonly schemaVersion: P1SchemaVersion;
+  /** Distinguishes the legacy clap protocol, the 3-input Bloom protocol, and the 5-gesture protocol. */
+  readonly protocolId: string;
   readonly thirdGesture: P1ThirdGesture;
+  /** Experimental inputs recorded in addition to the three current inputs (schema v5). */
+  readonly candidateGestures: readonly P1ComparisonGesture[];
   readonly sessionId: string;
   readonly createdAtIso: string;
   readonly appBuildId: string;
@@ -58,11 +65,29 @@ const ALL_GESTURES: readonly P1ComparisonGesture[] = [
   "ribbon-swipe",
   "clap",
   "bloom",
+  "lift",
+  "spotlight",
 ];
 
 const BASE_GESTURES: readonly P1ComparisonGesture[] = [
   "air-tap",
   "ribbon-swipe",
+];
+
+const CANDIDATE_GESTURES: readonly P1ComparisonGesture[] = ["lift", "spotlight"];
+const TRIALS_PER_GESTURE = 10;
+/** Protocol IDs of sessions saved before schema v5 recorded one. */
+export const P1_LEGACY_PROTOCOL_IDS: Readonly<Record<P1ThirdGesture, string>> = {
+  clap: "p1-legacy-clap-30",
+  bloom: "p1-bloom-30",
+};
+/** Findings that keep a v5 session out of the controlled criterion: its record of the procedure does not match. */
+const FIVE_GESTURE_RECORD_FINDINGS: readonly string[] = [
+  "protocol-id-unknown",
+  "trials-per-gesture",
+  "v5-blocks-incomplete",
+  "v5-attempt-missing",
+  "v5-spotlight-variants",
 ];
 
 export function parseP1SessionForComparison(
@@ -73,33 +98,45 @@ export function parseP1SessionForComparison(
   if (!isRecord(value) || value.schema !== "oto-motion-p1-controlled") {
     throw new TypeError("P1-ControlledセッションJSONではありません。");
   }
-  if (value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4) {
+  const schemaVersion = value.schemaVersion;
+  if (schemaVersion !== 2 && schemaVersion !== 3 && schemaVersion !== 4 && schemaVersion !== 5) {
     throw new TypeError("対応していないP1 schema versionです。");
   }
   const findings: P1ComparisonFinding[] = [];
-  const thirdGesture = parseThirdGesture(value, findings);
+  const thirdGesture = parseThirdGesture(value, schemaVersion, findings);
+  const candidateGestures = parseCandidateGestures(value, schemaVersion, findings);
+  const sessionGestures = [...comparisonGestures(thirdGesture), ...candidateGestures];
   const session = sessionRecord(value);
   const sessionId = stringValue(session.sessionId);
   if (sessionId.length === 0) throw new TypeError("sessionIdがありません。");
   const summary = requiredRecord(value.summary, "P1集計がありません。");
   const byGesture = requiredRecord(summary.byGesture, "ジェスチャー集計がありません。");
   const gestures = createEmptyGestureSummaries();
-  for (const gesture of [...BASE_GESTURES, thirdGesture]) {
-    gestures[gesture] = parseGestureSummary(byGesture[gesture], gesture, findings);
+  for (const gesture of sessionGestures) {
+    gestures[gesture] = parseGestureSummary(
+      byGesture[gesture],
+      gesture,
+      findings,
+      CANDIDATE_GESTURES.includes(gesture),
+    );
   }
   const protocol = isRecord(value.protocol) ? value.protocol : {};
-  const completed = finiteNumber(protocol.completed) ?? sumGesture(gestures, "completed", thirdGesture);
-  const total = finiteNumber(protocol.total) ?? 30;
+  const protocolId = parseProtocolId(schemaVersion, protocol, thirdGesture, findings);
+  if (schemaVersion === 5) validateFiveGestureRecords(protocol, protocolId, findings);
+  const expectedTotal = sessionGestures.length * TRIALS_PER_GESTURE;
+  const completed = finiteNumber(protocol.completed) ?? sumGesture(gestures, "completed", sessionGestures);
+  const total = finiteNumber(protocol.total) ?? expectedTotal;
   validateProtocol(
     protocol,
     completed,
     total,
-    thirdGesture,
+    expectedTotal,
+    sessionGestures,
     gestures,
     countValue(summary.falseTriggers),
     findings,
   );
-  validatePrivacy(value, findings);
+  validatePrivacy(value, schemaVersion, findings);
 
   const technical = isRecord(value.technicalSnapshot) ? value.technicalSnapshot : {};
   const appBuildId = stringValue(technical.appBuildId) || stringValue(session.appVersion);
@@ -110,7 +147,7 @@ export function parseP1SessionForComparison(
   if (experimentProfileId.length === 0) {
     findings.push(finding("profile-missing", "warning", "実験プロファイルIDがありません。旧形式の結果として比較します。"));
   }
-  if (value.schemaVersion === 2) {
+  if (schemaVersion === 2) {
     findings.push(finding("legacy-schema", "warning", "データ形式がv2です。プロファイル／実カメラ設定が不足する場合があります。"));
   }
   const requestedConfigurationComplete = [
@@ -128,8 +165,7 @@ export function parseP1SessionForComparison(
   ].every((item) => finiteNumber(item) !== null)
     && stringValue(technical.delegate).length > 0
     && stringValue(technical.modelId).length > 0;
-  if ((value.schemaVersion === 3 || value.schemaVersion === 4)
-    && (!requestedConfigurationComplete || !actualConfigurationComplete)) {
+  if (schemaVersion >= 3 && (!requestedConfigurationComplete || !actualConfigurationComplete)) {
     findings.push(finding(
       "configuration-missing",
       "warning",
@@ -168,8 +204,22 @@ export function parseP1SessionForComparison(
     findings.push(finding("queue-unbounded", "error", "保存時点で「処理中」または「次に処理」が1を超えています。"));
   }
 
+  const requestedDelegate = stringValue(technical.requestedDelegate);
+  const actualDelegate = stringValue(technical.delegate);
+  const delegateFallback = requestedDelegate.length > 0 && actualDelegate.length > 0 && requestedDelegate !== actualDelegate;
+  if (delegateFallback) {
+    findings.push(finding(
+      "delegate-fallback",
+      "warning",
+      `手の認識処理が要求した${requestedDelegate}ではなく${actualDelegate}で動きました。通常の${requestedDelegate}の実測と同じ条件にせず、合否候補にしません。`,
+    ));
+  }
+
   const dataComplete = findings.every(({ severity }) => severity !== "error");
+  // Lift and Spotlight are candidates. Only the three current inputs form the P1-Controlled starting criterion.
   const controlledCriterionCandidate = dataComplete
+    && !delegateFallback
+    && !findings.some(({ code }) => FIVE_GESTURE_RECORD_FINDINGS.includes(code))
     && appBuildId.length > 0
     && experimentProfileId.length > 0
     && requestedConfigurationComplete
@@ -180,7 +230,8 @@ export function parseP1SessionForComparison(
     && comparisonGestures(thirdGesture).every((gesture) => gestures[gesture].success >= 8);
   return {
     fileName,
-    schemaVersion: value.schemaVersion,
+    schemaVersion,
+    protocolId,
     sessionId,
     createdAtIso: stringValue(value.createdAtIso) || stringValue(session.createdAtIso),
     appBuildId,
@@ -199,13 +250,14 @@ export function parseP1SessionForComparison(
       nullableFinite(technical.actualCameraFrameRate),
       nullableFinite(technical.actualCameraFrameRate),
     ),
-    requestedDelegate: stringValue(technical.requestedDelegate),
-    actualDelegate: stringValue(technical.delegate),
+    requestedDelegate,
+    actualDelegate,
     requestedModelId: stringValue(technical.requestedModelId),
     actualModelId: stringValue(technical.modelId),
     completed,
     total,
     thirdGesture,
+    candidateGestures,
     gestures,
     trackingHz,
     inferenceP95Ms,
@@ -232,6 +284,16 @@ export function compareP1Sessions(
   const complete = sessions.filter(({ dataComplete }) => dataComplete);
   const buildIds = distinctNonEmpty(sessions.map(({ appBuildId }) => appBuildId));
   const profileIds = distinctNonEmpty(sessions.map(({ experimentProfileId }) => experimentProfileId));
+  // A procedure is the ID with its schema version and trial count, so a wrong ID cannot merge 30 and 50 trials.
+  const protocolIds = distinctNonEmpty(sessions.map(protocolLabel));
+  const delegates = distinctNonEmpty(sessions.map(({ actualDelegate }) => actualDelegate));
+  const sessionIds = sessions.map(({ sessionId }) => sessionId);
+  const duplicateIds = distinctNonEmpty(sessionIds.filter((id, index) => sessionIds.indexOf(id) !== index));
+  const distinctSessionCount = new Set(sessionIds).size;
+  const userAgents = sessions.map(({ userAgent }) => userAgent);
+  const sameDeviceSuspected = distinctSessionCount >= 2
+    && userAgents.every((agent) => agent.length > 0)
+    && new Set(userAgents).size === 1;
   if (buildIds.length > 1) {
     findings.push(finding(
       "mixed-builds",
@@ -254,6 +316,34 @@ export function compareP1Sessions(
       "旧clapセッションと新Bloomセッションが混在しています。第三入力の合否候補を同じ条件へまとめません。",
     ));
   }
+  if (protocolIds.length > 1) {
+    findings.push(finding(
+      "mixed-protocols",
+      "warning",
+      `試験手順が混在しています（${protocolIds.join(" / ")}）。Bloomの準備完了待ちの有無なども異なるため、同じ条件の結果へまとめません。`,
+    ));
+  }
+  if (delegates.length > 1) {
+    findings.push(finding(
+      "mixed-delegates",
+      "warning",
+      `手の認識処理が混在しています（${delegates.join(" / ")}）。CPUに切り替わった結果はGPUの結果と同じ条件にまとめません。`,
+    ));
+  }
+  if (duplicateIds.length > 0) {
+    findings.push(finding(
+      "duplicate-sessions",
+      "warning",
+      `同じsessionIdのファイルが複数あります（${duplicateIds.join(" / ")}）。同じ試験を2回保存したものとして1件に数えます。`,
+    ));
+  }
+  if (sameDeviceSuspected) {
+    findings.push(finding(
+      "same-device-suspected",
+      "warning",
+      "すべてのセッションで端末情報（userAgent）が同じです。同じ端末の結果だけの可能性があるため、合否候補にしません。別の対象端末の結果を加えてください。",
+    ));
+  }
   if (complete.length < sessions.length) {
     findings.push(finding(
       "incomplete-sessions",
@@ -268,21 +358,31 @@ export function compareP1Sessions(
   const sameConditions = hasComparableMetadata
     && buildIds.length === 1
     && profileIds.length === 1
-    && thirdGestures.length === 1;
-  const controlledCriterionCandidate = sessions.length >= 2
+    && thirdGestures.length === 1
+    && protocolIds.length === 1
+    && delegates.length <= 1;
+  const controlledCriterionCandidate = distinctSessionCount >= 2
     && candidateSessions.length === sessions.length
-    && sameConditions;
+    && sameConditions
+    && !sameDeviceSuspected;
   if (controlledCriterionCandidate) {
     findings.push(finding(
       "controlled-candidate",
       "info",
-      "2件以上の完全な同一条件セッションで3入力が8/10以上です。対象端末／テスター、手動分類、同期感を確認して最終判定してください。",
+      "2件以上の完全な同一条件セッションで3入力（エアタップ・リボンスワイプ・第三入力）が8/10以上です。対象端末／テスター、手動分類、同期感を確認して最終判定してください。",
     ));
   } else if (candidateSessions.length > 0) {
     findings.push(finding(
       "partial-controlled-candidate",
       "info",
       `${candidateSessions.length}件は3入力8/10以上ですが、自動的に合格とは判定しません。`,
+    ));
+  }
+  if (sessions.some(({ candidateGestures }) => candidateGestures.length > 0)) {
+    findings.push(finding(
+      "candidate-gestures",
+      "info",
+      "Lift／Spotlightは候補動作です。8/10以上でもP1合否の条件には含めず、Interaction POCへ持ち込む動作を選ぶ材料として比べます。",
     ));
   }
 
@@ -316,16 +416,22 @@ export class P1SessionComparisonController {
   readonly #import = async (): Promise<void> => {
     const files = [...(this.#input.files ?? [])];
     const importErrors: string[] = [];
+    const notices: string[] = [];
     for (const file of files) {
       try {
         const session = parseP1SessionForComparison(await file.text(), file.name);
-        this.#sessions.set(`${session.sessionId}:${session.createdAtIso}`, session);
+        const existing = this.#sessions.get(session.sessionId);
+        // A session saved twice is one session: the more complete file, or else the later one, is compared.
+        if (existing !== undefined) {
+          notices.push(`${file.name}: ${session.sessionId}は読込済みです。試行数の多い方（同じなら後で保存した方）だけを比較します。`);
+        }
+        this.#sessions.set(session.sessionId, existing === undefined ? session : preferredSession(existing, session));
       } catch (error) {
         importErrors.push(`${file.name}: ${describeError(error)}`);
       }
     }
     this.#input.value = "";
-    this.#render(importErrors);
+    this.#render(importErrors, notices);
   };
 
   readonly #clear = (): void => {
@@ -333,7 +439,7 @@ export class P1SessionComparisonController {
     this.#render();
   };
 
-  #render(importErrors: readonly string[] = []): void {
+  #render(importErrors: readonly string[] = [], notices: readonly string[] = []): void {
     const result = compareP1Sessions([...this.#sessions.values()]);
     this.#body.replaceChildren(...result.sessions.map(renderSessionRow));
     this.#findings.replaceChildren();
@@ -348,6 +454,9 @@ export class P1SessionComparisonController {
     for (const message of importErrors) {
       this.#findings.append(renderFinding(message, "error"));
     }
+    for (const message of notices) {
+      this.#findings.append(renderFinding(message, "info"));
+    }
     this.#findings.append(renderFinding(`次の一手: ${result.nextAction}`, "info"));
     this.#status.textContent = result.sessions.length === 0
       ? "0セッション"
@@ -361,6 +470,7 @@ function parseGestureSummary(
   value: unknown,
   gesture: P1ComparisonGesture,
   findings: P1ComparisonFinding[],
+  candidate: boolean,
 ): P1ComparisonGestureSummary {
   if (!isRecord(value)) throw new TypeError(`${gesture}の集計がありません。`);
   const summary = {
@@ -377,7 +487,7 @@ function parseGestureSummary(
     + summary.machineMiss
     + summary.trackingLoss
     + summary.unclassified;
-  if (summary.completed !== 10) {
+  if (summary.completed !== TRIALS_PER_GESTURE) {
     findings.push(finding(`${gesture}-count`, "error", `${gesture}が10試行ではありません（${summary.completed}件）。`));
   }
   if (outcomeTotal !== summary.completed) {
@@ -388,11 +498,17 @@ function parseGestureSummary(
     ));
   }
   if (summary.success < 8) {
-    findings.push(finding(
-      `${gesture}-under-controlled`,
-      "warning",
-      `${gesture}のsuccessが8/10未満です（${summary.success}/10）。`,
-    ));
+    findings.push(candidate
+      ? finding(
+        `${gesture}-candidate-under-8`,
+        "info",
+        `候補動作${gestureLabel(gesture)}のsuccessは${summary.success}/10です。採否判断の材料として記録します。`,
+      )
+      : finding(
+        `${gesture}-under-controlled`,
+        "warning",
+        `${gesture}のsuccessが8/10未満です（${summary.success}/10）。`,
+      ));
   }
   return summary;
 }
@@ -401,16 +517,17 @@ function validateProtocol(
   protocol: Record<string, unknown>,
   completed: number,
   total: number,
-  thirdGesture: P1ThirdGesture,
+  expectedTotal: number,
+  sessionGestures: readonly P1ComparisonGesture[],
   summaries: Readonly<Record<P1ComparisonGesture, P1ComparisonGestureSummary>>,
   summaryFalseTriggers: number,
   findings: P1ComparisonFinding[],
 ): void {
-  if (completed !== 30 || total !== 30) {
+  if (completed !== expectedTotal || total !== expectedTotal) {
     findings.push(finding(
       "protocol-count",
       "error",
-      `P1進捗が30/30ではありません（${completed}/${total}）。`,
+      `P1進捗が${expectedTotal}/${expectedTotal}ではありません（${completed}/${total}）。`,
     ));
   }
   if (!Array.isArray(protocol.results)) {
@@ -434,7 +551,7 @@ function validateProtocol(
     }
     const ordinal = finiteNumber(result.trial.ordinal);
     if (ordinal !== null && Number.isInteger(ordinal)) ordinals.push(ordinal);
-    const gesture = comparisonGesture(result.trial.gesture, thirdGesture);
+    const gesture = comparisonGesture(result.trial.gesture, sessionGestures);
     const outcome = comparisonOutcome(result.outcome);
     if (gesture === null || outcome === null) {
       findings.push(finding(
@@ -454,8 +571,8 @@ function validateProtocol(
     findings.push(finding("duplicate-trial", "error", "重複するtrial ordinalがあります。"));
   }
 
-  validateFalseTriggers(protocol.falseTriggers, derived, summaryFalseTriggers, findings, thirdGesture);
-  for (const gesture of comparisonGestures(thirdGesture)) {
+  validateFalseTriggers(protocol.falseTriggers, derived, summaryFalseTriggers, findings, sessionGestures);
+  for (const gesture of sessionGestures) {
     const mismatches = SUMMARY_RESULT_FIELDS.filter((field) => (
       summaries[gesture][field] !== derived[gesture][field]
     ));
@@ -504,8 +621,10 @@ function createEmptyGestureCounts(): MutableGestureCounts {
   ])) as MutableGestureCounts;
 }
 
-function comparisonGesture(value: unknown, thirdGesture: P1ThirdGesture): P1ComparisonGesture | null {
-  const allowed = comparisonGestures(thirdGesture);
+function comparisonGesture(
+  value: unknown,
+  allowed: readonly P1ComparisonGesture[],
+): P1ComparisonGesture | null {
   return typeof value === "string" && allowed.includes(value as P1ComparisonGesture)
     ? value as P1ComparisonGesture
     : null;
@@ -526,7 +645,7 @@ function validateFalseTriggers(
   derived: MutableGestureCounts,
   summaryFalseTriggers: number,
   findings: P1ComparisonFinding[],
-  thirdGesture: P1ThirdGesture = "clap",
+  allowed: readonly P1ComparisonGesture[],
 ): void {
   if (!Array.isArray(value)) {
     findings.push(finding("false-triggers-missing", "error", "falseTriggers配列がないため集計を検証できません。"));
@@ -534,7 +653,7 @@ function validateFalseTriggers(
   }
   let validCount = 0;
   for (const [index, event] of value.entries()) {
-    const gesture = isRecord(event) ? comparisonGesture(event.gestureType, thirdGesture) : null;
+    const gesture = isRecord(event) ? comparisonGesture(event.gestureType, allowed) : null;
     if (gesture === null) {
       findings.push(finding("false-trigger-invalid", "error", `false trigger ${index + 1}のgestureが不正です。`));
       continue;
@@ -553,6 +672,7 @@ function validateFalseTriggers(
 
 function validatePrivacy(
   document: Record<string, unknown>,
+  schemaVersion: P1SchemaVersion,
   findings: P1ComparisonFinding[],
 ): void {
   const privacy = isRecord(document.privacy) ? document.privacy : null;
@@ -561,10 +681,8 @@ function validatePrivacy(
     || privacy.includesAudio !== false) {
     findings.push(finding("raw-media-privacy", "error", "生映像・生音声を含まないprivacy宣言を確認できません。"));
   }
-  if (document.schemaVersion === 3 || document.schemaVersion === 4) {
-    if (privacy?.includesReplayFrames !== false) {
-      findings.push(finding("replay-privacy", "error", `schema v${document.schemaVersion}標準結果のreplay frame非同梱を確認できません。`));
-    }
+  if (schemaVersion >= 3 && privacy?.includesReplayFrames !== false) {
+    findings.push(finding("replay-privacy", "error", `schema v${schemaVersion}標準結果のreplay frame非同梱を確認できません。`));
   }
 }
 
@@ -577,6 +695,9 @@ function chooseNextAction(
   }
   if (findings.some(({ code }) => code === "mixed-third-gestures")) {
     return "旧clapと新Bloomのセッションを分け、同じ第三入力どうしで比較する";
+  }
+  if (findings.some(({ code }) => code === "mixed-protocols")) {
+    return "3入力・30試行と5動作・50試行を分け、同じ試験手順のセッションどうしで比較する";
   }
   if (sessions.some((session) => session.findings.some(({ code }) => (
     code === "tracking-hz-low" || code === "frame-age-high"
@@ -593,16 +714,29 @@ function chooseNextAction(
   if (lowest !== undefined && lowest.success < 8) {
     return `${gestureLabel(lowest.gesture)}の失敗理由を確認し、画角・ガイド・状態機械から一項目だけ選ぶ`;
   }
+  if (findings.some(({ code }) => code === "mixed-delegates")
+    || sessions.some((session) => session.findings.some(({ code }) => code === "delegate-fallback"))) {
+    return "手の認識処理がCPUへ切り替わった原因を確認し、要求どおりの処理で測り直す";
+  }
   if (findings.some(({ code }) => code === "mixed-builds" || code === "mixed-profiles")) {
     return "同じビルドとプロファイルのセッションを揃える";
   }
   if (sessions.some((session) => session.findings.some(({ code }) => (
     code === "build-missing" || code === "profile-missing"
   )))) {
-    return "ビルドとプロファイルを記録できるデータ形式v4でセッションを揃える";
+    return "ビルドとプロファイルを記録できるデータ形式v4以降でセッションを揃える";
   }
-  if (sessions.length < 2) {
-    return "もう一方の対象端末／テスターで同じビルドとプロファイルの30試行を行う";
+  if (sessions.some((session) => session.findings.some(({ code }) => FIVE_GESTURE_RECORD_FINDINGS.includes(code)))) {
+    return "試験手順の記録が合わないセッションを、現行の画面で測り直す";
+  }
+  if (new Set(sessions.map(({ sessionId }) => sessionId)).size < 2) {
+    // The current app runs only the five-gesture, 50-trial procedure.
+    return sessions.every(({ schemaVersion }) => schemaVersion < 5)
+      ? "現行の5動作・50試行で、両方の対象端末を同じビルドとプロファイルで測る"
+      : "もう一方の対象端末／テスターで同じビルドとプロファイルの50試行を行う";
+  }
+  if (findings.some(({ code }) => code === "same-device-suspected")) {
+    return "別の対象端末（AndroidとiPhoneなど）で同じビルドとプロファイルの50試行を行う";
   }
   return "対象端末／テスター、手動分類、同期感を確認して合格／要改善／方針転換を記録する";
 }
@@ -610,6 +744,9 @@ function chooseNextAction(
 function renderSessionRow(session: P1ComparisonSession): HTMLTableRowElement {
   const row = document.createElement("tr");
   row.dataset.complete = String(session.dataComplete);
+  const candidate = (gesture: P1ComparisonGesture): string => (
+    session.candidateGestures.includes(gesture) ? `${session.gestures[gesture].success}/10` : "—"
+  );
   const values = [
     session.sessionId,
     `v${session.schemaVersion} / ${session.appBuildId || "ビルド不明"}`,
@@ -618,6 +755,8 @@ function renderSessionRow(session: P1ComparisonSession): HTMLTableRowElement {
     `${session.gestures["air-tap"].success}/10`,
     `${session.gestures["ribbon-swipe"].success}/10`,
     `${gestureLabel(session.thirdGesture)} ${session.gestures[session.thirdGesture].success}/10`,
+    candidate("lift"),
+    candidate("spotlight"),
     metric(session.trackingHz, "Hz"),
     metric(session.frameAgeP95Ms, "ms"),
     percent(session.twoHandCoverage),
@@ -630,6 +769,7 @@ function renderSessionRow(session: P1ComparisonSession): HTMLTableRowElement {
   }
   row.title = [
     session.fileName,
+    session.protocolId,
     session.viewport,
     session.requestedCamera,
     session.actualCamera,
@@ -651,6 +791,8 @@ function gestureLabel(gesture: P1ComparisonGesture): string {
     "ribbon-swipe": "リボンスワイプ",
     clap: "クラップ／ニアクラップ",
     bloom: "Bloom",
+    lift: "Lift",
+    spotlight: "Spotlight",
   }[gesture];
 }
 
@@ -676,22 +818,116 @@ function requiredRecord(value: unknown, message: string): Record<string, unknown
 function sumGesture(
   gestures: Readonly<Record<P1ComparisonGesture, P1ComparisonGestureSummary>>,
   key: keyof P1ComparisonGestureSummary,
-  thirdGesture: P1ThirdGesture,
+  sessionGestures: readonly P1ComparisonGesture[],
 ): number {
-  return comparisonGestures(thirdGesture).reduce((sum, gesture) => sum + gestures[gesture][key], 0);
+  return sessionGestures.reduce((sum, gesture) => sum + gestures[gesture][key], 0);
 }
 
 function parseThirdGesture(
   document: Record<string, unknown>,
+  schemaVersion: P1SchemaVersion,
   findings: P1ComparisonFinding[],
 ): P1ThirdGesture {
-  if (document.schemaVersion === 2 || document.schemaVersion === 3) return "clap";
-  const vocabulary = requiredRecord(document.gestureVocabulary, "schema v4のgestureVocabularyがありません。");
+  if (schemaVersion === 2 || schemaVersion === 3) return "clap";
+  const vocabulary = requiredRecord(document.gestureVocabulary, `schema v${schemaVersion}のgestureVocabularyがありません。`);
   if (vocabulary.thirdGesture !== "bloom") {
-    findings.push(finding("gesture-vocabulary-invalid", "error", "schema v4の第三入力がBloomではありません。"));
-    throw new TypeError("schema v4の第三入力が不正です。");
+    findings.push(finding("gesture-vocabulary-invalid", "error", `schema v${schemaVersion}の第三入力がBloomではありません。`));
+    throw new TypeError(`schema v${schemaVersion}の第三入力が不正です。`);
   }
   return "bloom";
+}
+
+function parseCandidateGestures(
+  document: Record<string, unknown>,
+  schemaVersion: P1SchemaVersion,
+  findings: P1ComparisonFinding[],
+): readonly P1ComparisonGesture[] {
+  if (schemaVersion !== 5) return [];
+  const vocabulary = isRecord(document.gestureVocabulary) ? document.gestureVocabulary : {};
+  const listed: readonly unknown[] = Array.isArray(vocabulary.gestures) ? vocabulary.gestures : [];
+  const candidates = CANDIDATE_GESTURES.filter((gesture) => listed.includes(gesture));
+  if (candidates.length !== CANDIDATE_GESTURES.length) {
+    findings.push(finding(
+      "gesture-vocabulary-candidates",
+      "error",
+      "schema v5の動作一覧にLiftとSpotlightがそろっていません。",
+    ));
+  }
+  return candidates;
+}
+
+function parseProtocolId(
+  schemaVersion: P1SchemaVersion,
+  protocol: Record<string, unknown>,
+  thirdGesture: P1ThirdGesture,
+  findings: P1ComparisonFinding[],
+): string {
+  if (schemaVersion !== 5) return P1_LEGACY_PROTOCOL_IDS[thirdGesture];
+  const id = stringValue(protocol.id);
+  if (id.length === 0) {
+    findings.push(finding("protocol-id-missing", "error", "schema v5の試験手順ID（protocol.id）がありません。"));
+    return "unknown";
+  }
+  return id;
+}
+
+function protocolLabel(session: P1ComparisonSession): string {
+  return `${session.protocolId}（v${session.schemaVersion}・${session.total}試行）`;
+}
+
+function preferredSession(existing: P1ComparisonSession, incoming: P1ComparisonSession): P1ComparisonSession {
+  if (existing.completed !== incoming.completed) return incoming.completed > existing.completed ? incoming : existing;
+  return incoming.createdAtIso >= existing.createdAtIso ? incoming : existing;
+}
+
+/** Schema v5 records the procedure itself; a record that does not match the five-gesture procedure is flagged. */
+function validateFiveGestureRecords(
+  protocol: Record<string, unknown>,
+  protocolId: string,
+  findings: P1ComparisonFinding[],
+): void {
+  if (protocolId !== P1_FIVE_GESTURE_PROTOCOL_ID && protocolId !== "unknown") {
+    findings.push(finding(
+      "protocol-id-unknown",
+      "warning",
+      `schema v5の試験手順ID（${protocolId}）が5動作・50試行（${P1_FIVE_GESTURE_PROTOCOL_ID}）ではありません。合否候補にしません。`,
+    ));
+  }
+  const trialsPerGesture = finiteNumber(protocol.trialsPerGesture);
+  if (trialsPerGesture !== TRIALS_PER_GESTURE) {
+    findings.push(finding(
+      "trials-per-gesture",
+      "warning",
+      `各動作の試行数（trialsPerGesture）が10ではありません（${trialsPerGesture ?? "記録なし"}）。`,
+    ));
+  }
+  const blocks: readonly unknown[] = Array.isArray(protocol.blocks) ? protocol.blocks : [];
+  const recordedBlocks = blocks.filter((block) => (
+    isRecord(block) && finiteNumber(block.startedAtMs) !== null && finiteNumber(block.finishedAtMs) !== null
+  )).length;
+  if (blocks.length !== 5 || recordedBlocks !== 5) {
+    findings.push(finding(
+      "v5-blocks-incomplete",
+      "warning",
+      `5ブロックの開始と終了の記録がそろっていません（${recordedBlocks} / 5）。`,
+    ));
+  }
+  const results: readonly unknown[] = Array.isArray(protocol.results) ? protocol.results : [];
+  if (results.some((result) => !isRecord(result) || countValue(result.attempt) < 1)) {
+    findings.push(finding("v5-attempt-missing", "warning", "何回目の試みか（attempt）の記録がない試行結果があります。"));
+  }
+  const variants = results.flatMap((result) => (
+    isRecord(result) && isRecord(result.trial) && result.trial.gesture === "spotlight" ? [result.trial.spotlightVariant] : []
+  ));
+  const leftUp = variants.filter((variant) => variant === "left-up-right-down").length;
+  const rightUp = variants.filter((variant) => variant === "right-up-left-down").length;
+  if (leftUp !== 5 || rightUp !== 5) {
+    findings.push(finding(
+      "v5-spotlight-variants",
+      "warning",
+      `Spotlightの上下の割り当てが5回ずつではありません（左手上 ${leftUp}回・右手上 ${rightUp}回）。`,
+    ));
+  }
 }
 
 function comparisonGestures(thirdGesture: P1ThirdGesture): readonly P1ComparisonGesture[] {

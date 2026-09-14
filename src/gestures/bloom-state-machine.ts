@@ -3,9 +3,12 @@ import {
   createGestureEventId,
   type GestureEvaluation,
   type GestureEvent,
+  type GestureReadinessObservation,
   type GestureReasonCode,
   type GestureRejection,
 } from "./gesture-types";
+import { ReadinessGate } from "./readiness-gate";
+import { StillnessWindow } from "./stillness-window";
 
 export interface BloomConfig {
   /** The starting hand span must be large enough to distinguish two hands. */
@@ -22,6 +25,17 @@ export interface BloomConfig {
   readonly maximumDurationMs?: number;
   readonly maximumTrackingGapMs?: number;
   readonly cooldownMs?: number;
+  /** How long both hands must stay in the central start position before the count-in. */
+  readonly readinessStableMs?: number;
+  readonly readinessMaximumDrift?: number;
+  /** Hands within this distance of the waiting position have not started the Bloom yet. */
+  readonly stationaryTolerance?: number;
+  /**
+   * How long both hands must stay within the stationary tolerance to count as settled.
+   * Settled hands re-arm after a rejection, and hands that drift and stop in the start
+   * position move the waiting position there.
+   */
+  readonly settleMs?: number;
 }
 
 export interface BloomDiagnosticHand {
@@ -50,6 +64,7 @@ export interface BloomTrialDiagnostic {
     readonly twoHands: number;
   };
   readonly lastTwoHandObservedAtMs: number | null;
+  /** When the latest waiting position was set: arming, or settling at a new position. */
   readonly armedAtMs: number | null;
   readonly triggerTimeMs: number | null;
   readonly maximumSyncSpreadMs: number;
@@ -57,6 +72,8 @@ export interface BloomTrialDiagnostic {
   readonly hands: readonly BloomDiagnosticHand[];
   readonly latestTrackingGap: BloomTrackingGapDiagnostic | null;
   readonly rejectionReasonCodes: readonly GestureReasonCode[];
+  /** Times the tracker swapped the two hand identities; positions kept the left and right hands apart. */
+  readonly identitySwapCount: number;
 }
 
 type BloomPhase = "armed" | "gap";
@@ -68,11 +85,12 @@ interface Point {
 
 interface BloomCandidate {
   phase: BloomPhase;
-  readonly leftId: string;
-  readonly rightId: string;
-  readonly leftStart: Point;
-  readonly rightStart: Point;
-  readonly startedAtMs: number;
+  leftId: string;
+  rightId: string;
+  leftStart: Point;
+  rightStart: Point;
+  /** Last time both hands were still at the waiting position; the duration limit counts from here. */
+  startedAtMs: number;
   lastTimeMs: number;
   leftLast: Point;
   rightLast: Point;
@@ -82,6 +100,7 @@ interface BloomCandidate {
 }
 
 interface MutableBloomDiagnosticHand extends BloomDiagnosticHand {
+  trackId: string;
   maximumOutwardDistance: number;
   maximumUpwardDistance: number;
   maximumOutwardSpeed: number;
@@ -106,12 +125,21 @@ const DEFAULTS = {
   maximumDurationMs: 1_400,
   maximumTrackingGapMs: 150,
   cooldownMs: 280,
+  readinessStableMs: 200,
+  readinessMaximumDrift: 0.05,
+  stationaryTolerance: 0.02,
+  settleMs: 250,
 } as const;
+
+/** A hand keeps its threshold crossing time until it falls this far back below the threshold. */
+const REACH_RELEASE_MARGIN = 0.03;
 
 export class BloomStateMachine {
   readonly #config: Required<BloomConfig>;
   #candidate: BloomCandidate | null = null;
   #cooldownUntilMs = -Infinity;
+  /** The first two-hand frame of the recognition window has been checked for the start position. */
+  #startChecked = false;
   #observationFrameCounts = { zeroHands: 0, oneHand: 0, twoHands: 0 };
   #lastTwoHandObservedAtMs: number | null = null;
   #armedAtMs: number | null = null;
@@ -121,17 +149,37 @@ export class BloomStateMachine {
   #diagnosticHands: MutableBloomDiagnosticHand[] = [];
   #latestTrackingGap: MutableBloomTrackingGapDiagnostic | null = null;
   #rejectionReasonCodes: GestureReasonCode[] = [];
+  #identitySwapCount = 0;
+  readonly #readiness: ReadinessGate;
+  readonly #armSettle: StillnessWindow;
+  readonly #waitSettle: StillnessWindow;
 
   constructor(config: BloomConfig = {}) {
     this.#config = { ...DEFAULTS, ...config };
+    this.#readiness = new ReadinessGate({
+      requiredStableMs: this.#config.readinessStableMs,
+      maximumDriftDistance: this.#config.readinessMaximumDrift,
+    });
+    this.#armSettle = new StillnessWindow(this.#config.settleMs, this.#config.stationaryTolerance);
+    this.#waitSettle = new StillnessWindow(this.#config.settleMs, this.#config.stationaryTolerance);
+  }
+
+  /** Confirm that both hands settled in the central start position before the count-in. */
+  observeReadiness(frame: TrackedHandFrame): GestureReadinessObservation {
+    const pair = preparationPair(frame.hands);
+    return this.#readiness.observe(
+      frame.captureTimeMs,
+      frame.hands.length,
+      pair !== null && this.#inPreparationZone(pair) ? pair : null,
+    );
   }
 
   /** Ignore all preparation motion so it cannot become an active Bloom. */
   prepare(frame: TrackedHandFrame): GestureEvaluation {
-    void frame;
-    this.#candidate = null;
+    this.#dropCandidate();
     this.#armedAtMs = null;
     this.#triggerTimeMs = null;
+    this.#startChecked = false;
     return { frame, events: [], rejections: [] };
   }
 
@@ -141,14 +189,15 @@ export class BloomStateMachine {
     this.#recordObservation(frame);
 
     if (this.#candidate === null) {
+      this.#closeTrackingGap(frame);
       this.#tryArm(frame);
       return { frame, events, rejections };
     }
 
     const candidate = this.#candidate;
     const visible = new Map(frame.hands.map((hand) => [hand.trackId, hand]));
-    const left = visible.get(candidate.leftId);
-    const right = visible.get(candidate.rightId);
+    let left = visible.get(candidate.leftId);
+    let right = visible.get(candidate.rightId);
     if (left === undefined || right === undefined) {
       const elapsed = frame.captureTimeMs - candidate.lastTimeMs;
       if (elapsed <= this.#config.maximumTrackingGapMs) {
@@ -175,14 +224,32 @@ export class BloomStateMachine {
         return { frame, events, rejections };
       }
       candidate.phase = "armed";
-      if (this.#latestTrackingGap !== null && this.#latestTrackingGap.reacquiredAtMs === null) {
-        this.#latestTrackingGap.reacquiredAtMs = frame.captureTimeMs;
-        this.#latestTrackingGap.durationMs = Math.max(
-          0,
-          frame.captureTimeMs - this.#latestTrackingGap.startedAtMs,
-        );
-      }
+      this.#closeTrackingGap(frame);
       candidate.latestGapStartedAtMs = null;
+    }
+
+    if (left.palmCenter.x > right.palmCenter.x) {
+      // The tracker swapped the two identities. Bloom hands never cross, so the positions tell left from right.
+      [left, right] = [right, left];
+      this.#swapIdentities(candidate);
+    }
+
+    const tolerance = this.#config.stationaryTolerance;
+    const settled = this.#waitSettle.observe(
+      frame.captureTimeMs,
+      [candidate.leftId, candidate.rightId],
+      [left.palmCenter, right.palmCenter],
+    );
+    if (isStill(candidate.leftStart, left, tolerance) && isStill(candidate.rightStart, right, tolerance)) {
+      // Waiting in the armed position for GO must not consume the Bloom duration.
+      candidate.startedAtMs = frame.captureTimeMs;
+      advance(candidate, left, right, frame.captureTimeMs);
+      return { frame, events, rejections };
+    }
+    if (settled && this.#inPreparationZone([left, right])) {
+      // The hands drifted and stopped inside the start position: waiting continues from there.
+      this.#setWaitingPosition(candidate, left, right, frame.captureTimeMs);
+      return { frame, events, rejections };
     }
 
     const elapsed = frame.captureTimeMs - candidate.startedAtMs;
@@ -233,7 +300,7 @@ export class BloomStateMachine {
     candidate.leftOutwardReadyAtMs = leftReadyAtMs;
     candidate.rightOutwardReadyAtMs = rightReadyAtMs;
     updateThresholdDiagnostics(
-      this.#diagnosticHands.find(({ trackId }) => trackId === candidate.leftId),
+      leftDiagnostic,
       candidate.leftStart,
       candidate.leftLast,
       left,
@@ -244,7 +311,7 @@ export class BloomStateMachine {
       "left",
     );
     updateThresholdDiagnostics(
-      this.#diagnosticHands.find(({ trackId }) => trackId === candidate.rightId),
+      rightDiagnostic,
       candidate.rightStart,
       candidate.rightLast,
       right,
@@ -262,9 +329,7 @@ export class BloomStateMachine {
         this.#reject(candidate, frame.captureTimeMs, "bloom-sync-expired", rejections);
         return { frame, events, rejections };
       }
-      candidate.leftLast = point(left.palmCenter.x, left.palmCenter.y);
-      candidate.rightLast = point(right.palmCenter.x, right.palmCenter.y);
-      candidate.lastTimeMs = frame.captureTimeMs;
+      advance(candidate, left, right, frame.captureTimeMs);
       return { frame, events, rejections };
     }
 
@@ -274,10 +339,8 @@ export class BloomStateMachine {
       this.#reject(candidate, frame.captureTimeMs, "bloom-sync-expired", rejections);
       return { frame, events, rejections };
     }
-    const leftHand = this.#diagnosticHands.find(({ trackId }) => trackId === candidate.leftId);
-    const rightHand = this.#diagnosticHands.find(({ trackId }) => trackId === candidate.rightId);
-    if ((leftHand?.maximumOutwardSpeed ?? 0) < this.#config.minimumOutwardSpeed
-      || (rightHand?.maximumOutwardSpeed ?? 0) < this.#config.minimumOutwardSpeed) {
+    if ((leftDiagnostic?.maximumOutwardSpeed ?? 0) < this.#config.minimumOutwardSpeed
+      || (rightDiagnostic?.maximumOutwardSpeed ?? 0) < this.#config.minimumOutwardSpeed) {
       this.#reject(candidate, frame.captureTimeMs, "movement-too-slow", rejections);
       return { frame, events, rejections };
     }
@@ -286,8 +349,8 @@ export class BloomStateMachine {
     const outwardDistance = Math.min(leftMotion.outward, rightMotion.outward);
     const upwardDistance = Math.min(leftMotion.upward, rightMotion.upward);
     const maximumOutwardSpeed = Math.max(
-      leftHand?.maximumOutwardSpeed ?? 0,
-      rightHand?.maximumOutwardSpeed ?? 0,
+      leftDiagnostic?.maximumOutwardSpeed ?? 0,
+      rightDiagnostic?.maximumOutwardSpeed ?? 0,
     );
     events.push({
       id: createGestureEventId("bloom"),
@@ -312,13 +375,14 @@ export class BloomStateMachine {
     });
     this.#triggerTimeMs = eventTimeMs;
     this.#cooldownUntilMs = eventTimeMs + this.#config.cooldownMs;
-    this.#candidate = null;
+    this.#dropCandidate();
     return { frame, events, rejections };
   }
 
   reset(): void {
-    this.#candidate = null;
+    this.#dropCandidate();
     this.#cooldownUntilMs = -Infinity;
+    this.#startChecked = false;
     this.#observationFrameCounts = { zeroHands: 0, oneHand: 0, twoHands: 0 };
     this.#lastTwoHandObservedAtMs = null;
     this.#armedAtMs = null;
@@ -328,6 +392,8 @@ export class BloomStateMachine {
     this.#diagnosticHands = [];
     this.#latestTrackingGap = null;
     this.#rejectionReasonCodes = [];
+    this.#identitySwapCount = 0;
+    this.#readiness.reset();
   }
 
   get diagnostic(): BloomTrialDiagnostic {
@@ -367,6 +433,7 @@ export class BloomStateMachine {
         ? null
         : { ...latestTrackingGap, handIds: [...latestTrackingGap.handIds] },
       rejectionReasonCodes: reasons,
+      identitySwapCount: this.#identitySwapCount,
     };
   }
 
@@ -377,20 +444,42 @@ export class BloomStateMachine {
     if (frame.hands.length >= 2) this.#lastTwoHandObservedAtMs = frame.captureTimeMs;
   }
 
+  /** Records when both hands were seen again, whether or not a candidate survived the gap. */
+  #closeTrackingGap(frame: TrackedHandFrame): void {
+    const gap = this.#latestTrackingGap;
+    if (gap === null || gap.reacquiredAtMs !== null || frame.hands.length < 2) return;
+    gap.reacquiredAtMs = frame.captureTimeMs;
+    gap.durationMs = Math.max(0, frame.captureTimeMs - gap.startedAtMs);
+  }
+
   #tryArm(frame: TrackedHandFrame): void {
     if (frame.captureTimeMs < this.#cooldownUntilMs) return;
     const pair = preparationPair(frame.hands);
     if (pair === null) return;
+    const inZone = this.#inPreparationZone(pair);
+    if (!this.#startChecked) {
+      // The first two-hand frame of the window follows the readiness check, so a pair in the zone arms at once.
+      this.#startChecked = true;
+      if (inZone) this.#arm(pair, frame.captureTimeMs);
+      return;
+    }
+    if (!inZone) {
+      this.#armSettle.reset();
+      return;
+    }
+    // Later arming waits until the hands settle, so returning them to the center is not judged as a Bloom.
+    const settled = this.#armSettle.observe(
+      frame.captureTimeMs,
+      pair.map(({ trackId }) => trackId),
+      pair.map(({ palmCenter }) => palmCenter),
+    );
+    if (settled) this.#arm(pair, frame.captureTimeMs);
+  }
+
+  #arm(pair: readonly [TrackedHandFeatures, TrackedHandFeatures], timeMs: number): void {
     const [left, right] = pair;
-    const span = right.palmCenter.x - left.palmCenter.x;
-    const centerX = (left.palmCenter.x + right.palmCenter.x) / 2;
-    const centerY = (left.palmCenter.y + right.palmCenter.y) / 2;
-    if (span < this.#config.minimumPreparationSpan
-      || span > this.#config.maximumPreparationSpan
-      || Math.abs(centerX - 0.5) > this.#config.preparationCenterToleranceX
-      || Math.abs(centerY - 0.5) > this.#config.preparationCenterToleranceY) return;
-    this.#preparationSpan = span;
-    this.#armedAtMs = frame.captureTimeMs;
+    this.#preparationSpan = right.palmCenter.x - left.palmCenter.x;
+    this.#armedAtMs = timeMs;
     this.#diagnosticHands = [
       diagnosticHand(left, "left", left.palmCenter.x, left.palmCenter.y),
       diagnosticHand(right, "right", right.palmCenter.x, right.palmCenter.y),
@@ -401,14 +490,61 @@ export class BloomStateMachine {
       rightId: right.trackId,
       leftStart: point(left.palmCenter.x, left.palmCenter.y),
       rightStart: point(right.palmCenter.x, right.palmCenter.y),
-      startedAtMs: frame.captureTimeMs,
-      lastTimeMs: frame.captureTimeMs,
+      startedAtMs: timeMs,
+      lastTimeMs: timeMs,
       leftLast: point(left.palmCenter.x, left.palmCenter.y),
       rightLast: point(right.palmCenter.x, right.palmCenter.y),
       leftOutwardReadyAtMs: null,
       rightOutwardReadyAtMs: null,
       latestGapStartedAtMs: null,
     };
+    this.#armSettle.reset();
+    this.#waitSettle.reset();
+  }
+
+  #setWaitingPosition(
+    candidate: BloomCandidate,
+    left: TrackedHandFeatures,
+    right: TrackedHandFeatures,
+    timeMs: number,
+  ): void {
+    candidate.leftStart = point(left.palmCenter.x, left.palmCenter.y);
+    candidate.rightStart = point(right.palmCenter.x, right.palmCenter.y);
+    candidate.startedAtMs = timeMs;
+    candidate.leftOutwardReadyAtMs = null;
+    candidate.rightOutwardReadyAtMs = null;
+    advance(candidate, left, right, timeMs);
+    this.#armedAtMs = timeMs;
+    this.#preparationSpan = right.palmCenter.x - left.palmCenter.x;
+    this.#diagnosticHands = [
+      diagnosticHand(left, "left", left.palmCenter.x, left.palmCenter.y),
+      diagnosticHand(right, "right", right.palmCenter.x, right.palmCenter.y),
+    ];
+  }
+
+  #swapIdentities(candidate: BloomCandidate): void {
+    const { leftId, rightId } = candidate;
+    candidate.leftId = rightId;
+    candidate.rightId = leftId;
+    for (const hand of this.#diagnosticHands) hand.trackId = hand.trackId === leftId ? rightId : leftId;
+    this.#identitySwapCount += 1;
+  }
+
+  #inPreparationZone(pair: readonly [TrackedHandFeatures, TrackedHandFeatures]): boolean {
+    const [left, right] = pair;
+    const span = right.palmCenter.x - left.palmCenter.x;
+    const centerX = (left.palmCenter.x + right.palmCenter.x) / 2;
+    const centerY = (left.palmCenter.y + right.palmCenter.y) / 2;
+    return span >= this.#config.minimumPreparationSpan
+      && span <= this.#config.maximumPreparationSpan
+      && Math.abs(centerX - 0.5) <= this.#config.preparationCenterToleranceX
+      && Math.abs(centerY - 0.5) <= this.#config.preparationCenterToleranceY;
+  }
+
+  #dropCandidate(): void {
+    this.#candidate = null;
+    this.#armSettle.reset();
+    this.#waitSettle.reset();
   }
 
   #reject(
@@ -424,7 +560,7 @@ export class BloomStateMachine {
       handIds: [candidate.leftId, candidate.rightId].sort(),
       reasonCodes: [reason],
     });
-    this.#candidate = null;
+    this.#dropCandidate();
   }
 
   #rejectInsufficient(candidate: BloomCandidate, timeMs: number, rejections: GestureRejection[]): void {
@@ -447,7 +583,7 @@ export class BloomStateMachine {
       handIds: [candidate.leftId, candidate.rightId].sort(),
       reasonCodes: reasons,
     });
-    this.#candidate = null;
+    this.#dropCandidate();
   }
 }
 
@@ -493,8 +629,14 @@ function completeAt(
     ? start.x - current.palmCenter.x
     : current.palmCenter.x - start.x;
   const upward = start.y - current.palmCenter.y;
+  if (previousReadyAtMs !== null) {
+    // Keep the first crossing unless the hand clearly fell back below a threshold.
+    return outward >= minimumOutwardDistance - REACH_RELEASE_MARGIN
+      && upward >= minimumUpwardDistance - REACH_RELEASE_MARGIN
+      ? previousReadyAtMs
+      : null;
+  }
   if (outward < minimumOutwardDistance || upward < minimumUpwardDistance) return null;
-  if (previousReadyAtMs !== null) return previousReadyAtMs;
   const outwardAtMs = interpolateThreshold(
     previous,
     current.palmCenter,
@@ -530,8 +672,9 @@ function interpolateThreshold(
 ): number {
   const previousValue = direction * (previous[axis] - start[axis]);
   const currentValue = direction * (current[axis] - start[axis]);
-  if (currentValue <= previousValue) return currentTimeMs;
+  // An axis already past its threshold at the previous sample crossed it no later than that sample.
   if (previousValue >= threshold) return previousTimeMs;
+  if (currentValue <= previousValue) return currentTimeMs;
   const ratio = clamp01((threshold - previousValue) / (currentValue - previousValue));
   return previousTimeMs + (currentTimeMs - previousTimeMs) * ratio;
 }
@@ -607,12 +750,23 @@ function diagnosticHand(
   };
 }
 
+function advance(candidate: BloomCandidate, left: TrackedHandFeatures, right: TrackedHandFeatures, timeMs: number): void {
+  candidate.leftLast = point(left.palmCenter.x, left.palmCenter.y);
+  candidate.rightLast = point(right.palmCenter.x, right.palmCenter.y);
+  candidate.lastTimeMs = timeMs;
+}
+
 function preparationPair(hands: readonly TrackedHandFeatures[]): readonly [TrackedHandFeatures, TrackedHandFeatures] | null {
   if (hands.length < 2) return null;
   const pair = [...hands].sort((left, right) => left.palmCenter.x - right.palmCenter.x).slice(0, 2);
   const left = pair[0];
   const right = pair[1];
   return left === undefined || right === undefined ? null : [left, right];
+}
+
+function isStill(start: Point, hand: TrackedHandFeatures, tolerance: number): boolean {
+  return Math.abs(hand.palmCenter.x - start.x) <= tolerance
+    && Math.abs(hand.palmCenter.y - start.y) <= tolerance;
 }
 
 function point(x: number, y: number): Point {

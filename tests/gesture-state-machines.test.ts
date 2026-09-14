@@ -280,11 +280,14 @@ describe("BloomStateMachine", () => {
     ]));
     const lost = machine.process(trackedFrame(251, []));
     const stillLost = machine.process(trackedFrame(400, []));
-    machine.process(trackedFrame(500, [
-      trackedHand("left", 0.42, 0.56),
-      trackedHand("right", 0.58, 0.56),
-    ]));
-    const result = machine.process(trackedFrame(600, [
+    // After a rejection the pair re-arms only once it has settled for 250ms.
+    for (const timeMs of [500, 760]) {
+      machine.process(trackedFrame(timeMs, [
+        trackedHand("left", 0.42, 0.56),
+        trackedHand("right", 0.58, 0.56),
+      ]));
+    }
+    const result = machine.process(trackedFrame(860, [
       trackedHand("left", 0.24, 0.44),
       trackedHand("right", 0.76, 0.44),
     ]));
@@ -309,11 +312,14 @@ describe("BloomStateMachine", () => {
       trackedHand("right", 0.76, 0.44),
     ])).events).toHaveLength(0);
 
-    machine.process(trackedFrame(300, [
-      trackedHand("left", 0.42, 0.56),
-      trackedHand("right", 0.58, 0.56),
-    ]));
-    const result = machine.process(trackedFrame(400, [
+    // The window opened without the central preparation, so the pair must settle there before it arms.
+    for (const timeMs of [300, 560]) {
+      machine.process(trackedFrame(timeMs, [
+        trackedHand("left", 0.42, 0.56),
+        trackedHand("right", 0.58, 0.56),
+      ]));
+    }
+    const result = machine.process(trackedFrame(660, [
       trackedHand("left", 0.24, 0.44),
       trackedHand("right", 0.76, 0.44),
     ]));
@@ -337,11 +343,13 @@ describe("BloomStateMachine", () => {
 
     expect(first.events).toHaveLength(1);
     expect(held.events).toHaveLength(0);
-    machine.process(trackedFrame(500, [
-      trackedHand("left", 0.42, 0.56),
-      trackedHand("right", 0.58, 0.56),
-    ]));
-    expect(machine.process(trackedFrame(600, [
+    for (const timeMs of [500, 760]) {
+      machine.process(trackedFrame(timeMs, [
+        trackedHand("left", 0.42, 0.56),
+        trackedHand("right", 0.58, 0.56),
+      ]));
+    }
+    expect(machine.process(trackedFrame(860, [
       trackedHand("left", 0.24, 0.44),
       trackedHand("right", 0.76, 0.44),
     ])).events).toHaveLength(1);

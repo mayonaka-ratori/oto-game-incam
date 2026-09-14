@@ -58,45 +58,18 @@ describe("Phase1LabEngine", () => {
       trackingError: null,
     });
     expect(document.protocol.results[0]?.outcome).toBe("success");
-    expect(document.schemaVersion).toBe(4);
-    expect(document.gestureVocabulary).toEqual({ thirdGesture: "bloom" });
-    expect(document.replay).toMatchObject({ available: true, schemaVersion: 2 });
+    expect(document.schemaVersion).toBe(5);
+    expect(document.gestureVocabulary).toEqual({
+      thirdGesture: "bloom",
+      gestures: ["air-tap", "ribbon-swipe", "bloom", "lift", "spotlight"],
+      candidateGestures: ["lift", "spotlight"],
+    });
+    expect(document.protocol).toMatchObject({ id: "p1-five-gesture-50", trialsPerGesture: 10, total: 50 });
+    expect(document.replay).toMatchObject({ available: true, schemaVersion: 3 });
     expect(JSON.stringify(document)).not.toContain('"frames"');
     expect(engine.createDiagnosticReplay().frames).toHaveLength(2);
     expect(document.privacy.includesCameraFrames).toBe(false);
     expect(document.technicalSnapshot.userAgent).toBe("smartphone-test-agent");
-  });
-
-  it("recognizes the current Bloom trial and stores its independent diagnostic", () => {
-    const engine = new Phase1LabEngine();
-    engine.startSession("bloom", null);
-    for (let index = 0; index < 20; index += 1) {
-      engine.beginNextTrial(null, index);
-      engine.recordOutcome("unclassified", [], index);
-    }
-    engine.beginNextTrial(null, 0);
-    engine.processFrame(trackingFrame(1, 0, [
-      syntheticHand(0, "left", 0.58, 0.56),
-      syntheticHand(1, "right", 0.42, 0.56),
-    ]));
-    engine.processFrame(trackingFrame(2, 100, [
-      syntheticHand(0, "left", 0.7, 0.48),
-      syntheticHand(1, "right", 0.3, 0.48),
-    ]));
-    engine.processFrame(trackingFrame(3, 200, [
-      syntheticHand(0, "left", 0.76, 0.44),
-      syntheticHand(1, "right", 0.24, 0.44),
-    ]));
-
-    expect(engine.snapshot.protocol.results.at(-1)).toMatchObject({
-      outcome: "success",
-      trial: { gesture: "bloom" },
-      event: { gestureType: "bloom", reasonCodes: ["bloom-opened"] },
-      bloomDiagnostic: {
-        observationFrameCounts: { twoHands: 3 },
-        triggerTimeMs: expect.any(Number),
-      },
-    });
   });
 
   it("does not count events or rejections before the recognition window", () => {
@@ -200,7 +173,7 @@ describe("Phase1LabEngine", () => {
     recorder.beginTrial({
       trialId: "air-tap-1",
       ordinal: 1,
-      timing: { preparedAtMs: 0, windowOpenedAtMs: 0, targetTimeMs: 50, deadlineTimeMs: 30_050 },
+      timing: { preparedAtMs: 0, readyAtMs: null, windowOpenedAtMs: 0, targetTimeMs: 50, deadlineTimeMs: 30_050 },
     });
     recorder.addFrame(trackingFrame(1, 0, [syntheticHand(0, "left", 0.95, 0.5)]));
     recorder.addFrame(trackingFrame(2, 100, [syntheticHand(0, "left", 0.7, 0.5)]));

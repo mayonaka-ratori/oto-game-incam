@@ -111,6 +111,7 @@ export class LabController {
       });
       this.#metricsCollector.start();
       this.#state = transitionLabState(this.#state, { type: "CAMERA_STARTED" });
+      this.#phase1Controller.cameraStateChanged();
       this.#render();
       const trackingClient = new TrackingWorkerClient((update) => {
         this.#tracking = update.metrics;
@@ -154,6 +155,7 @@ export class LabController {
     this.#session = null;
     this.#camera.stop();
     this.#state = transitionLabState(this.#state, { type: "CAMERA_STOPPED" });
+    this.#phase1Controller.cameraStateChanged();
     this.#render();
   }
 
@@ -172,6 +174,7 @@ export class LabController {
         type: "CAMERA_INTERRUPTED",
         technicalDetail: "MediaStreamTrack ended",
       });
+      this.#phase1Controller.cameraStateChanged();
     }
     this.#render();
   }

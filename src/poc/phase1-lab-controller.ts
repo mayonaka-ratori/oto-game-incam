@@ -5,7 +5,16 @@ import { BeatTimeline } from "../time/beat-timeline";
 import { Metronome } from "../time/metronome";
 import { parseLandmarkReplayImport, type LandmarkReplayDocument } from "../replay/landmark-replay";
 import { Phase1LabEngine, type Phase1LabSnapshot } from "./phase1-lab-engine";
-import { P1_TRIAL_TIMEOUT_MS, type P1Outcome, type P1TrialDefinition } from "./phase1-protocol";
+import {
+  P1_READINESS_TIMEOUT_MS,
+  P1_TRIAL_TIMEOUT_MS,
+  spotlightVariantLabel,
+  type P1BlockRecord,
+  type P1Outcome,
+  type P1PauseReason,
+  type P1RunnerSnapshot,
+  type P1TrialDefinition,
+} from "./phase1-protocol";
 import type { Phase1TechnicalSummary } from "./phase1-session";
 import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapshot";
 
@@ -13,6 +22,21 @@ const RESULT_HOLD_MS = 1_000;
 const TIMER_RENDER_INTERVAL_MS = 250;
 const POST_ROLL_POLL_MS = 50;
 const POST_ROLL_WAIT_TIMEOUT_MS = 5_000;
+const GO_DISPLAY_MS = 500;
+const COUNT_IN_BPM = 120;
+/** The count-in clicks two beats before GO and on GO itself. */
+const COUNT_IN_LEAD_MS = 2 * 60_000 / COUNT_IN_BPM;
+/** A GO target must leave room for the whole count-in; a nearer or much later target means a stale audio clock. */
+const MIN_TARGET_LEAD_MS = COUNT_IN_LEAD_MS;
+const MAX_TARGET_LEAD_MS = 4_000;
+/** Frames captured just before a deadline arrive after inference; the deadline timer waits this long for them. */
+const DEADLINE_FRAME_GRACE_MS = 200;
+/** Block buttons ignore presses right after they appear, so a double tap cannot pause and resume at once. */
+const BLOCK_ACTION_LOCK_MS = 400;
+/** Resuming audio may wait on the OS (for example after an interruption); the trial does not wait longer than this. */
+const AUDIO_RESUME_TIMEOUT_MS = 600;
+
+type BlockPanelState = "idle" | "running" | "rest" | "paused" | "complete";
 
 export interface Phase1LabControllerOptions {
   readonly appBuildId: string;
@@ -30,6 +54,7 @@ export class Phase1LabController {
   readonly #options: Phase1LabControllerOptions;
   readonly #engine = new Phase1LabEngine();
   readonly #audio = new AudioClock();
+  #boundAudioContext: AudioContext | null = null;
   #timeline: BeatTimeline | null = null;
   #metronome: Metronome | null = null;
   #audioSnapshot: AudioClockSnapshot | null = null;
@@ -37,18 +62,32 @@ export class Phase1LabController {
   #deadlineTimer: number | null = null;
   #autoAdvanceTimer: number | null = null;
   #renderTimer: number | null = null;
+  #unlockTimer: number | null = null;
   #autoAdvanceAtMs: number | null = null;
   #sessionStarted = false;
   #sessionExperimentProfileId: string | null = null;
   #replay: LandmarkReplayDocument | null = null;
   #starting = false;
+  #blockActionPending = false;
   #disposed = false;
+  #revealBlockOnRender = false;
+  #blockPanelState: BlockPanelState | null = null;
+  #blockActionsLockedUntilMs = 0;
+  /** Why the latest trial ran without a count-in: the audio stopped, or there is no audio clock at all. */
+  #audioNotice: "stopped" | "unavailable" | null = null;
+  #exportNotice: string | null = null;
 
   constructor(root: HTMLElement, options: Phase1LabControllerOptions) {
     this.#root = root;
     this.#options = options;
     requiredButton(root, "#p1-enable-audio").addEventListener("click", () => void this.#enableAudio());
     requiredButton(root, "#p1-start-session").addEventListener("click", () => void this.#startTest());
+    requiredButton(root, "#p1-start-block").addEventListener("click", () => void this.#startBlock());
+    requiredButton(root, "#p1-pause").addEventListener("click", () => {
+      if (this.#blockActionAllowed()) this.#pause("manual");
+    });
+    requiredButton(root, "#p1-resume").addEventListener("click", () => void this.#resume());
+    requiredButton(root, "#p1-block-export").addEventListener("click", () => void this.#export());
     requiredButton(root, "#p1-next-trial").addEventListener("click", () => this.#beginNextTrial());
     requiredButton(root, "#p1-skip").addEventListener("click", () => this.#skip());
     requiredButton(root, "#p1-false-trigger").addEventListener("click", () => this.#recordFalseTrigger());
@@ -71,9 +110,21 @@ export class Phase1LabController {
   processFrame(frame: HandTrackingFrame): void {
     if (!this.#sessionStarted || this.#disposed) return;
     const before = this.#engine.snapshot.protocol.completed;
-    const snapshot = this.#engine.processFrame(frame);
-    if (snapshot.protocol.completed > before) this.#handleTrialFinished(snapshot);
+    let snapshot = this.#engine.processFrame(frame);
+    if (snapshot.protocol.completed > before) {
+      this.#handleTrialFinished(snapshot);
+    } else if (snapshot.readinessReached) {
+      this.#startRecognition();
+      snapshot = this.#engine.snapshot;
+    }
     this.#render(snapshot);
+  }
+
+  /** Called when the camera starts, stops, or loses its track. Trials never run without camera frames. */
+  cameraStateChanged(): void {
+    if (this.#disposed) return;
+    if (this.#sessionStarted && !this.#options.getCameraActive()) this.#pause("camera-stopped");
+    this.#render();
   }
 
   experimentProfileChanged(): void {
@@ -87,10 +138,13 @@ export class Phase1LabController {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#clearProgressTimers();
+    this.#cancelCountIn();
     if (this.#audioTimer !== null) window.clearInterval(this.#audioTimer);
     if (this.#renderTimer !== null) window.clearInterval(this.#renderTimer);
+    if (this.#unlockTimer !== null) window.clearTimeout(this.#unlockTimer);
     this.#audioTimer = null;
     this.#renderTimer = null;
+    this.#unlockTimer = null;
     document.removeEventListener("visibilitychange", this.#handleVisibilityChange);
     await this.#audio.close();
   }
@@ -99,15 +153,7 @@ export class Phase1LabController {
     const status = requiredElement(this.#root, "#p1-audio-status");
     try {
       this.#audioSnapshot = await this.#audio.enable();
-      const context = this.#audio.context;
-      if (context === null) return;
-      this.#timeline = new BeatTimeline({ bpm: 120, beatZeroContextTimeSec: context.currentTime + 0.25 });
-      this.#metronome = new Metronome(context, this.#timeline);
-      if (this.#audioTimer !== null) window.clearInterval(this.#audioTimer);
-      this.#audioTimer = window.setInterval(() => {
-        this.#audioSnapshot = this.#audio.sample();
-        this.#renderAudio();
-      }, 500);
+      this.#bindAudioContext();
       status.textContent = "音声クロック準備完了。試行開始時にカウント音を予約します。";
     } catch (error) {
       status.textContent = `音声クロックを開始できません: ${error instanceof Error ? error.message : String(error)}`;
@@ -115,8 +161,42 @@ export class Phase1LabController {
     this.#renderAudio();
   }
 
+  /** Builds the beat timeline and metronome once per audio context. */
+  #bindAudioContext(): void {
+    const context = this.#audio.context;
+    if (context === null || context === this.#boundAudioContext) return;
+    this.#boundAudioContext = context;
+    this.#timeline = new BeatTimeline({ bpm: COUNT_IN_BPM, beatZeroContextTimeSec: context.currentTime + 0.25 });
+    this.#metronome = new Metronome(context, this.#timeline);
+    if (this.#audioTimer !== null) window.clearInterval(this.#audioTimer);
+    this.#audioTimer = window.setInterval(() => {
+      if (this.#audio.context === null) return;
+      this.#audioSnapshot = this.#audio.sample();
+      this.#renderAudio();
+    }, 500);
+  }
+
+  /**
+   * Resumes suspended or interrupted audio from a button press. Browsers resume audio only on a user gesture,
+   * and iOS Safari may stop it while the page is hidden. The trial does not wait long for it.
+   */
+  async #resumeAudio(): Promise<void> {
+    if (this.#audio.context === null) return;
+    try {
+      const snapshot = await Promise.race([
+        this.#audio.enable(),
+        new Promise<null>((resolve) => window.setTimeout(() => resolve(null), AUDIO_RESUME_TIMEOUT_MS)),
+      ]);
+      if (snapshot !== null) this.#audioSnapshot = snapshot;
+      this.#bindAudioContext();
+    } catch {
+      // Without running audio, trials fall back to timing without a count-in.
+    }
+  }
+
   async #startTest(): Promise<void> {
     if (this.#starting || this.#disposed || !this.#options.getCameraActive()) return;
+    if (this.#sessionStarted && !this.#confirmRestart()) return;
     this.#starting = true;
     this.#render();
     const landscapeRequest = this.#options.requestLandscape();
@@ -129,43 +209,131 @@ export class Phase1LabController {
     }
 
     this.#clearProgressTimers();
+    this.#cancelCountIn();
     const sessionId = `p1-${new Date().toISOString().replace(/[-:.TZ]/g, "")}`;
     this.#engine.startSession(sessionId, this.#options.getProvider(), {
       appVersion: this.#options.appBuildId,
     });
     this.#sessionExperimentProfileId = this.#options.getTechnicalSnapshot().experimentProfileId;
     this.#sessionStarted = true;
+    this.#audioNotice = null;
+    this.#exportNotice = null;
     this.#options.onGuideChange(null);
     requiredElement(this.#root, "#p1-session-id").textContent = sessionId;
     requiredElement(this.#root, "#p1-export-status").textContent = "";
     requiredElement(this.#root, "#p1-replay-export-status").textContent = "";
     this.#starting = false;
+    // The first block starts with the test itself; later blocks wait for "この動きを開始".
+    this.#engine.startBlock(performance.now());
     this.#beginNextTrial();
+  }
+
+  /** Restarting discards the results, so it asks first whenever at least one trial was recorded. */
+  #confirmRestart(): boolean {
+    const completed = this.#engine.snapshot.protocol.completed;
+    if (completed === 0) return true;
+    return window.confirm(
+      `記録した${completed}回分の結果を消して、テストを最初からやり直しますか？\n結果を残したい場合は「キャンセル」を押し、先に結果JSONを保存してください。`,
+    );
+  }
+
+  async #startBlock(): Promise<void> {
+    if (!this.#blockActionAllowed()) return;
+    this.#blockActionPending = true;
+    this.#render();
+    try {
+      await this.#resumeAudio();
+      if (!this.#blockActionCanContinue()) return;
+      if (this.#engine.startBlock(performance.now())) this.#beginNextTrial();
+    } finally {
+      this.#blockActionPending = false;
+      this.#render();
+    }
+  }
+
+  async #resume(): Promise<void> {
+    if (!this.#blockActionAllowed()) return;
+    this.#blockActionPending = true;
+    this.#render();
+    try {
+      await this.#resumeAudio();
+      if (!this.#blockActionCanContinue()) return;
+      if (this.#engine.resume(performance.now())) this.#beginNextTrial();
+    } finally {
+      this.#blockActionPending = false;
+      this.#render();
+    }
+  }
+
+  #blockActionAllowed(): boolean {
+    return this.#sessionStarted
+      && !this.#disposed
+      && !this.#blockActionPending
+      && document.visibilityState === "visible"
+      && this.#options.getCameraActive()
+      && performance.now() >= this.#blockActionsLockedUntilMs;
+  }
+
+  #blockActionCanContinue(): boolean {
+    return !this.#disposed && document.visibilityState === "visible" && this.#options.getCameraActive();
   }
 
   #beginNextTrial(): void {
     if (!this.#sessionStarted || this.#disposed || document.visibilityState !== "visible") return;
+    if (!this.#options.getCameraActive()) return;
+    const protocol = this.#engine.snapshot.protocol;
+    if (protocol.paused || protocol.awaitingBlockStart || protocol.activeTrial !== null) return;
     this.#clearDeadlineTimer();
     this.#clearAutoAdvanceTimer();
     this.#autoAdvanceAtMs = null;
     const preparedAtMs = performance.now();
-    const targetTimeMs = this.#scheduleTarget();
+    // Readiness-gated trials schedule the count-in only after the start position settles.
+    const targetTimeMs = protocol.nextTrial?.requiresReadiness === true ? null : this.#scheduleTarget();
     const trial = this.#engine.beginNextTrial(targetTimeMs, preparedAtMs);
     this.#options.onGuideChange(trial);
     this.#scheduleDeadline();
     this.#render();
   }
 
+  #startRecognition(): void {
+    const targetTimeMs = this.#scheduleTarget();
+    if (this.#engine.startRecognition(targetTimeMs)) this.#scheduleDeadline();
+    else this.#cancelCountIn();
+  }
+
+  /**
+   * Schedules the count-in and returns the GO time, or null to run the trial without a count-in.
+   * A suspended context does not advance its clock, and its output timestamp can be stale for a moment
+   * after resuming. Either would put GO in the past, so such targets are refused.
+   */
   #scheduleTarget(): number | null {
     const context = this.#audio.context;
     const timeline = this.#timeline;
     const metronome = this.#metronome;
-    if (context === null || timeline === null || metronome === null) return null;
+    if (context === null || timeline === null || metronome === null || context !== this.#boundAudioContext) {
+      this.#audioNotice = "unavailable";
+      return null;
+    }
+    if (context.state !== "running") {
+      this.#audioNotice = "stopped";
+      return null;
+    }
     const targetBeat = timeline.nextWholeBeat(context.currentTime, 3);
+    const targetTimeMs = this.#audio.toPerformanceTimeMs(timeline.beatToContextTimeSec(targetBeat));
+    const leadMs = targetTimeMs === null ? null : targetTimeMs - performance.now();
+    if (targetTimeMs === null || leadMs === null || leadMs < MIN_TARGET_LEAD_MS || leadMs > MAX_TARGET_LEAD_MS) {
+      this.#audioNotice = "stopped";
+      return null;
+    }
+    this.#audioNotice = null;
     metronome.scheduleBeat(targetBeat - 2);
     metronome.scheduleBeat(targetBeat - 1);
     metronome.scheduleBeat(targetBeat);
-    return this.#audio.toPerformanceTimeMs(timeline.beatToContextTimeSec(targetBeat));
+    return targetTimeMs;
+  }
+
+  #cancelCountIn(): void {
+    this.#metronome?.cancelScheduled();
   }
 
   #recordOutcome(outcome: Exclude<P1Outcome, "success">): void {
@@ -180,16 +348,33 @@ export class Phase1LabController {
   }
 
   #timeout(): void {
-    if (this.#engine.timeout(performance.now())) this.#handleTrialFinished();
+    const deadline = currentDeadline(this.#engine.snapshot.protocol);
+    // The trial ends at its deadline; the timer only waited for frames captured before it.
+    if (this.#engine.timeout(deadline ?? performance.now())) this.#handleTrialFinished();
+    this.#render();
+  }
+
+  #pause(reason: P1PauseReason): void {
+    if (!this.#sessionStarted) return;
+    if (this.#engine.pause(performance.now(), reason)) {
+      this.#clearProgressTimers();
+      this.#cancelCountIn();
+      this.#options.onGuideChange(null);
+      this.#revealBlockOnRender = true;
+    }
     this.#render();
   }
 
   #handleTrialFinished(snapshot: Phase1LabSnapshot = this.#engine.snapshot): void {
     this.#clearDeadlineTimer();
+    this.#cancelCountIn();
     this.#options.onGuideChange(null);
-    if (snapshot.protocol.state === "complete") {
+    const protocol = snapshot.protocol;
+    if (protocol.state === "complete" || protocol.awaitingBlockStart) {
+      // A finished block waits for the tester; the rest time is recorded as restBeforeMs.
       this.#clearAutoAdvanceTimer();
       this.#autoAdvanceAtMs = null;
+      this.#revealBlockOnRender = true;
       return;
     }
     this.#autoAdvanceAtMs = performance.now() + RESULT_HOLD_MS;
@@ -198,9 +383,9 @@ export class Phase1LabController {
 
   #scheduleDeadline(): void {
     this.#clearDeadlineTimer();
-    const timing = this.#engine.snapshot.protocol.activeTiming;
-    if (timing === null || document.visibilityState !== "visible") return;
-    const delay = Math.max(0, timing.deadlineTimeMs - performance.now());
+    const deadline = currentDeadline(this.#engine.snapshot.protocol);
+    if (deadline === null || document.visibilityState !== "visible") return;
+    const delay = Math.max(0, deadline + DEADLINE_FRAME_GRACE_MS - performance.now());
     this.#deadlineTimer = window.setTimeout(() => {
       this.#deadlineTimer = null;
       if (document.visibilityState === "visible") this.#timeout();
@@ -219,16 +404,20 @@ export class Phase1LabController {
 
   readonly #handleVisibilityChange = (): void => {
     if (document.visibilityState !== "visible") {
+      const protocol = this.#engine.snapshot.protocol;
+      if (this.#sessionStarted && protocol.state === "running" && !protocol.paused && !protocol.awaitingBlockStart) {
+        // Hidden time must not count toward a trial, also between the trials of a block.
+        // An active attempt is discarded and repeated after "再開".
+        this.#pause("page-hidden");
+      }
       this.#clearDeadlineTimer();
       this.#clearAutoAdvanceTimer();
       return;
     }
-    const timing = this.#engine.snapshot.protocol.activeTiming;
-    if (timing !== null && performance.now() >= timing.deadlineTimeMs) {
-      this.#timeout();
+    if (this.#engine.snapshot.protocol.paused) {
+      this.#render();
       return;
     }
-    if (timing !== null) this.#scheduleDeadline();
     if (this.#autoAdvanceAtMs !== null && performance.now() >= this.#autoAdvanceAtMs) {
       this.#beginNextTrial();
     } else {
@@ -254,7 +443,11 @@ export class Phase1LabController {
   }
 
   #recordFalseTrigger(): void {
-    const trial = this.#engine.snapshot.protocol.activeTrial ?? this.#engine.snapshot.protocol.nextTrial;
+    const protocol = this.#engine.snapshot.protocol;
+    // Between trials, during a rest, and after completion, a reaction belongs to the gesture just performed.
+    // While paused, it belongs to the trial that will be repeated.
+    const trial = protocol.activeTrial
+      ?? (protocol.paused ? protocol.nextTrial : protocol.results.at(-1)?.trial ?? protocol.nextTrial);
     const gestureType = trial?.gesture ?? "air-tap";
     const event: GestureEvent = {
       id: createGestureEventId(gestureType),
@@ -262,7 +455,11 @@ export class Phase1LabController {
       eventTimeMs: performance.now(),
       handIds: [],
       confidence: 0,
-      quality: trial?.swipeDirection === undefined ? {} : { direction: trial.swipeDirection },
+      quality: trial?.swipeDirection !== undefined
+        ? { direction: trial.swipeDirection }
+        : trial?.spotlightVariant !== undefined
+          ? { spotlightVariant: trial.spotlightVariant }
+          : {},
       trackingQuality: "observed",
       reasonCodes: ["manual-observation"],
     };
@@ -285,9 +482,12 @@ export class Phase1LabController {
       );
       downloadJson(document, `${document.session.sessionId}.json`);
       status.textContent = "軽量なP1結果JSONを保存しました。映像・音声・リプレイ用フレームは含みません。";
+      this.#exportNotice = "結果JSONを保存しました。映像と音声は含みません。";
     } catch (error) {
       status.textContent = error instanceof Error ? error.message : String(error);
+      this.#exportNotice = status.textContent;
     }
+    this.#render();
   }
 
   async #exportReplay(): Promise<void> {
@@ -348,13 +548,25 @@ export class Phase1LabController {
     const active = protocol.activeTrial;
     const next = protocol.nextTrial;
     const now = performance.now();
+    const block = currentBlock(protocol);
+    const cameraActive = this.#options.getCameraActive();
     setText(this.#root, "p1-progress", `${protocol.completed} / ${protocol.total}`);
     setText(this.#root, "p1-state", trialStateLabel(this.#sessionStarted, snapshot, this.#autoAdvanceAtMs, now));
-    setText(this.#root, "p1-remaining", remainingLabel(protocol.activeTiming?.deadlineTimeMs ?? null, now));
+    setText(this.#root, "p1-remaining", remainingLabel(currentDeadline(protocol), now));
     setText(this.#root, "p1-trial-number", active === null ? "—" : `${active.ordinal} / ${protocol.total}`);
+    setText(
+      this.#root,
+      "p1-block-trial",
+      block === undefined ? "—" : `${completedInBlock(protocol, block)} / ${block.trialCount}`,
+    );
     setText(this.#root, "p1-gesture", gestureLabel(active?.gesture ?? next?.gesture));
-    setText(this.#root, "p1-instruction", active?.instruction ?? next?.instruction ?? "セッションを開始してください");
+    setText(this.#root, "p1-instruction", instructionLabel(this.#sessionStarted, snapshot));
     renderMotionSample(this.#root, active ?? next);
+    this.#renderBlock(protocol, block, cameraActive, now);
+    if (this.#revealBlockOnRender) {
+      this.#revealBlockOnRender = false;
+      this.#revealBlock();
+    }
     setText(this.#root, "p1-event-count", String(snapshot.eventCount));
     setText(this.#root, "p1-rejection-count", String(snapshot.rejectionCount));
     setText(this.#root, "p1-false-trigger-count", String(protocol.falseTriggers.length));
@@ -367,32 +579,127 @@ export class Phase1LabController {
         ? "—"
         : `${outcomeLabel(latestResult.outcome)}／${resolutionLabel(latestResult.resolution)}${latestResult.offsetMs === null ? "" : `／時刻差 ${formatSigned(latestResult.offsetMs)} ms`}`,
     );
-    const latestReason = latestVisibleReason(snapshot, latestResult);
-    setText(this.#root, "p1-latest-rejection", latestReason);
+    setText(this.#root, "p1-latest-rejection", latestVisibleReason(snapshot, latestResult));
     const performanceWarning = requiredElement(this.#root, "#p1-performance-warning");
     performanceWarning.hidden = !this.#options.getPerformanceLow();
     const canBegin = this.#sessionStarted
+      && cameraActive
       && protocol.state === "running"
+      && !protocol.paused
+      && !protocol.awaitingBlockStart
       && active === null
       && next !== null
       && this.#autoAdvanceAtMs === null;
     requiredButton(this.#root, "#p1-next-trial").disabled = !canBegin;
     const startButton = requiredButton(this.#root, "#p1-start-session");
-    startButton.disabled = this.#starting || !this.#options.getCameraActive();
-    startButton.textContent = this.#starting
+    startButton.disabled = this.#starting || !cameraActive;
+    const startLabel = this.#starting
       ? "準備中…"
       : this.#sessionStarted
         ? "テストを最初からやり直す"
         : "テストを開始";
+    if (startButton.textContent !== startLabel) startButton.textContent = startLabel;
     requiredButton(this.#root, "#p1-skip").disabled = active === null;
     const sessionProfileMatches = this.#sessionProfileMatches();
     requiredButton(this.#root, "#p1-export").disabled = !this.#sessionStarted || !sessionProfileMatches;
+    requiredButton(this.#root, "#p1-block-export").disabled = !this.#sessionStarted || !sessionProfileMatches;
     requiredButton(this.#root, "#p1-export-replay").disabled = !this.#sessionStarted || !sessionProfileMatches;
     requiredButton(this.#root, "#p1-replay-run").disabled = this.#replay === null || active === null;
     for (const button of this.#root.querySelectorAll<HTMLButtonElement>("[data-p1-outcome]")) {
       button.disabled = active === null;
     }
     this.#renderAudio();
+  }
+
+  #renderBlock(
+    protocol: P1RunnerSnapshot,
+    block: P1BlockRecord | undefined,
+    cameraActive: boolean,
+    now: number,
+  ): void {
+    const totalBlocks = protocol.blocks.length;
+    const cameraNotice = cameraActive ? "" : "カメラが止まっています。「カメラを開始」を押してから続けてください。";
+    let state: BlockPanelState;
+    let label: string;
+    let title: string;
+    let message: string;
+    if (!this.#sessionStarted || protocol.state === "idle" || block === undefined) {
+      const first = protocol.blocks[0];
+      state = "idle";
+      label = `ブロック 1 / ${totalBlocks}`;
+      title = first === undefined ? "—" : blockTitle(first);
+      message = `「テストを開始」で${first === undefined ? "最初の動き" : gestureLabel(first.gesture)}から始めます。${totalBlocks}つの動きを10回ずつ、合計${protocol.total}回です。`;
+    } else if (protocol.state === "complete") {
+      state = "complete";
+      label = `全${totalBlocks}ブロック完了`;
+      title = `${protocol.total}回すべて記録しました`;
+      message = this.#exportNotice ?? "「結果を保存する」を押して、結果JSONを保存してください。";
+    } else if (protocol.paused) {
+      state = "paused";
+      label = `ブロック ${block.index} / ${totalBlocks}・中断中`;
+      title = blockTitle(block);
+      message = cameraNotice || "中断している時間は判定に含めません。「再開」を押すと、止めた試行を最初からやり直します。";
+    } else if (protocol.awaitingBlockStart) {
+      const previous = protocol.blocks[block.index - 2];
+      state = "rest";
+      label = `次はブロック ${block.index} / ${totalBlocks}`;
+      title = blockTitle(block);
+      message = `${previous === undefined ? "" : `${gestureLabel(previous.gesture)}の結果: 成立 ${successInBlock(protocol, previous)} / ${previous.trialCount}。`}${cameraNotice || restMessage(previous)}`;
+    } else {
+      state = "running";
+      label = `ブロック ${block.index} / ${totalBlocks}`;
+      title = blockTitle(block);
+      const remaining = `このブロックの残りは${block.trialCount - completedInBlock(protocol, block)}回です。途中で止めたいときは「中断」を押します。`;
+      message = this.#audioNotice === "stopped"
+        ? `音が止まっているため、カウント音なしで進めています。「中断」→「再開」で音を戻せます。${remaining}`
+        : this.#audioNotice === "unavailable"
+          ? `カウント音を使えないため、GOの表示だけで進めています。${remaining}`
+          : remaining;
+    }
+    if (state !== this.#blockPanelState) {
+      // Newly shown buttons ignore presses for a moment, so the second tap of a double tap is not taken.
+      this.#blockPanelState = state;
+      this.#blockActionsLockedUntilMs = now + BLOCK_ACTION_LOCK_MS;
+      this.#scheduleUnlockRender();
+    }
+    const locked = now < this.#blockActionsLockedUntilMs || this.#blockActionPending;
+    requiredElement(this.#root, "#p1-block").dataset.state = state;
+    setText(this.#root, "p1-block-label", label);
+    setText(this.#root, "p1-block-title", title);
+    setText(this.#root, "p1-block-message", message);
+    const startBlockButton = requiredButton(this.#root, "#p1-start-block");
+    startBlockButton.hidden = state !== "rest";
+    startBlockButton.disabled = state !== "rest" || locked || !cameraActive;
+    const pauseButton = requiredButton(this.#root, "#p1-pause");
+    pauseButton.hidden = state !== "running";
+    pauseButton.disabled = locked;
+    const resumeButton = requiredButton(this.#root, "#p1-resume");
+    resumeButton.hidden = state !== "paused";
+    resumeButton.disabled = locked || !cameraActive;
+    requiredButton(this.#root, "#p1-block-export").hidden = state !== "complete";
+  }
+
+  #scheduleUnlockRender(): void {
+    if (this.#unlockTimer !== null) window.clearTimeout(this.#unlockTimer);
+    this.#unlockTimer = window.setTimeout(() => {
+      this.#unlockTimer = null;
+      if (!this.#disposed) this.#render();
+    }, BLOCK_ACTION_LOCK_MS + 10);
+  }
+
+  /**
+   * Brings the block panel into view at a rest, a pause, or the end. In landscape the card heading sticks to
+   * the top of the scrolling panel, so the panel is scrolled below the heading: otherwise the heading, with its
+   * restart button, would cover the block buttons.
+   */
+  #revealBlock(): void {
+    const block = requiredElement(this.#root, "#p1-block");
+    const heading = this.#root.querySelector<HTMLElement>(".p1-trial-card .p1-card-heading");
+    const stickyHeight = heading !== null && getComputedStyle(heading).position === "sticky"
+      ? heading.getBoundingClientRect().height
+      : 0;
+    block.style.scrollMarginTop = `${Math.ceil(stickyHeight) + 6}px`;
+    block.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
   #sessionProfileMatches(): boolean {
@@ -410,6 +717,38 @@ export class Phase1LabController {
   }
 }
 
+function currentDeadline(protocol: P1RunnerSnapshot): number | null {
+  return protocol.activeTiming?.deadlineTimeMs ?? protocol.activeReadiness?.deadlineTimeMs ?? null;
+}
+
+function currentBlock(protocol: P1RunnerSnapshot): P1BlockRecord | undefined {
+  if (protocol.currentBlockIndex !== null) return protocol.blocks[protocol.currentBlockIndex];
+  return protocol.state === "complete" ? protocol.blocks.at(-1) : protocol.blocks[0];
+}
+
+function completedInBlock(protocol: P1RunnerSnapshot, block: P1BlockRecord): number {
+  return protocol.results.filter(({ trial }) => (
+    trial.ordinal >= block.firstOrdinal && trial.ordinal <= block.lastOrdinal
+  )).length;
+}
+
+function successInBlock(protocol: P1RunnerSnapshot, block: P1BlockRecord): number {
+  return protocol.results.filter(({ trial, outcome }) => (
+    outcome === "success" && trial.ordinal >= block.firstOrdinal && trial.ordinal <= block.lastOrdinal
+  )).length;
+}
+
+function blockTitle(block: P1BlockRecord): string {
+  return `${gestureLabel(block.gesture)} ${block.trialCount}回`;
+}
+
+function restMessage(previous: P1BlockRecord | undefined): string {
+  if (previous?.restAfter === "extended") {
+    return "ここで休憩します。腕を下ろして肩と手首を休め、準備ができたら「この動きを開始」を押してください。";
+  }
+  return "短く休んでから「この動きを開始」を押してください。";
+}
+
 function trialStateLabel(
   sessionStarted: boolean,
   snapshot: Phase1LabSnapshot,
@@ -419,16 +758,47 @@ function trialStateLabel(
   const protocol = snapshot.protocol;
   if (!sessionStarted) return "未開始";
   if (protocol.state === "complete") return "完了";
-  const timing = protocol.activeTiming;
-  if (timing !== null) {
-    if (now < timing.windowOpenedAtMs) return "準備中";
-    if (timing.targetTimeMs !== null && now < timing.targetTimeMs + 500) return "今です";
+  if (protocol.paused) return "中断中";
+  if (protocol.activeTrial !== null) {
+    const timing = protocol.activeTiming;
+    if (timing === null) {
+      return snapshot.readiness !== null && snapshot.readiness.visibleHands < 2 ? "追跡待ち" : "準備中";
+    }
+    if (timing.targetTimeMs !== null) {
+      // "準備OK" lasts until the first count-in click; the count is shown while the clicks play.
+      if (now < timing.targetTimeMs - COUNT_IN_LEAD_MS) return timing.readyAtMs === null ? "カウント" : "準備OK";
+      if (now < timing.targetTimeMs) return "カウント";
+      if (now < timing.targetTimeMs + GO_DISPLAY_MS) return "GO";
+      return "判定中";
+    }
+    if (now < timing.windowOpenedAtMs + GO_DISPLAY_MS) return "GO";
     return "判定中";
   }
   if (autoAdvanceAtMs !== null) {
     return protocol.results.at(-1)?.outcome === "success" ? "成立を記録" : "未成立を記録";
   }
+  if (protocol.awaitingBlockStart) return protocol.results.length === 0 ? "ブロック開始待ち" : "休憩中";
   return "次の試行待ち";
+}
+
+function instructionLabel(sessionStarted: boolean, snapshot: Phase1LabSnapshot): string {
+  const protocol = snapshot.protocol;
+  const active = protocol.activeTrial;
+  if (!sessionStarted) return protocol.nextTrial?.instruction ?? "セッションを開始してください";
+  if (protocol.state === "complete") return "すべての試行が終わりました。結果JSONを保存してください";
+  if (protocol.paused) return "中断中です。再開すると、止めた試行を最初からやり直します";
+  if (active !== null && protocol.activeTiming === null) {
+    if (snapshot.readiness !== null && snapshot.readiness.visibleHands < 2) {
+      return "両手が映るのを待っています。両手をカメラに向けてください";
+    }
+    return active.gesture === "lift"
+      ? "両手を画面の下側、左右の枠に構えて止めてください。そろうと合図が始まります"
+      : "両手を中央の光の近くに構えて止めてください。そろうと合図が始まります";
+  }
+  if (active === null && protocol.awaitingBlockStart) {
+    return `次の動き: ${protocol.nextTrial?.instruction ?? "—"}`;
+  }
+  return active?.instruction ?? protocol.nextTrial?.instruction ?? "—";
 }
 
 function remainingLabel(deadlineTimeMs: number | null, now: number): string {
@@ -438,28 +808,56 @@ function remainingLabel(deadlineTimeMs: number | null, now: number): string {
 
 function latestVisibleReason(
   snapshot: Phase1LabSnapshot,
-  latestResult: Phase1LabSnapshot["protocol"]["results"][number] | undefined,
+  latestResult: P1RunnerSnapshot["results"][number] | undefined,
 ): string {
-  if (latestResult?.resolution === "manual-skip") return reasonLabel("manual-skip");
-  if (latestResult?.resolution === "trial-timeout") return reasonLabel("trial-timeout");
   const diagnostic = snapshot.latestDiagnostic;
+  if (diagnostic !== null && (latestResult === undefined || diagnostic.timeMs > latestResult.finishedAtMs)) {
+    return diagnostic.reasonCodes.map(reasonLabel).join(" / ");
+  }
+  if (latestResult?.resolution === "manual-skip") return reasonLabel("manual-skip");
+  if (latestResult?.resolution === "trial-timeout") {
+    if (latestResult.timeoutPhase !== "readiness") return reasonLabel("trial-timeout");
+    const cause = latestResult.reasonCodes.find((code) => READINESS_CAUSES.includes(code));
+    return cause === undefined
+      ? reasonLabel("readiness-timeout")
+      : `${reasonLabel("readiness-timeout")}（${reasonLabel(cause)}）`;
+  }
   if (diagnostic === null) return "—";
   return diagnostic.reasonCodes.map(reasonLabel).join(" / ");
 }
+
+const READINESS_CAUSES: readonly string[] = [
+  "readiness-hands-missing",
+  "readiness-outside-zone",
+  "readiness-not-still",
+];
 
 function reasonLabel(reason: string): string {
   return {
     "tracking-lost": "手を一時的に追跡できませんでした",
     "off-axis": "ガイドの帯から外れました",
     "wrong-direction": "指定と逆方向へ動きました",
-    "candidate-timeout": "スワイプの移動時間が上限を超えました",
+    "candidate-timeout": "動作の移動時間が上限を超えました",
     "bloom-not-outward": "両手を左右外向きへ開く動きになっていません",
     "bloom-not-upward": "両手を斜め上へ開く動きになっていません",
     "bloom-outward-distance-insufficient": "左右への開きが足りません",
     "bloom-upward-distance-insufficient": "上向きの移動が足りません",
     "bloom-sync-expired": "両手の開くタイミングが離れすぎています",
+    "lift-not-ready": "両手が下側の開始位置にありません",
+    "lift-not-upward": "両手を真上へ上げる動きになっていません",
+    "lift-distance-insufficient": "上げる高さが足りません",
+    "lift-sync-expired": "両手の上がるタイミングが離れすぎています",
+    "spotlight-wrong-zone": "両手が上と下に分かれていません",
+    "spotlight-pose-not-held": "形を約0.3秒止める前に手が動きました",
+    "spotlight-wrong-side": "上下の左右が逆です",
+    "spotlight-pose-before-go": "GOの前に形ができていました。一度ほどいて、GOの後に作り直してください",
+    "spotlight-hands-not-separated": "左右の手が中央の線の両側に分かれていません",
     "movement-too-slow": "動きがゆっくりすぎます",
     "trial-timeout": `${P1_TRIAL_TIMEOUT_MS / 1_000}秒で未成立として記録しました`,
+    "readiness-timeout": `${P1_READINESS_TIMEOUT_MS / 1_000}秒以内に開始の構えがそろわず、未成立として記録しました`,
+    "readiness-hands-missing": "両手がそろって映りませんでした",
+    "readiness-outside-zone": "両手が開始位置の枠に入りませんでした",
+    "readiness-not-still": "開始位置で手が止まりませんでした",
     "manual-skip": "未成立として次へ進みました",
     "identity-conflict": "手の識別が一時的に競合しました",
   }[reason] ?? reason;
@@ -470,6 +868,8 @@ function gestureLabel(gesture: string | null | undefined): string {
     "air-tap": "エアタップ",
     "ribbon-swipe": "リボンスワイプ",
     bloom: "Bloom",
+    lift: "Lift",
+    spotlight: "Spotlight",
     clap: "旧クラップ",
   }[gesture ?? ""] ?? "—";
 }
@@ -487,9 +887,9 @@ function outcomeLabel(outcome: string): string {
 function renderMotionSample(root: ParentNode, trial: P1TrialDefinition | null): void {
   const sample = requiredElement(root, "#p1-motion-sample");
   if (trial === null) {
-    sample.dataset.gesture = "idle";
-    sample.dataset.variant = "none";
-    sample.setAttribute("aria-label", "試行を始めると、ここに手の動きを表示します");
+    setData(sample, "gesture", "idle");
+    setData(sample, "variant", "none");
+    setLabel(sample, "試行を始めると、ここに手の動きを表示します");
     setText(root, "p1-motion-caption", "試行を始めると、ここに手の動きを表示します");
     return;
   }
@@ -498,11 +898,15 @@ function renderMotionSample(root: ParentNode, trial: P1TrialDefinition | null): 
     ? trial.airTapSide ?? "left"
     : trial.gesture === "ribbon-swipe"
       ? trial.swipeDirection ?? "left-to-right"
-      : "open-up";
+      : trial.gesture === "spotlight"
+        ? trial.spotlightVariant ?? "left-up-right-down"
+        : trial.gesture === "lift"
+          ? "raise"
+          : "open-up";
   const caption = motionSampleCaption(trial);
-  sample.dataset.gesture = trial.gesture;
-  sample.dataset.variant = variant;
-  sample.setAttribute("aria-label", caption);
+  setData(sample, "gesture", trial.gesture);
+  setData(sample, "variant", variant);
+  setLabel(sample, caption);
   setText(root, "p1-motion-caption", caption);
 }
 
@@ -517,6 +921,10 @@ function motionSampleCaption(trial: P1TrialDefinition): string {
       "lower-left-to-upper-right": "片手を左下から右上へ、帯に沿って動かす",
       "lower-right-to-upper-left": "片手を右下から左上へ、帯に沿って動かす",
     }[trial.swipeDirection ?? "left-to-right"];
+  }
+  if (trial.gesture === "lift") return "両手を下側にそろえて構え、GOで平行に真上へ上げる";
+  if (trial.gesture === "spotlight") {
+    return `GOで${spotlightVariantLabel(trial.spotlightVariant ?? "left-up-right-down")}の位置へ動かし、約0.3秒止める`;
   }
   return "両手を中央寄りに構え、左右斜め上へ開いて花を咲かせる";
 }
@@ -570,8 +978,18 @@ function requiredElement(root: ParentNode, selector: string): HTMLElement {
   return element;
 }
 
+/** Writes only changed text, so live regions do not announce the same words on every frame. */
 function setText(root: ParentNode, id: string, value: string): void {
-  requiredElement(root, `#${id}`).textContent = value;
+  const element = requiredElement(root, `#${id}`);
+  if (element.textContent !== value) element.textContent = value;
+}
+
+function setData(element: HTMLElement, key: string, value: string): void {
+  if (element.dataset[key] !== value) element.dataset[key] = value;
+}
+
+function setLabel(element: HTMLElement, value: string): void {
+  if (element.getAttribute("aria-label") !== value) element.setAttribute("aria-label", value);
 }
 
 function formatSeconds(value: number | null | undefined): string {

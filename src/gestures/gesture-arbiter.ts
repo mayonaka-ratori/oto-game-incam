@@ -2,6 +2,8 @@ import type { GestureEvent } from "./gesture-types";
 
 const PRIORITY: Readonly<Record<GestureEvent["gestureType"], number>> = {
   clap: 4,
+  lift: 4,
+  spotlight: 4,
   bloom: 4,
   burst: 3,
   "ribbon-swipe": 2,

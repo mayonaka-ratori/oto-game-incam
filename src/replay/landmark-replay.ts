@@ -1,7 +1,8 @@
 import type { DetectedHand, HandTrackingFrame, TrackingProviderInfo } from "../tracking/tracking-types";
-import type { P1ActiveTrialTiming, P1Resolution } from "../poc/phase1-protocol";
+import type { P1ActiveTrialTiming, P1ReadinessTiming, P1Resolution } from "../poc/phase1-protocol";
 
-export const LANDMARK_REPLAY_SCHEMA_VERSION = 2 as const;
+/** v3: a trial window may hold only a readiness phase (timing null) or a discarded attempt. v1 and v2 stay readable. */
+export const LANDMARK_REPLAY_SCHEMA_VERSION = 3 as const;
 const REPLAY_PRE_ROLL_MS = 500;
 const REPLAY_POST_ROLL_MS = 500;
 
@@ -22,9 +23,13 @@ export interface LandmarkReplayTrialWindow {
   readonly ordinal: number;
   readonly startFrameIndex: number;
   readonly endFrameIndex: number;
-  readonly timing: P1ActiveTrialTiming;
+  /** Recognition timing. Null when a readiness-gated trial ended before the count-in. */
+  readonly timing: P1ActiveTrialTiming | null;
+  readonly readiness: P1ReadinessTiming | null;
   readonly resolution: P1Resolution | null;
   readonly finishedAtMs: number | null;
+  /** The attempt was discarded by a pause and repeated later under the same trialId. */
+  readonly abandoned: boolean;
 }
 
 interface LandmarkReplayPrivacy {
@@ -41,9 +46,10 @@ export interface LandmarkReplayDocumentV1 {
   readonly frames: readonly HandTrackingFrame[];
 }
 
+/** Compact frames without world landmarks. Version 2 files are read into the same shape as version 3. */
 export interface LandmarkReplayDocumentV2 {
   readonly schema: "oto-motion-landmark-replay";
-  readonly schemaVersion: typeof LANDMARK_REPLAY_SCHEMA_VERSION;
+  readonly schemaVersion: 2 | typeof LANDMARK_REPLAY_SCHEMA_VERSION;
   readonly privacy: LandmarkReplayPrivacy;
   readonly session: LandmarkReplaySession;
   readonly frames: readonly LandmarkReplayFrameV2[];
@@ -52,13 +58,30 @@ export interface LandmarkReplayDocumentV2 {
 
 export type LandmarkReplayDocument = LandmarkReplayDocumentV1 | LandmarkReplayDocumentV2;
 
+/** A trial window starts with recognition timing, or with a readiness phase that has no timing yet. */
+export type LandmarkReplayTrialStart =
+  | {
+    readonly trialId: string;
+    readonly ordinal: number;
+    readonly timing: P1ActiveTrialTiming;
+    readonly readiness?: P1ReadinessTiming | null;
+  }
+  | {
+    readonly trialId: string;
+    readonly ordinal: number;
+    readonly timing: null;
+    readonly readiness: P1ReadinessTiming;
+  };
+
 interface ActiveTrialWindow {
   readonly trialId: string;
   readonly ordinal: number;
-  readonly timing: P1ActiveTrialTiming;
+  timing: P1ActiveTrialTiming | null;
+  readiness: P1ReadinessTiming | null;
   readonly startFrameIndex: number;
   resolution: P1Resolution | null;
   finishedAtMs: number | null;
+  abandoned: boolean;
 }
 
 export class LandmarkReplayRecorder {
@@ -93,23 +116,24 @@ export class LandmarkReplayRecorder {
     this.#appendFrame(compactFrame);
   }
 
-  beginTrial(input: {
-    readonly trialId: string;
-    readonly ordinal: number;
-    readonly timing: P1ActiveTrialTiming;
-  }): void {
+  beginTrial(input: LandmarkReplayTrialStart): void {
     this.#finalizeActiveWindow();
-    const preRollCutoff = input.timing.preparedAtMs - REPLAY_PRE_ROLL_MS;
+    const startedAtMs = input.timing?.preparedAtMs ?? input.readiness?.startedAtMs ?? Number.NEGATIVE_INFINITY;
+    const preRollCutoff = startedAtMs - REPLAY_PRE_ROLL_MS;
     while (this.#preRoll[0] !== undefined && this.#preRoll[0].captureTimeMs < preRollCutoff) this.#preRoll.shift();
     let startFrameIndex = this.#frames.length;
     for (const frame of this.#preRoll) {
       startFrameIndex = Math.min(startFrameIndex, this.#appendFrame(frame));
     }
     this.#activeWindow = {
-      ...input,
+      trialId: input.trialId,
+      ordinal: input.ordinal,
+      timing: input.timing === null ? null : { ...input.timing },
+      readiness: input.readiness === undefined || input.readiness === null ? null : { ...input.readiness },
       startFrameIndex,
       resolution: null,
       finishedAtMs: null,
+      abandoned: false,
     };
   }
 
@@ -121,6 +145,28 @@ export class LandmarkReplayRecorder {
     if (this.#activeWindow?.trialId !== input.trialId || this.#activeWindow.finishedAtMs !== null) return;
     this.#activeWindow.resolution = input.resolution;
     this.#activeWindow.finishedAtMs = input.finishedAtMs;
+  }
+
+  /** Records the recognition timing once a readiness-gated trial settles. */
+  updateTrial(input: {
+    readonly trialId: string;
+    readonly timing: P1ActiveTrialTiming | null;
+    readonly readiness: P1ReadinessTiming | null;
+  }): void {
+    const active = this.#activeWindow;
+    if (active?.trialId !== input.trialId || active.finishedAtMs !== null) return;
+    active.timing = input.timing === null ? null : { ...input.timing };
+    active.readiness = input.readiness === null ? null : { ...input.readiness };
+  }
+
+  /** Closes the window of an attempt discarded by a pause. The retry opens a new window. */
+  abandonTrial(input: { readonly trialId: string; readonly abandonedAtMs: number }): void {
+    const active = this.#activeWindow;
+    if (active?.trialId !== input.trialId || active.finishedAtMs !== null) return;
+    active.abandoned = true;
+    active.finishedAtMs = input.abandonedAtMs;
+    // A discarded attempt needs no post-roll. Closing it now keeps saving from waiting for frames.
+    this.#finalizeActiveWindow();
   }
 
   get postRollPending(): boolean {
@@ -168,9 +214,11 @@ export class LandmarkReplayRecorder {
       ordinal: active.ordinal,
       startFrameIndex: active.startFrameIndex,
       endFrameIndex: Math.max(active.startFrameIndex - 1, this.#frames.length - 1),
-      timing: { ...active.timing },
+      timing: active.timing === null ? null : { ...active.timing },
+      readiness: active.readiness === null ? null : { ...active.readiness },
       resolution: active.resolution,
       finishedAtMs: active.finishedAtMs,
+      abandoned: active.abandoned,
     };
   }
 }
@@ -227,7 +275,7 @@ export function toHandTrackingFrame(frame: HandTrackingFrame | LandmarkReplayFra
 function parseLandmarkReplayValue(parsed: unknown): LandmarkReplayDocument {
   if (!isRecord(parsed)
     || parsed.schema !== "oto-motion-landmark-replay"
-    || (parsed.schemaVersion !== 1 && parsed.schemaVersion !== LANDMARK_REPLAY_SCHEMA_VERSION)
+    || (parsed.schemaVersion !== 1 && parsed.schemaVersion !== 2 && parsed.schemaVersion !== LANDMARK_REPLAY_SCHEMA_VERSION)
     || !isRecord(parsed.session)
     || typeof parsed.session.sessionId !== "string"
     || typeof parsed.session.createdAtIso !== "string"
@@ -248,14 +296,15 @@ function parseLandmarkReplayValue(parsed: unknown): LandmarkReplayDocument {
     assertMonotonic(frames);
     return { schema: "oto-motion-landmark-replay", schemaVersion: 1, privacy: privacy(), session, frames };
   }
+  const schemaVersion = parsed.schemaVersion === 2 ? 2 : LANDMARK_REPLAY_SCHEMA_VERSION;
   const frames = parsed.frames.map((frame) => parseFrame(frame, false) as LandmarkReplayFrameV2);
   assertMonotonic(frames);
   const trialWindows = Array.isArray(parsed.trialWindows)
-    ? parsed.trialWindows.map(parseTrialWindow)
+    ? parsed.trialWindows.map((window) => parseTrialWindow(window, schemaVersion))
     : [];
   return {
     schema: "oto-motion-landmark-replay",
-    schemaVersion: LANDMARK_REPLAY_SCHEMA_VERSION,
+    schemaVersion,
     privacy: privacy(),
     session,
     frames,
@@ -304,19 +353,25 @@ function parseFrame(value: unknown, includeWorld: boolean): HandTrackingFrame | 
   } as HandTrackingFrame | LandmarkReplayFrameV2;
 }
 
-function parseTrialWindow(value: unknown): LandmarkReplayTrialWindow {
+function parseTrialWindow(
+  value: unknown,
+  schemaVersion: 2 | typeof LANDMARK_REPLAY_SCHEMA_VERSION,
+): LandmarkReplayTrialWindow {
   if (!isRecord(value)
     || typeof value.trialId !== "string"
     || !finite(value.ordinal)
     || !finite(value.startFrameIndex)
     || !finite(value.endFrameIndex)
-    || !isRecord(value.timing)
-    || !finite(value.timing.preparedAtMs)
-    || !finite(value.timing.windowOpenedAtMs)
-    || (value.timing.targetTimeMs !== null && !finite(value.timing.targetTimeMs))
-    || !finite(value.timing.deadlineTimeMs)
     || (value.finishedAtMs !== null && !finite(value.finishedAtMs))
     || (value.resolution !== null && !isResolution(value.resolution))) {
+    throw new TypeError("Invalid replay trial window.");
+  }
+  const timing = value.timing === null ? null : parseTrialTiming(value.timing);
+  const readiness = value.readiness === undefined || value.readiness === null
+    ? null
+    : parseReadinessTiming(value.readiness);
+  // Version 2 windows always had recognition timing; readiness-only windows start with version 3.
+  if (timing === null && (readiness === null || schemaVersion === 2)) {
     throw new TypeError("Invalid replay trial window.");
   }
   return {
@@ -324,14 +379,45 @@ function parseTrialWindow(value: unknown): LandmarkReplayTrialWindow {
     ordinal: value.ordinal,
     startFrameIndex: value.startFrameIndex,
     endFrameIndex: value.endFrameIndex,
-    timing: {
-      preparedAtMs: value.timing.preparedAtMs,
-      windowOpenedAtMs: value.timing.windowOpenedAtMs,
-      targetTimeMs: value.timing.targetTimeMs as number | null,
-      deadlineTimeMs: value.timing.deadlineTimeMs,
-    },
+    timing,
+    readiness,
     resolution: value.resolution as P1Resolution | null,
     finishedAtMs: value.finishedAtMs as number | null,
+    abandoned: value.abandoned === true,
+  };
+}
+
+function parseTrialTiming(value: unknown): P1ActiveTrialTiming {
+  if (!isRecord(value)
+    || !finite(value.preparedAtMs)
+    || !finite(value.windowOpenedAtMs)
+    || (value.targetTimeMs !== null && !finite(value.targetTimeMs))
+    || !finite(value.deadlineTimeMs)
+    || (value.readyAtMs !== undefined && value.readyAtMs !== null && !finite(value.readyAtMs))) {
+    throw new TypeError("Invalid replay trial timing.");
+  }
+  return {
+    preparedAtMs: value.preparedAtMs,
+    readyAtMs: finite(value.readyAtMs) ? value.readyAtMs : null,
+    windowOpenedAtMs: value.windowOpenedAtMs,
+    targetTimeMs: value.targetTimeMs as number | null,
+    deadlineTimeMs: value.deadlineTimeMs,
+  };
+}
+
+function parseReadinessTiming(value: unknown): P1ReadinessTiming {
+  if (!isRecord(value)
+    || !finite(value.startedAtMs)
+    || !finite(value.deadlineTimeMs)
+    || !finite(value.requiredStableMs)
+    || (value.readyAtMs !== null && !finite(value.readyAtMs))) {
+    throw new TypeError("Invalid replay readiness timing.");
+  }
+  return {
+    startedAtMs: value.startedAtMs,
+    deadlineTimeMs: value.deadlineTimeMs,
+    requiredStableMs: value.requiredStableMs,
+    readyAtMs: value.readyAtMs as number | null,
   };
 }
 

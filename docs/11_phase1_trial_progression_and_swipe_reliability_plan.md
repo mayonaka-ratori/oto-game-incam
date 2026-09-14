@@ -2,7 +2,7 @@
 
 - 更新日: 2026-09-14
 - 文書種別: Phase 1 / Step 1.1の不具合分析・実装引き継ぎ計画
-- ステータス: **30件の試行進行を維持し、第三入力を旧clapからBloomへ切り替えた。Bloomの状態機械・診断・schema v4を実装済み、実機再試験待ち**
+- ステータス: **30件の試行進行を維持し、第三入力を旧clapからBloomへ切り替えた。Bloomの状態機械・診断・schema v4を実装済み、実機再試験待ち。2026-09-14以降の5動作・50試行（schema v5）への改訂は[13_p1_five_gesture_50_trial_revision_plan.md](./13_p1_five_gesture_50_trial_revision_plan.md)を参照する**
 - 対象: P1-Controlledの試行進行、リボンスワイプ状態機械、Bloomの中央準備・両手開放、動作見本、診断表示、P1 JSON出力
 - 非対象: Phase 2 Interaction POC、90秒MVP、演出、ゲーム採点の作り込み
 

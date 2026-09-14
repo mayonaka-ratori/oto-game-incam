@@ -1,3 +1,4 @@
+import { P1_LEGACY_PROTOCOL_IDS } from "./p1-session-comparison";
 import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapshot";
 
 export type DeviceCheckStatus = "pending" | "pass" | "issue" | "na";
@@ -103,7 +104,7 @@ export interface DeviceCheckFormValues {
 }
 
 export interface DeviceCheckReport {
-  readonly schemaVersion: "2.2";
+  readonly schemaVersion: "2.3";
   readonly reportType: "phase1-device-check";
   readonly controlledGesture: "bloom";
   readonly exportedAt: string;
@@ -131,6 +132,9 @@ export interface DeviceCheckTechnicalSource {
   readonly mode: "current-device" | "p1-import" | "report-import";
   readonly capturedAt: string;
   readonly sessionId: string | null;
+  /** Schema version and procedure of the imported P1 session. They tell the 3-input Bloom from the five-gesture Bloom. */
+  readonly p1SchemaVersion: number | null;
+  readonly p1ProtocolId: string | null;
 }
 
 export function createDeviceCheckReport(
@@ -141,6 +145,8 @@ export function createDeviceCheckReport(
     mode: "current-device",
     capturedAt: exportedAt,
     sessionId: values.sessionId || null,
+    p1SchemaVersion: null,
+    p1ProtocolId: null,
   },
 ): DeviceCheckReport {
   const checks = DEVICE_CHECK_ITEMS.map((item) => ({
@@ -150,7 +156,7 @@ export function createDeviceCheckReport(
   const count = (status: DeviceCheckStatus): number => checks.filter((item) => item.status === status).length;
   const completed = checks.filter((item) => item.status !== "pending").length;
   return {
-    schemaVersion: "2.2",
+    schemaVersion: "2.3",
     reportType: "phase1-device-check",
     controlledGesture: "bloom",
     exportedAt,
@@ -196,7 +202,9 @@ export function parseDeviceCheckReport(text: string): DeviceCheckReport {
   if (!isRecord(value) || value.reportType !== "phase1-device-check") {
     throw new TypeError("Phase 1実機確認JSONではありません。");
   }
-  if (value.schemaVersion === "2.0" || value.schemaVersion === "2.1" || value.schemaVersion === "2.2") return parseVersion2(value);
+  if (value.schemaVersion === "2.0" || value.schemaVersion === "2.1" || value.schemaVersion === "2.2" || value.schemaVersion === "2.3") {
+    return parseVersion2(value);
+  }
   if (value.schemaVersion === "1.0") return migrateVersion1(value);
   throw new TypeError("対応していない実機確認JSONのバージョンです。");
 }
@@ -312,6 +320,8 @@ export class DeviceChecklistController {
           mode: "report-import",
           capturedAt: report.technicalSource.capturedAt,
           sessionId: report.technicalSource.sessionId ?? report.session.sessionId,
+          p1SchemaVersion: report.technicalSource.p1SchemaVersion,
+          p1ProtocolId: report.technicalSource.p1ProtocolId,
         },
       };
       this.#renderTechnicalSource();
@@ -327,44 +337,33 @@ export class DeviceChecklistController {
     const input = event.currentTarget;
     if (!(input instanceof HTMLInputElement) || input.files?.[0] === undefined) return;
     try {
-      const value: unknown = JSON.parse(await input.files[0].text());
-      if (!isRecord(value) || value.schema !== "oto-motion-p1-controlled" || !isRecord(value.summary)) {
-        throw new TypeError("P1-ControlledセッションJSONではありません。");
-      }
-      const byGesture = value.summary.byGesture;
-      if (!isRecord(byGesture)) throw new TypeError("P1集計がありません。");
-      applyGestureSummary(this.#form, "airTap", byGesture["air-tap"]);
-      applyGestureSummary(this.#form, "ribbonSwipe", byGesture["ribbon-swipe"]);
-      const thirdGesture = value.schemaVersion === 4
-        && isRecord(value.gestureVocabulary)
-        && value.gestureVocabulary.thirdGesture === "bloom"
-        ? "bloom"
-        : "clap";
-      if (thirdGesture === "bloom") applyGestureSummary(this.#form, "bloom", byGesture.bloom);
-      if (isRecord(value.technicalSnapshot)) {
-        const technical = parseTechnical(value.technicalSnapshot);
-        const sessionId = isRecord(value.session)
-          ? nullableString(value.session.sessionId)
-          : isRecord(value.replay) && isRecord(value.replay.session)
-            ? nullableString(value.replay.session.sessionId)
-            : null;
+      const imported = readP1SessionForChecklist(JSON.parse(await input.files[0].text()));
+      // Every import rewrites all three rows, so values from an earlier file never stay mixed in.
+      applyGestureResult(this.#form, "airTap", imported.airTap);
+      applyGestureResult(this.#form, "ribbonSwipe", imported.ribbonSwipe);
+      applyGestureResult(this.#form, "bloom", imported.bloom ?? emptyGestureResult());
+      if (imported.technical !== null) {
         this.#technicalOverride = {
-          snapshot: technical,
+          snapshot: imported.technical,
           source: {
             mode: "p1-import",
-            capturedAt: nullableString(value.createdAtIso) ?? new Date().toISOString(),
-            sessionId,
+            capturedAt: imported.capturedAt ?? new Date().toISOString(),
+            sessionId: imported.sessionId,
+            p1SchemaVersion: imported.schemaVersion,
+            p1ProtocolId: imported.protocolId,
           },
         };
-        if (sessionId !== null) setFormValue(this.#form, "sessionId", sessionId);
-        if (technical.appBuildId.length > 0) setFormValue(this.#form, "appVersion", technical.appBuildId);
-        this.#renderTechnicalSource();
-        this.#status.textContent = thirdGesture === "bloom"
-          ? "P1セッションから3入力（Bloomを含む）とスマホの自動計測値を取り込みました。PCで記入してもスマホ値を保持します。"
-          : "旧P1セッションからair-tap／ribbon-swipeを取り込みました。旧clap結果は比較画面でBloomと分けて扱います。";
+        if (imported.sessionId !== null) setFormValue(this.#form, "sessionId", imported.sessionId);
+        if (imported.technical.appBuildId.length > 0) setFormValue(this.#form, "appVersion", imported.technical.appBuildId);
+        this.#status.textContent = imported.thirdGesture === "bloom"
+          ? `P1セッションから3入力（Bloomを含む）とスマホの自動計測値を取り込みました。PCで記入してもスマホ値を保持します。${imported.schemaVersion === 5 ? "候補動作のLift／SpotlightはP1セッション比較で確認してください。" : ""}`
+          : "旧P1セッションからair-tap／ribbon-swipeを取り込み、Bloom行を空にしました。旧clap結果は比較画面でBloomと分けて扱います。";
       } else {
+        // Device values of an earlier file must not stay attached to this file's results.
+        this.#technicalOverride = null;
         this.#status.textContent = "3入力を取り込みましたが、この旧P1 JSONには端末の自動計測値がありません。最終保存は計測したスマホで行ってください。";
       }
+      this.#renderTechnicalSource();
     } catch (error) {
       this.#status.textContent = `P1結果を読み込めません: ${describeError(error)}`;
     }
@@ -392,7 +391,8 @@ export class DeviceChecklistController {
     const session = override.source.sessionId === null ? "session不明" : override.source.sessionId;
     const profile = override.snapshot.experimentProfileId || "profile不明";
     const build = override.snapshot.appBuildId || "build不明";
-    source.textContent = `${override.source.mode === "p1-import" ? "P1セッション" : "実機確認レポート"}由来 · ${session} · ${build} · ${profile} · ${override.snapshot.viewport || "viewport不明"}`;
+    const procedure = override.source.p1ProtocolId === null ? "" : ` · ${override.source.p1ProtocolId}`;
+    source.textContent = `${override.source.mode === "p1-import" ? "P1セッション" : "実機確認レポート"}由来 · ${session} · ${build} · ${profile}${procedure} · ${override.snapshot.viewport || "viewport不明"}`;
     source.dataset.imported = "true";
     reset.hidden = false;
   }
@@ -532,17 +532,82 @@ function controlledRowStatus(form: HTMLFormElement, label: string, prefix: strin
   return `${label}: ${total}/10${success === null ? "" : `・成功 ${success}`}`;
 }
 
-function applyGestureSummary(form: HTMLFormElement, key: string, value: unknown): void {
+export interface P1ChecklistImport {
+  readonly schemaVersion: 2 | 3 | 4 | 5;
+  readonly protocolId: string | null;
+  readonly thirdGesture: "bloom" | "clap";
+  readonly airTap: ControlledGestureResult;
+  readonly ribbonSwipe: ControlledGestureResult;
+  /** Null for legacy clap sessions: their clap result never fills the Bloom row. */
+  readonly bloom: ControlledGestureResult | null;
+  readonly technical: DeviceCheckTechnicalSnapshot | null;
+  readonly sessionId: string | null;
+  readonly capturedAt: string | null;
+}
+
+/** Reads the three current inputs of a P1 result JSON for the device-check form. Unknown schema versions are refused. */
+export function readP1SessionForChecklist(value: unknown): P1ChecklistImport {
+  if (!isRecord(value) || value.schema !== "oto-motion-p1-controlled" || !isRecord(value.summary)) {
+    throw new TypeError("P1-ControlledセッションJSONではありません。");
+  }
+  const schemaVersion = value.schemaVersion;
+  if (schemaVersion !== 2 && schemaVersion !== 3 && schemaVersion !== 4 && schemaVersion !== 5) {
+    throw new TypeError("対応していないP1 schema versionです。");
+  }
+  const byGesture = value.summary.byGesture;
+  if (!isRecord(byGesture)) throw new TypeError("P1集計がありません。");
+  let thirdGesture: "bloom" | "clap" = "clap";
+  if (schemaVersion >= 4) {
+    if (!isRecord(value.gestureVocabulary) || value.gestureVocabulary.thirdGesture !== "bloom") {
+      throw new TypeError(`schema v${schemaVersion}の第三入力がBloomではありません。`);
+    }
+    thirdGesture = "bloom";
+  }
+  const sessionId = isRecord(value.session)
+    ? nullableString(value.session.sessionId)
+    : isRecord(value.replay) && isRecord(value.replay.session)
+      ? nullableString(value.replay.session.sessionId)
+      : null;
+  return {
+    schemaVersion,
+    protocolId: schemaVersion === 5
+      ? (isRecord(value.protocol) ? nullableString(value.protocol.id) : null)
+      : P1_LEGACY_PROTOCOL_IDS[thirdGesture],
+    thirdGesture,
+    airTap: gestureResultFromSummary(byGesture["air-tap"]),
+    ribbonSwipe: gestureResultFromSummary(byGesture["ribbon-swipe"]),
+    bloom: thirdGesture === "bloom" ? gestureResultFromSummary(byGesture.bloom) : null,
+    technical: isRecord(value.technicalSnapshot) ? parseTechnical(value.technicalSnapshot) : null,
+    sessionId,
+    capturedAt: nullableString(value.createdAtIso),
+  };
+}
+
+function gestureResultFromSummary(value: unknown): ControlledGestureResult {
   if (!isRecord(value)) throw new TypeError("ジェスチャー集計が不正です。");
-  setFormValue(form, `${key}Success`, finite(value.success));
-  setFormValue(form, `${key}PlayerMiss`, finite(value.playerMiss));
-  setFormValue(form, `${key}MachineMiss`, finite(value.machineMiss));
-  setFormValue(form, `${key}FalseTrigger`, finite(value.falseTrigger));
-  setFormValue(form, `${key}TrackingLoss`, finite(value.trackingLoss));
-  setFormValue(form, `${key}Unclassified`, finite(value.unclassified));
   const p50 = finite(value.offsetP50Ms);
   const p95 = finite(value.offsetP95Ms);
-  setFormValue(form, `${key}OffsetSummary`, p50 === null && p95 === null ? "" : `p50 ${p50 ?? "—"}ms / p95 ${p95 ?? "—"}ms`);
+  return {
+    success: finite(value.success),
+    playerMiss: finite(value.playerMiss),
+    machineMiss: finite(value.machineMiss),
+    falseTrigger: finite(value.falseTrigger),
+    trackingLoss: finite(value.trackingLoss),
+    unclassified: finite(value.unclassified),
+    offsetSummary: p50 === null && p95 === null ? "" : `p50 ${p50 ?? "—"}ms / p95 ${p95 ?? "—"}ms`,
+  };
+}
+
+function emptyGestureResult(): ControlledGestureResult {
+  return {
+    success: null,
+    playerMiss: null,
+    machineMiss: null,
+    falseTrigger: null,
+    trackingLoss: null,
+    unclassified: null,
+    offsetSummary: "",
+  };
 }
 
 function applyGestureResult(form: HTMLFormElement, key: string, result: ControlledGestureResult): void {
@@ -610,6 +675,8 @@ function migrateVersion1(value: Record<string, unknown>): DeviceCheckReport {
     mode: "report-import",
     capturedAt: stringValue(value.exportedAt) || new Date().toISOString(),
     sessionId: stringValue(session.sessionId) || null,
+    p1SchemaVersion: null,
+    p1ProtocolId: null,
   });
 }
 
@@ -623,6 +690,8 @@ function parseTechnicalSource(value: unknown, report: Record<string, unknown>): 
     mode,
     capturedAt: stringValue(record.capturedAt) || stringValue(report.exportedAt) || new Date().toISOString(),
     sessionId: nullableString(record.sessionId) ?? (stringValue(session.sessionId) || null),
+    p1SchemaVersion: finite(record.p1SchemaVersion),
+    p1ProtocolId: nullableString(record.p1ProtocolId),
   };
 }
 

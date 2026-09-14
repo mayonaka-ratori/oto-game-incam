@@ -2,7 +2,7 @@
 
 - 更新日: 2026-09-14
 - 文書種別: 技術選定 / アーキテクチャ / 検証計画
-- ステータス: v0.3（現行P1の第三入力をBloomへ切り替えた版）
+- ステータス: v0.4（P1を5動作・50試行へ拡張。Bloomの準備完了後の合図、Lift／Spotlight候補、schema v5を追加）
 - 対象: PC内蔵・外付けWebカメラ、スマートフォンのインカメ
 
 長期的なゲーム内容は`01_game_design_policy.md`、現行POC / MVPの範囲は`03_mvp_definition_and_roadmap.md`、POCゲートの実施は`05_poc_test_protocol.md`、MVP採点は`06_mvp_chart_scoring_spec.md`を正本とする。本書の技術選定と実装順序はそれらを検証するために従属する。読む順序と現在地は`docs/README.md`を参照する。
@@ -333,7 +333,13 @@ type HandTrackingFrame = {
 
 外向き距離、上向き距離、同期幅、準備span、最大速度を`quality`と試行別Bloom診断へ残す。判定は描画フレーム数やマイク到着時刻へ依存しない。
 
-### 8.4 表示と採点の分離
+2026-09-14以降のP1では、Bloomの前に準備完了の判定を置く。両手が中央準備ゾーンで約200ms安定したら準備完了とし、その後にカウント音と`GO`を予約する。準備位置で`GO`を待つ間は動作時間の上限を消費せず、上限は手が動き出した時点から数える。距離・速度・同期の閾値は変えない。待機位置の付け直しと、拒否の後に判定を再開する条件は[05_poc_test_protocol.md](./05_poc_test_protocol.md)の5.3を正本とする。
+
+### 8.5 Lift／Spotlightの判定（候補動作）
+
+Liftは、画面下側の左右開始ゾーンで準備完了を確認した後、両手の上昇量と左右の到達時刻差で判定する。Spotlightは、両手の上下ゾーン配置を約300ms保持したら成立とし、`eventTime`はゾーンへそろって入った最初の`captureTime`とする。どちらも手ランドマークだけを使い、身体・顔の追跡、指形状、手同士の接触を成立条件にしない。閾値と拒否理由は[05_poc_test_protocol.md](./05_poc_test_protocol.md)の5.4と5.5を正本とする。
+
+### 8.6 表示と採点の分離
 
 - 表示: 視覚上の追従遅れを減らすため、短いα-β予測や速度外挿を許可する。予測は1フレーム程度、上限約20〜25msから検証する。
 - 採点: 元のタイムスタンプ付き軌跡から、ターゲット面との交差時刻や距離最小時刻を補間する。
@@ -383,7 +389,7 @@ type HandTrackingFrame = {
 
 実機で負荷原因を一項目ずつ比較できるよう、カメラ要求値と追跡設定を一つの型付き実験プロファイルとして扱う。
 
-- 修正後P1-Controlled再試験の基準プロファイルは`baseline-gpu-640x480-60`とし、640×480、60fps ideal、30fps minimum、GPU優先、二手、各confidence 0.5、固定したMediaPipe package／modelを使う。実施条件の正本は`05_poc_test_protocol.md`とする。
+- 3入力・30試行の修正後P1-Controlled再試験の基準プロファイルは`baseline-gpu-640x480-60`とし、640×480、60fps ideal、30fps minimum、GPU優先、二手、各confidence 0.5、固定したMediaPipe package／modelを使った。5動作・50試行では、両端末で画面の既定`gpu-640x480-30`を使う手順案とする。実施条件の正本は`05_poc_test_protocol.md`の3.1と3.2とする。
 - 比較候補は640×480 / 30fps、960×540 / 30fps、1280×720 / 30fps、640×480 / 30fps / CPU優先とする。
 - これらは検証済み品質プロファイルではなく、Phase 1で原因を切り分ける実験条件である。
 - プロファイルはカメラ開始前に選び、同一P1セッション中は変更しない。変更する場合はカメラを停止し、新しいsessionIdで試験する。
@@ -459,7 +465,7 @@ Hzだけで層を決めない。フレーム年齢、欠落、イベント時刻
 
 **P1-Controlled / P2-Interaction — 少人数POC学習ゲート**
 
-- 各ジェスチャー8/10以上を出発点とする。
+- 各ジェスチャー8/10以上を出発点とする。P1では、MVPの3入力（air-tap／ribbon-swipe／Bloom）が対象で、候補動作のLift／Spotlightは含めない。
 - false trigger 90秒に1回以下。
 - machine miss 90秒に2回以下。
 - 両テスターの同期感4/5以上。
@@ -642,12 +648,12 @@ R1は競技モードが製品方針として承認された場合だけ使用す
 
 複数端末から返されたP1結果JSONは、手作業で表へ転記する前に次を自動検証する。
 
-- schema、30試行、air-tap／ribbon-swipe／現行第三入力の各10試行、outcome合計、summaryとtrial resultsの一致、重複trial、privacy宣言
+- schema、試験手順ごとの試行数（3入力版は30試行、5動作版は50試行）、各動作10試行、outcome合計、summaryとtrial resultsの一致、重複trial、privacy宣言。schema v5はprotocol ID（`p1-five-gesture-50`）と5動作の語彙を検証し、3入力版と同じ条件へまとめない
 - app build ID、実験profile ID、要求設定と実設定、provider／model
 - success、player miss、machine miss、tracking loss、unclassified、拒否理由
 - tracking Hz、推論p95、frame age p95、二手coverage、queue状態
 
-buildまたはprofileが異なる結果を、同一条件のP1合格結果として自動的にまとめない。異なるprofile同士は性能比較として表示できるが、条件変更を明示する。
+buildまたはprofileが異なる結果を、同一条件のP1合格結果として自動的にまとめない。同じsessionIdのファイルは1件に数え、全セッションの端末情報（userAgent）が同じ場合と、手の認識処理が要求と違う処理で動いた場合も合否候補にしない（条件の正本は[05_poc_test_protocol.md](./05_poc_test_protocol.md)の8章）。異なるprofile同士は性能比較として表示できるが、条件変更を明示する。
 
 自動比較は、データ不備、8/10未達、追跡15Hz未満、frame age p95 140ms超等を警告し、次に確認する対象の候補を一つ示してよい。ただし、対象端末／テスターの組み合わせ、手動分類、同期感、観察メモを確認せずに`Pass`を確定しない。
 

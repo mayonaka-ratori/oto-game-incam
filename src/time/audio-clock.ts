@@ -41,11 +41,15 @@ export class AudioClock {
   readonly #mapper = new AudioClockMapper();
   #context: AudioContext | null = null;
 
+  /**
+   * Creates or resumes the context. Call it from a user gesture: browsers (iOS Safari in particular)
+   * suspend or interrupt audio while the page is hidden and resume it only on a gesture.
+   */
   async enable(): Promise<AudioClockSnapshot> {
-    if (this.#context === null) {
+    if (this.#context === null || this.#context.state === "closed") {
       this.#context = new AudioContext({ latencyHint: "interactive" });
     }
-    if (this.#context.state === "suspended") await this.#context.resume();
+    if (this.#context.state !== "running") await this.#context.resume();
     return this.sample();
   }
 

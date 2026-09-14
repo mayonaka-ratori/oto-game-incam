@@ -626,9 +626,9 @@ const template = `
             <p class="section-index">03 / P1制御試験</p>
             <h2 id="p1-heading">単体ジェスチャー制御試験</h2>
           </div>
-          <span id="p1-progress" class="check-progress">0 / 30</span>
+          <span id="p1-progress" class="check-progress">0 / 50</span>
         </div>
-        <p class="check-intro">正本の順序で、エアタップ10回、リボンスワイプ10回、Bloom10回を記録します。この画面の結果だけで合格とは判定しません。</p>
+        <p class="check-intro">正本の順序で、エアタップ・リボンスワイプ・Bloom・Lift・Spotlightを各10回、5つのブロックで合計50回記録します。この画面の結果だけで合格とは判定しません。</p>
 
         <div class="p1-grid">
           <article class="p1-card p1-audio-card">
@@ -650,9 +650,23 @@ const template = `
               <div><span>試験セッション</span><strong id="p1-state">未開始</strong></div>
               <button id="p1-start-session" class="button button--primary" type="button" disabled>テストを開始</button>
             </div>
+            <div id="p1-block" class="p1-block" data-state="idle" aria-live="polite">
+              <div class="p1-block-copy">
+                <span id="p1-block-label">ブロック 1 / 5</span>
+                <strong id="p1-block-title">エアタップ 10回</strong>
+                <small id="p1-block-message">「テストを開始」でエアタップから始めます。</small>
+              </div>
+              <div class="p1-block-actions">
+                <button id="p1-start-block" class="button button--primary" type="button" hidden>この動きを開始</button>
+                <button id="p1-pause" class="button button--quiet" type="button" hidden>中断</button>
+                <button id="p1-resume" class="button button--primary" type="button" hidden>再開</button>
+                <button id="p1-block-export" class="button button--primary" type="button" hidden>結果を保存する</button>
+              </div>
+            </div>
             <dl class="p1-mini-metrics">
               <div><dt>セッションID</dt><dd id="p1-session-id">—</dd></div>
               <div><dt>試行</dt><dd id="p1-trial-number">—</dd></div>
+              <div><dt>ブロック内</dt><dd id="p1-block-trial">—</dd></div>
               <div><dt>ジェスチャー</dt><dd id="p1-gesture">—</dd></div>
               <div><dt>残り時間</dt><dd id="p1-remaining">—</dd></div>
               <div><dt>直前の結果</dt><dd id="p1-last-result">—</dd></div>
@@ -683,10 +697,12 @@ const template = `
               <span>直近の拒否理由</span>
               <strong id="p1-latest-rejection">—</strong>
             </div>
-            <p id="p1-performance-warning" class="p1-performance-warning" role="status" hidden>追跡出力が低いためジェスチャーが途切れる可能性があります</p>
-            <div class="p1-trial-actions">
-              <button id="p1-next-trial" class="button button--primary p1-next" type="button" disabled>次の試行を開始</button>
-              <button id="p1-skip" class="button button--quiet p1-skip" type="button" disabled>未成立として次へ</button>
+            <div class="p1-trial-footer">
+              <p id="p1-performance-warning" class="p1-performance-warning" role="status" hidden>追跡出力が低いためジェスチャーが途切れる可能性があります</p>
+              <div class="p1-trial-actions">
+                <button id="p1-next-trial" class="button button--primary p1-next" type="button" disabled>次の試行を開始</button>
+                <button id="p1-skip" class="button button--quiet p1-skip" type="button" disabled>未成立として次へ</button>
+              </div>
             </div>
           </article>
         </div>
@@ -781,7 +797,7 @@ const template = `
 
           <details class="report-section" open>
             <summary><span>3</span> P1制御試験の結果</summary>
-            <p class="report-help">上の制御試験画面で30試行を行い、P1セッションJSONを取り込むと自動入力できます。未分類を除外して成功率を良く見せないでください。</p>
+            <p class="report-help">上の制御試験画面で5動作・50試行を行い、P1セッションJSONを取り込むと、エアタップ・リボンスワイプ・Bloomを自動入力できます。候補動作のLift／SpotlightはP1セッション比較で確認します。未分類を除外して成功率を良く見せないでください。</p>
             <div class="controlled-table-wrap">
               <table class="controlled-table">
                 <thead><tr><th>ジェスチャー</th><th>成功</th><th>操作が条件外</th><th>正しく操作したが未検出</th><th>誤検出</th><th>手の追跡失敗</th><th>分類不能</th><th>時刻差</th></tr></thead>
@@ -859,6 +875,8 @@ const template = `
                 <th>エアタップ</th>
                 <th>スワイプ</th>
                 <th>第三入力</th>
+                <th>Lift</th>
+                <th>Spotlight</th>
                 <th>追跡出力</th>
                 <th>フレームの古さ</th>
                 <th>両手検出率</th>

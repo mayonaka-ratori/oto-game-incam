@@ -122,6 +122,26 @@ export class OverlayRenderer {
       this.#context.lineTo(end.x, end.y);
       this.#context.stroke();
       this.#drawArrowHead(start.x, start.y, end.x, end.y);
+    } else if (guide.gesture === "lift") {
+      for (const x of [0.28, 0.72]) {
+        this.#strokeZone(transform, { x: x - 0.14, y: 0.6 }, { x: x + 0.14, y: 0.92 });
+        const bottom = mapPreviewLandmark(transform, { x, y: 0.74 });
+        const top = mapPreviewLandmark(transform, { x, y: 0.36 });
+        this.#context.beginPath();
+        this.#context.moveTo(bottom.x, bottom.y);
+        this.#context.lineTo(top.x, top.y);
+        this.#context.stroke();
+        this.#drawArrowHead(bottom.x, bottom.y, top.x, top.y);
+        this.#context.setLineDash([9, 7]);
+      }
+    } else if (guide.gesture === "spotlight") {
+      const leftUp = guide.spotlightVariant !== "right-up-left-down";
+      const upper = { top: 0.06, bottom: 0.42 };
+      const lower = { top: 0.58, bottom: 0.94 };
+      const leftZone = leftUp ? upper : lower;
+      const rightZone = leftUp ? lower : upper;
+      this.#strokeZone(transform, { x: 0.06, y: leftZone.top }, { x: 0.46, y: leftZone.bottom });
+      this.#strokeZone(transform, { x: 0.54, y: rightZone.top }, { x: 0.94, y: rightZone.bottom });
     } else {
       const left = mapPreviewLandmark(transform, { x: 0.3, y: 0.5 });
       const right = mapPreviewLandmark(transform, { x: 0.7, y: 0.5 });
@@ -138,6 +158,21 @@ export class OverlayRenderer {
       this.#context.stroke();
     }
     this.#context.restore();
+  }
+
+  #strokeZone(
+    transform: NonNullable<ReturnType<typeof createVideoCoverTransform>>,
+    first: { readonly x: number; readonly y: number },
+    second: { readonly x: number; readonly y: number },
+  ): void {
+    const a = mapPreviewLandmark(transform, first);
+    const b = mapPreviewLandmark(transform, second);
+    const x = Math.min(a.x, b.x);
+    const y = Math.min(a.y, b.y);
+    const width = Math.abs(a.x - b.x);
+    const height = Math.abs(a.y - b.y);
+    this.#context.fillRect(x, y, width, height);
+    this.#context.strokeRect(x, y, width, height);
   }
 
   #drawArrowHead(startX: number, startY: number, endX: number, endY: number): void {
