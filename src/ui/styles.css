@@ -2661,137 +2661,348 @@ details[open] summary {
   }
 }
 
+
+/*
+ * Everything the tester needs while a trial runs is drawn inside the camera frame:
+ * the one-line task, the guide on the image, the count-in, and the result. The overlay
+ * never takes pointer events, so a tap on the image reaches the screen below it.
+ */
+.stage-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  justify-items: center;
+  padding: 8px 10px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.stage-instruction {
+  grid-row: 1;
+  max-width: 100%;
+  margin: 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  color: #eefaf8;
+  background: rgba(3, 10, 13, 0.62);
+  font-size: clamp(13px, 3.2vmin, 21px);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+/* Above the middle: the count must not cover the circles the hands are about to leave. */
+.stage-cue {
+  grid-row: 2;
+  align-self: start;
+  margin: 0;
+  color: #eefaf8;
+  font-size: clamp(52px, 17vmin, 120px);
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: 0 2px 14px rgba(2, 8, 10, 0.92);
+}
+
+.stage-cue[data-kind="go"] {
+  color: var(--cyan);
+}
+
+.stage-cue[data-kind="good"] {
+  color: #9dffb3;
+  font-size: clamp(38px, 12vmin, 88px);
+}
+
+.stage-hint {
+  grid-row: 2;
+  align-self: end;
+  max-width: 100%;
+  margin: 0;
+  padding: 4px 12px;
+  border-radius: 10px;
+  color: #eefaf8;
+  background: rgba(3, 10, 13, 0.66);
+  font-size: clamp(13px, 3vmin, 19px);
+  font-weight: 700;
+}
+
+.stage-tap {
+  grid-row: 3;
+  margin: 0;
+  padding: 7px 18px;
+  border: 1px solid rgba(98, 242, 220, 0.5);
+  border-radius: 999px;
+  color: var(--cyan);
+  background: rgba(3, 10, 13, 0.78);
+  font-size: clamp(14px, 3.4vmin, 22px);
+  font-weight: 700;
+  animation: stage-tap-pulse 1.4s ease-in-out infinite;
+}
+
+.stage-note {
+  position: absolute;
+  bottom: 6px;
+  left: 8px;
+  max-width: calc(100% - 16px);
+  color: var(--warning);
+  font-size: 10px;
+  line-height: 1.3;
+  text-align: left;
+}
+
+.stage-note:empty {
+  display: none;
+}
+
+.stage-instruction:empty,
+.stage-cue:empty,
+.stage-hint:empty {
+  display: none;
+}
+
+@keyframes stage-tap-pulse {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-tap { animation: none; }
+}
+
+/* Read by screen readers and by the automated tests, but never in the tester's way. */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/*
+ * Tester screen. The camera image is the whole screen; the few buttons sit in the margin
+ * beside it (landscape) or below it (portrait). The pause and the completion screens cover
+ * the image, so nothing else competes with the camera while a trial runs.
+ */
 .tester-view .app-shell {
   width: 100%;
   height: 100dvh;
   min-height: 0;
-  padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
-    max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  padding: max(4px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right))
+    max(4px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
   font-family: "Noto Sans JP", "Yu Gothic", "Meiryo", system-ui, sans-serif;
 }
+
 .tester-view .topbar,
 .tester-view .camera-panel > .section-heading,
 .tester-view .orientation-notice,
 .tester-view .preview-label,
 .tester-view .state-badge,
-.tester-view .p1-audio-card,
-.tester-view .p1-panel > .check-intro,
 .tester-view .section-index,
-.tester-view .p1-trial-card > .p1-mini-metrics,
-.tester-view .p1-card-heading > div,
-.tester-view .p1-motion-copy,
-.tester-view .p1-observation-row,
-.tester-view #p1-next-trial,
-.tester-view #p1-block-export { display: none !important; }
+.tester-view .p1-footer,
+.tester-view #p1-block-export,
+.tester-view #p1-next-trial { display: none !important; }
+
 .tester-view .lab-layout {
-  height: 100%;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-  align-items: stretch;
-  gap: 8px;
-}
-.tester-view .camera-panel,
-.tester-view .p1-panel {
+  display: flex;
   height: 100%;
   min-height: 0;
-  padding: 8px;
-  grid-row: 1;
-  overflow: visible;
+  gap: 6px;
+  margin: 0;
+  align-items: stretch;
 }
+
+.tester-view .camera-panel,
+.tester-view .p1-panel {
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.tester-view .p1-observation-row { display: none; }
+
 .tester-view .camera-panel {
-  grid-column: 1;
   display: grid;
+  flex: 1 1 auto;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 6px;
   container-type: size;
 }
+
 .tester-view .preview-shell {
-  --preview-max-height: calc(100cqh - 56px);
+  --preview-max-height: calc(100cqh - 92px);
+
   align-self: center;
+  max-width: 100%;
 }
+
+/* Once the camera runs, the state card is gone and the image takes the whole panel. */
+.tester-view[data-camera="active"] .camera-panel { grid-template-rows: minmax(0, 1fr); }
+.tester-view[data-camera="active"] .state-card { display: none; }
+.tester-view[data-camera="active"] .preview-shell { --preview-max-height: 100cqh; }
+
 .tester-view .state-card {
-  position: static;
+  display: grid;
   min-height: 0;
-  padding: 0;
   margin: 0;
+  padding: 0;
+  gap: 4px;
   border: 0;
   background: transparent;
 }
-.tester-view .state-copy h3 { font-size: 12px; margin: 0; }
-.tester-view .state-copy p { font-size: 12px; margin: 0; }
-.tester-view .state-card[data-state="active"] .state-copy { display: none; }
-.tester-view .action-row { margin: 0; gap: 4px; flex-wrap: nowrap; }
+
+.tester-view .state-copy { gap: 2px; }
+.tester-view .state-copy h3 { margin: 0; font-size: 13px; }
+.tester-view .state-copy p { margin: 0; font-size: 12px; }
+.tester-view .technical-detail { font-size: 10px; }
+.tester-view .action-row { margin: 0; gap: 6px; }
+.tester-view .action-row .button { flex: 1; }
 .tester-view .button { min-height: 40px; padding: 6px 9px; font-size: 12px; }
-.tester-view .tracking-state { top: 4px; left: 4px; max-width: calc(100% - 8px); font-size: 11px; padding: 3px 5px; }
-.tester-view .p1-panel { grid-column: 2; display: flex; flex-direction: column; gap: 6px; }
-.tester-view .p1-heading { margin: 0; flex: 0 0 auto; }
-.tester-view .p1-heading h2 { font-size: 14px; }
-.tester-view .check-progress { font-size: 13px; padding: 2px 6px; }
-.tester-view .p1-grid { display: flex; flex: 1; min-height: 0; margin: 0; }
+.tester-view #start-camera { min-height: 46px; font-size: 15px; }
+.tester-view .tracking-state {
+  top: 4px;
+  left: 4px;
+  max-width: calc(100% - 8px);
+  padding: 2px 5px;
+  font-size: 10px;
+}
+
+/* While everything works, the tester needs no banner: only a problem is worth the space. */
+.tester-view .tracking-state[data-state="ready"] { display: none; }
+
+/* The operation strip: never more than these three buttons while a trial runs. */
+.tester-view .p1-panel {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  justify-content: center;
+  overflow: visible;
+}
+
+.tester-view .p1-grid { display: block; margin: 0; }
 .tester-view .p1-trial-card {
-  display: flex; flex-direction: column; width: 100%; min-height: 0;
-  padding: 0; border: 0; background: transparent; gap: 6px;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
-.tester-view .p1-trial-card .p1-card-heading { position: static; order: 5; margin: 0; padding: 0; border: 0; }
-.tester-view[data-test-state="running"] .p1-card-heading { display: none; }
-.tester-view .tester-cue { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 8px; }
-.tester-view #p1-gesture { grid-column: 1 / -1; margin: 0; font-size: 16px; font-weight: 700; }
-.tester-view #p1-state { font-size: clamp(22px, 4vh, 36px); line-height: 1.1; color: var(--cyan); }
-.tester-view #p1-remaining { margin: 0; font-size: 16px; }
+
+.tester-view .p1-trial-card .p1-card-heading { display: none; }
+.tester-view .p1-trial-footer {
+  position: static;
+  margin: 0;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* A warning belongs at the edge of the image, small enough not to disturb the movement. */
+.stage-note .p1-performance-warning {
+  margin: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(3, 10, 13, 0.72);
+  font-size: 10px;
+  line-height: 1.35;
+}
+.tester-view .p1-trial-actions {
+  display: flex;
+  flex-direction: column;
+  width: 104px;
+  gap: 6px;
+}
+
+.tester-view .p1-trial-actions .button {
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 4px;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.tester-view #p1-pause { min-height: 46px; font-size: 13px; }
+.tester-view[data-test-state="idle"] .p1-trial-actions { visibility: hidden; }
+
+/* The pause and the completion screens cover the image; both keep the camera running. */
 .tester-view #p1-block { display: none; }
-.tester-view .p1-instruction {
-  flex: 1; min-height: 90px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, .6fr);
-  gap: 8px; align-items: center; margin: 0; padding: 8px;
+.tester-view[data-test-state="paused"] .p1-panel,
+.tester-view[data-test-state="complete"] .p1-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  padding: 10px;
+  overflow: auto;
+  background: rgba(2, 8, 10, 0.88);
 }
-.tester-view .p1-instruction-copy { gap: 3px; }
-.tester-view .p1-instruction-copy > span { display: none; }
-.tester-view .p1-instruction strong { font-size: 15px; line-height: 1.5; }
-.tester-view .p1-motion-sample { display: block; min-width: 0; }
-.tester-view .p1-motion-stage { min-height: 82px; }
-.tester-view .p1-motion-stage::before { font-size: 9px; }
-.tester-view .p1-motion-stage::after { font-size: 8px; }
-.tester-view .p1-live-diagnostic { min-height: 0; margin: 0; padding: 0; border: 0; background: none; }
-.tester-view .p1-live-diagnostic span { display: none; }
-.tester-view .p1-live-diagnostic strong { font-size: 11px; line-height: 1.35; }
-.tester-view .p1-trial-footer { position: static; margin: 0; padding: 0; box-shadow: none; background: none; }
-.tester-view .p1-trial-footer .p1-performance-warning {
-  white-space: normal; margin: 0 0 3px; padding: 0; font-size: 11px; line-height: 1.3;
+
+.tester-view[data-test-state="paused"] .p1-trial-actions,
+.tester-view[data-test-state="complete"] .p1-trial-actions { display: none; }
+.tester-view[data-test-state="paused"] #p1-block,
+.tester-view[data-test-state="complete"] #p1-block {
+  display: grid;
+  width: min(100%, 440px);
+  margin-inline: auto;
+  padding: 10px;
+  gap: 8px;
 }
-.tester-view .p1-trial-actions { display: flex; flex-wrap: wrap; gap: 4px; }
-.tester-view .p1-trial-actions .button { flex: 1; }
-.tester-view .p1-footer { display: none; margin: 0; }
-.tester-view[data-test-state="idle"] .p1-live-diagnostic,
-.tester-view[data-test-state="idle"] .p1-trial-footer { display: none; }
-.tester-view[data-test-state="paused"] .p1-live-diagnostic { display: none; }
-.tester-view[data-test-state="paused"] .p1-footer,
-.tester-view[data-test-state="complete"] .p1-footer { display: block; }
-.tester-view[data-test-state="paused"] .p1-instruction { min-height: 0; }
-.tester-view[data-test-state="paused"] .p1-motion-sample { display: none; }
-.tester-view[data-test-state="paused"] #p1-gesture,
-.tester-view[data-test-state="paused"] #p1-remaining,
-.tester-view[data-test-state="paused"] #p1-skip,
-.tester-view[data-test-state="paused"] #p1-false-trigger,
-.tester-view[data-test-state="paused"] .p1-performance-warning { display: none; }
-.tester-view[data-test-state="paused"] .p1-instruction { display: block; flex: none; }
-.tester-view[data-test-state="complete"] .tester-cue,
-.tester-view[data-test-state="complete"] .p1-instruction,
-.tester-view[data-test-state="complete"] .p1-live-diagnostic,
-.tester-view[data-test-state="complete"] .p1-trial-footer { display: none; }
-.tester-view[data-test-state="complete"] #p1-block { display: block; margin: 0; padding: 8px; }
-.tester-view[data-test-state="complete"] .p1-grid { flex: none; display: block; }
-.tester-view .p1-export-block { width: 100%; max-width: none; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.tester-view .p1-export-block .button { width: 100%; }
+
+/* Finishing leaves one job: save the two files. Stopping the camera is not part of it. */
+.tester-view[data-test-state="complete"] #stop-camera { display: none; }
+.tester-view[data-test-state="complete"] #p1-export { min-height: 64px; font-size: 19px; }
+.tester-view[data-test-state="complete"] .p1-block-actions { grid-template-columns: 1fr; }
+
+.tester-view #p1-block .p1-block-copy { gap: 2px; }
+.tester-view #p1-block-label { font-size: 11px; }
+.tester-view #p1-block-title { font-size: 16px; }
+.tester-view #p1-block-message { font-size: 12px; line-height: 1.4; }
+.tester-view .p1-block-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  gap: 6px;
+}
+
+.tester-view .p1-block-actions .button { width: 100%; }
+.tester-view #p1-resume { grid-column: 1 / -1; min-height: 50px; font-size: 16px; }
+.tester-view .p1-export-block {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: none;
+  gap: 6px;
+}
+
+.tester-view #p1-export { min-height: 50px; font-size: 16px; }
 .tester-view .tester-save-note,
-.tester-view .export-status { grid-column: 1 / -1; margin: 0; font-size: 12px; line-height: 1.4; text-align: left; }
+.tester-view .export-status {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: left;
+}
+
 .tester-view .export-status:empty { display: none; }
+.tester-view #p1-replay-export-status { color: var(--cyan); word-break: break-all; }
 
 @media (orientation: portrait) {
-  .tester-view .lab-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, .85fr) minmax(0, 1fr); }
-  .tester-view .p1-panel { grid-column: 1; grid-row: 2; }
-  .tester-view .state-card { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
-  .tester-view .state-copy p { display: none; }
-  .tester-view .p1-instruction strong { font-size: 16px; }
-  .tester-view .p1-motion-stage { min-height: 100px; }
-  .tester-view[data-test-state="complete"] .lab-layout,
-  .tester-view[data-test-state="paused"] .lab-layout { grid-template-rows: minmax(0, .45fr) minmax(0, 1fr); }
+  .tester-view .lab-layout { flex-direction: column; }
+  .tester-view .p1-panel { flex-direction: row; justify-content: center; }
+  .tester-view .p1-trial-actions { flex-direction: row; width: 100%; }
+  .tester-view .p1-trial-actions .button { min-height: 44px; }
+  .tester-view #p1-pause { flex: 0 0 34%; }
+  .tester-view .preview-shell { --preview-max-height: calc(100cqh - 86px); }
+  .tester-view[data-camera="active"] .preview-shell { --preview-max-height: 100cqh; }
 }

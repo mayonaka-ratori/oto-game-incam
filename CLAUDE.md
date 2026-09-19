@@ -31,15 +31,15 @@
 
 ## コードの置き場所
 
-- `src/camera/` カメラ取得とlatest-frame-onlyスケジューラ
+- `src/camera/` カメラ取得とlatest-frame-onlyスケジューラ、取得経路のURL指定（`?frameSource=`、`?pending=`）
 - `src/worker/` MediaPipeを動かす専用Worker（`?tracking=mock` で合成fixtureのmock Workerに切替）
 - `src/tracking/` 安定trackIdと派生特徴量、`src/gestures/` ジェスチャー状態機械と調停
 - `src/time/` Web Audioクロック、拍タイムライン、メトロノーム
 - `src/experiments/` 追跡の実験profile（解像度・fps・GPU/CPUの組。既定は `gpu-640x480-30`）
-- `src/metrics/` フレーム・追跡の計測値、統計、セッション全体とブロック別の性能集計、端末のtechnical snapshot
-- `src/poc/` P1-Controlled制御試験の定義（`phase1-protocol.ts` が試行数・時間切れ・準備完了の正本）、エンジン、セッション保存
+- `src/metrics/` フレーム・追跡の計測値、統計、セッション全体とブロック別の性能集計、端末情報の自動収集、端末のtechnical snapshot
+- `src/poc/` P1-Controlled制御試験の定義（`phase1-protocol.ts` が試験手順の選択・試行数・時間切れ・準備完了の正本。既定は残る2動作・20試行、`?protocol=five` で5動作・50試行、`?protocol=regression` で回帰確認）、エンジン、セッション保存
 - `src/testing/` 実機確認レポート（device checklist）とP1セッション比較
-- `src/replay/` 診断リプレイ（ランドマークの再生）、`src/rendering/` 重ね表示、Bloomの案内の座標、手のひらカーソル、座標変換
+- `src/replay/` 診断リプレイ（ランドマークの再生）、`src/rendering/` 重ね表示、各動作のなぞる案内の座標、カウントと成功表示の時刻、手のひらカーソル、座標変換
 - `src/ui/` 画面と横向きモード、`src/app/` 画面状態とコントローラ、画面を消さない仕組み（Screen Wake Lock）、build ID
 - `build/` Viteプラグイン（静的Sites配信用の出力とbuild ID。配信先URLはリポジトリに置かない）
 

@@ -40,9 +40,11 @@ const EMPTY_SCHEDULER: SchedulerSnapshot = {
   sent: 0,
   completed: 0,
   replaced: 0,
+  dropped: 0,
   errored: 0,
   inFlight: 0,
   pending: 0,
+  pendingPolicy: "hold",
 };
 
 /** Recomputing the windowed quantiles on every tracking result is wasteful, so they are cached this long. */

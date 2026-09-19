@@ -51,6 +51,10 @@ const TECHNICAL_SNAPSHOT: DeviceTechnicalSnapshot = {
   inFlightFrames: 0,
   pendingFrames: 0,
   trackingError: null,
+  device: null,
+  frameSourceOverride: "auto",
+  pendingPolicy: "hold",
+  droppedFrames: 0,
 };
 
 // Raw camera coordinates; the engine mirrors x.
@@ -154,7 +158,7 @@ describe("P1 records of schema v6", () => {
     engine.processFrame(trackingFrame(2, 100, [syntheticHand(0, "left", 0.7, 0.5)]));
     const document = engine.createDocument(TECHNICAL_SUMMARY, TECHNICAL_SNAPSHOT);
 
-    expect(document.schemaVersion).toBe(6);
+    expect(document.schemaVersion).toBe(7);
     expect(document.replay).toMatchObject({ available: true, frameCount: 2, trialWindowCount: 1 });
     expect(document.replay.frameCount).toBe(engine.createDiagnosticReplay().frames.length);
     expect(document.measurementNotes).toEqual({

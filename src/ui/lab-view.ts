@@ -68,6 +68,9 @@ class TextWriter {
 export class LabView {
   readonly video: HTMLVideoElement;
   readonly overlay: HTMLCanvasElement;
+  readonly #root: HTMLElement;
+  /** The tester screen shows one button and no camera controls once the camera is running. */
+  readonly #testerView: boolean;
   readonly #startButton: HTMLButtonElement;
   readonly #stopButton: HTMLButtonElement;
   readonly #previewButton: HTMLButtonElement;
@@ -94,8 +97,10 @@ export class LabView {
 
   constructor(root: HTMLElement, callbacks: LabViewCallbacks, options: LabViewOptions = {}) {
     this.#text = new TextWriter(root);
+    this.#root = root;
     root.innerHTML = template;
-    if (options.showAnalysisPanels !== true) {
+    this.#testerView = options.showAnalysisPanels !== true;
+    if (this.#testerView) {
       root.querySelector(".test-checklist-panel")?.remove();
       root.querySelector(".p1-comparison-panel")?.remove();
       configureTesterView(root);
@@ -155,6 +160,8 @@ export class LabView {
     const blocked = model.state.kind === "unsupported";
 
     setData(this.#stateCard, "state", model.state.kind);
+    // The tester layout gives the camera the whole screen once it is running.
+    setData(this.#root, "camera", model.state.kind);
     setText(this.#stateBadge, stateLabel(model.state.kind));
     setText(this.#stateTitle, model.state.title);
     setText(this.#stateMessage, model.state.message);
@@ -163,9 +170,13 @@ export class LabView {
 
     setHidden(this.#startButton, active);
     setDisabled(this.#startButton, blocked || requesting || model.state.kind === "checking");
-    setText(this.#startButton, requesting ? "許可を待っています…" : startButtonLabel(model.state.kind));
+    setText(
+      this.#startButton,
+      requesting ? "許可を待っています…" : startButtonLabel(model.state.kind, this.#testerView),
+    );
     setHidden(this.#stopButton, !active);
-    setHidden(this.#previewButton, !active);
+    // Stopping the camera belongs to the pause screen; the tester never sees a preview switch.
+    setHidden(this.#previewButton, !active || this.#testerView);
     setAttribute(this.#previewButton, "aria-pressed", String(model.previewVisible));
     setText(this.#previewButton, model.previewVisible ? "プレビューを隠す" : "プレビューを表示");
     if (this.#experimentProfileSelect.value !== model.experimentProfile.id) {
@@ -225,29 +236,30 @@ export class LabView {
   }
 }
 
+/**
+ * Rebuilds the standard screen around the camera image. Everything the tester does not need
+ * during a trial is either removed or kept for tests and screen readers behind .visually-hidden;
+ * the camera image, the guide on it, and three small buttons are all that stays visible.
+ */
 function configureTesterView(root: HTMLElement): void {
   root.classList.add("tester-view");
   const hiddenSelectors = [
     ".overlay-controls",
     ".diagnostics-panel",
-    ".p1-audio-card .p1-mini-metrics",
+    ".p1-audio-card",
     ".p1-observation-row > span",
     "[data-p1-outcome]",
     ".p1-counters",
     ".p1-replay-block",
+    ".frame-guide",
+    ".p1-instruction",
+    ".p1-live-diagnostic",
+    ".p1-heading",
+    ".p1-panel > .check-intro",
   ];
   for (const selector of hiddenSelectors) {
     for (const element of root.querySelectorAll<HTMLElement>(selector)) element.hidden = true;
   }
-
-  const sectionIndex = root.querySelector<HTMLElement>(".p1-heading .section-index");
-  if (sectionIndex !== null) sectionIndex.textContent = "02 / 動作テスト";
-  const heading = root.querySelector<HTMLElement>("#p1-heading");
-  if (heading !== null) heading.textContent = "動作テスト";
-  const audioLabel = root.querySelector<HTMLElement>(".p1-audio-card .p1-card-heading span");
-  if (audioLabel !== null) audioLabel.textContent = "テスト音";
-  const rejectionLabel = root.querySelector<HTMLElement>(".p1-live-diagnostic span");
-  if (rejectionLabel !== null) rejectionLabel.textContent = "直前の案内";
 
   const skipButton = root.querySelector<HTMLButtonElement>("#p1-skip");
   if (skipButton !== null) skipButton.textContent = "反応しなかったので次へ";
@@ -255,26 +267,41 @@ function configureTesterView(root: HTMLElement): void {
   if (falseTriggerButton !== null) falseTriggerButton.textContent = "意図せず反応した";
   const exportButton = root.querySelector<HTMLButtonElement>("#p1-export");
   if (exportButton !== null) {
-    exportButton.textContent = "結果JSONを保存";
+    exportButton.textContent = "結果を保存";
     exportButton.classList.remove("button--quiet");
     exportButton.classList.add("button--primary");
   }
-  // Reuse the controller's elements, but keep the tester's task and clock together.
-  const panel = requiredElement(root, ".p1-trial-card", HTMLElement);
+  // The numbers stay in the page for screen readers and for the automated tests, out of sight.
   const cue = document.createElement("div");
-  cue.className = "tester-cue";
-  for (const id of ["p1-gesture", "p1-state", "p1-remaining"]) {
+  cue.className = "visually-hidden";
+  for (const id of ["p1-gesture", "p1-state", "p1-remaining", "p1-progress", "p1-latest-rejection"]) {
     cue.append(requiredElement(root, `#${id}`, HTMLElement));
   }
-  panel.prepend(cue);
+  requiredElement(root, ".p1-trial-card", HTMLElement).prepend(cue);
+  requiredElement(root, ".p1-trial-card > .p1-mini-metrics", HTMLElement).classList.add("visually-hidden");
+  // The warning belongs on the camera image, small enough not to disturb the movement.
+  requiredElement(root, ".stage-overlay #stage-note", HTMLElement)
+    .append(requiredElement(root, "#p1-performance-warning", HTMLElement));
   const actions = requiredElement(root, ".p1-trial-actions", HTMLElement);
-  for (const id of ["p1-pause", "p1-resume", "p1-false-trigger"]) {
-    actions.append(requiredElement(root, `#${id}`, HTMLElement));
-  }
-  requiredElement(root, "#p1-export-replay", HTMLElement).textContent = "詳しい診断データを保存";
+  actions.append(requiredElement(root, "#p1-false-trigger", HTMLElement));
+  // "中断" is the one control that is always there, so it comes first.
+  actions.prepend(requiredElement(root, "#p1-pause", HTMLElement));
+  // The pause screen carries everything that stops or restarts the test, including the camera.
+  const blockActions = requiredElement(root, ".p1-block-actions", HTMLElement);
+  blockActions.append(requiredElement(root, "#p1-resume", HTMLElement));
+  blockActions.append(requiredElement(root, ".p1-export-block", HTMLElement));
+  blockActions.append(requiredElement(root, "#p1-start-session", HTMLElement));
+  blockActions.append(requiredElement(root, "#stop-camera", HTMLElement));
+  // Saving is the loud button on the pause and the completion screen; restarting is not.
+  const restartButton = requiredElement(root, "#p1-start-session", HTMLButtonElement);
+  restartButton.classList.remove("button--primary");
+  restartButton.classList.add("button--quiet");
+  const replayButton = requiredElement(root, "#p1-export-replay", HTMLButtonElement);
+  replayButton.textContent = "診断データだけをもう一度保存";
+  replayButton.hidden = true;
   const note = document.createElement("p");
   note.className = "tester-save-note";
-  note.textContent = "原因を調べるため、両方を保存してください。診断データは手の位置の記録です。映像・音声は含みません。";
+  note.textContent = "保存した2つのファイルを送ってください。診断データは手の位置の記録です。映像・音声は含みません。";
   requiredElement(root, ".p1-export-block", HTMLElement).prepend(note);
 }
 
@@ -486,8 +513,9 @@ function stateLabel(kind: LabState["kind"]): string {
   }
 }
 
-function startButtonLabel(kind: LabState["kind"]): string {
-  return kind === "permission-required" ? "カメラを開始" : "もう一度試す";
+function startButtonLabel(kind: LabState["kind"], testerView: boolean): string {
+  if (kind !== "permission-required") return "もう一度試す";
+  return testerView ? "はじめる" : "カメラを開始";
 }
 
 function formatValue(
@@ -585,6 +613,13 @@ const template = `
           </div>
           <span class="preview-label">検証用プレビュー · 鏡像表示</span>
           <span id="tracking-state" class="tracking-state" data-state="framing" role="status" hidden></span>
+          <div class="stage-overlay" aria-hidden="false">
+            <p id="stage-instruction" class="stage-instruction" role="status"></p>
+            <p id="stage-cue" class="stage-cue" data-kind="none" role="status"></p>
+            <p id="stage-hint" class="stage-hint" role="status"></p>
+            <p id="stage-tap" class="stage-tap" hidden>画面をタップして開始</p>
+            <div id="stage-note" class="stage-note"></div>
+          </div>
         </div>
 
         <fieldset class="overlay-controls">

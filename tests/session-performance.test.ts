@@ -7,8 +7,24 @@ import {
 import type { SchedulerSnapshot } from "../src/camera/latest-frame-scheduler";
 import type { HandTrackingFrame } from "../src/tracking/tracking-types";
 
-function scheduler(captured: number, completed: number, replaced: number, errored: number): SchedulerSnapshot {
-  return { captured, sent: captured, completed, replaced, errored, inFlight: 0, pending: 0 };
+function scheduler(
+  captured: number,
+  completed: number,
+  replaced: number,
+  errored: number,
+  dropped = 0,
+): SchedulerSnapshot {
+  return {
+    captured,
+    sent: captured,
+    completed,
+    replaced,
+    dropped,
+    errored,
+    inFlight: 0,
+    pending: 0,
+    pendingPolicy: dropped === 0 ? "hold" : "drop",
+  };
 }
 
 function counters(
@@ -112,8 +128,39 @@ describe("PerformanceScopeAccumulator", () => {
     // 30 camera frames in 1 second.
     expect(summary.cameraFrameCount).toBe(30);
     expect(summary.cameraFps).toBeCloseTo(30, 5);
-    expect(summary.scheduler).toEqual({ captured: 120, completed: 120, replaced: 0, errored: 0 });
-    expect(summary.longTask).toEqual({ supported: true, count: 2, totalMs: 200, maxMs: 120 });
+    expect(summary.scheduler).toEqual({ captured: 120, completed: 120, replaced: 0, dropped: 0, errored: 0 });
+    expect(summary.longTask).toEqual({ supported: true, count: 2, totalMs: 200, maxMs: 120, longest: [] });
+  });
+
+  it("keeps only the three longest tasks, with their times and attribution", () => {
+    const accumulator = new PerformanceScopeAccumulator(0, counters(0, 0, 0));
+    const task = (startTimeMs: number, durationMs: number, attributionName: string | null = null) => ({
+      startTimeMs,
+      durationMs,
+      attributionName,
+      attributionContainerType: attributionName === null ? null : "window",
+    });
+    // The 2.8-second stall of block 1 must be findable by its time, whatever came before it.
+    for (const record of [
+      task(1_000, 60),
+      task(2_000, 2_796, "self"),
+      task(3_000, 55),
+      task(4_000, 900, "iframe"),
+      task(5_000, 51),
+      task(6_000, 300),
+    ]) {
+      accumulator.addLongTask(record.durationMs, record);
+    }
+
+    const summary = accumulator.summary(9_999, counters(0, 0, 0), true);
+
+    expect(summary.longTask).toMatchObject({ supported: true, count: 6, maxMs: 2_796 });
+    expect(summary.longTask.totalMs).toBe(60 + 2_796 + 55 + 900 + 51 + 300);
+    expect(summary.longTask.longest).toEqual([
+      { startTimeMs: 2_000, durationMs: 2_796, attributionName: "self", attributionContainerType: "window" },
+      { startTimeMs: 4_000, durationMs: 900, attributionName: "iframe", attributionContainerType: "window" },
+      { startTimeMs: 6_000, durationMs: 300, attributionName: null, attributionContainerType: null },
+    ]);
   });
 
   it("summarizes a still-open scope up to now and ignores later results", () => {
@@ -122,7 +169,7 @@ describe("PerformanceScopeAccumulator", () => {
     const open = accumulator.summary(500, counters(15, 15, 500), false);
 
     expect(open).toMatchObject({ open: true, endedAtMs: 500, durationMs: 500, trackingResultCount: 1 });
-    expect(open.longTask).toEqual({ supported: false, count: null, totalMs: null, maxMs: null });
+    expect(open.longTask).toEqual({ supported: false, count: null, totalMs: null, maxMs: null, longest: [] });
 
     accumulator.close(500, counters(15, 15, 500));
     accumulator.addResult(frame(2, 100, 10, 2), 600);

@@ -1,8 +1,14 @@
-import { P1_FIVE_GESTURE_PROTOCOL_ID } from "../poc/phase1-protocol";
+import {
+  P1_FIVE_GESTURE_PROTOCOL_ID,
+  P1_REGRESSION_THREE_PROTOCOL_ID,
+  P1_REGRESSION_TRIALS_PER_GESTURE,
+  P1_REMAINING_TWO_PROTOCOL_ID,
+  P1_TRIALS_PER_GESTURE,
+} from "../poc/phase1-protocol";
 
 type P1ComparisonGesture = "air-tap" | "ribbon-swipe" | "clap" | "bloom" | "lift" | "spotlight";
 type P1ThirdGesture = "clap" | "bloom";
-type P1SchemaVersion = 2 | 3 | 4 | 5 | 6;
+type P1SchemaVersion = 2 | 3 | 4 | 5 | 6 | 7;
 type FindingSeverity = "error" | "warning" | "info";
 
 export interface P1ComparisonFinding {
@@ -40,8 +46,15 @@ export interface P1ComparisonSessionWide {
 export interface P1ComparisonSession {
   readonly fileName: string;
   readonly schemaVersion: P1SchemaVersion;
-  /** Distinguishes the legacy clap protocol, the 3-input Bloom protocol, and the 5-gesture protocol. */
+  /** Distinguishes the legacy clap, 3-input Bloom, 5-gesture, remaining-two and regression procedures. */
   readonly protocolId: string;
+  /** Japanese name of the procedure, for findings and the row tooltip. */
+  readonly protocolLabel: string;
+  /** The gestures this procedure runs. Gestures outside it have no result and are shown as —. */
+  readonly sessionGestures: readonly P1ComparisonGesture[];
+  readonly trialsPerGesture: number;
+  /** Successes per gesture this procedure asks for: 8 of 10, or all 3 in the regression run. */
+  readonly successThreshold: number;
   readonly thirdGesture: P1ThirdGesture;
   /** Experimental inputs recorded in addition to the three current inputs (schema v5). */
   readonly candidateGestures: readonly P1ComparisonGesture[];
@@ -50,6 +63,15 @@ export interface P1ComparisonSession {
   readonly appBuildId: string;
   readonly experimentProfileId: string;
   readonly userAgent: string;
+  /**
+   * v7: technicalSnapshot.device.model. Chrome's user agent hides the model ("Android 10; K"), so
+   * two different phones can share one user agent; the model tells them apart when it is there.
+   */
+  readonly deviceModel: string | null;
+  /** v7: `?frameSource=`. "auto" for every session saved before v7. */
+  readonly frameSourceOverride: string;
+  /** v7: `?pending=`. "hold" for every session saved before v7. */
+  readonly pendingPolicy: string;
   readonly viewport: string;
   readonly requestedCamera: string;
   readonly actualCamera: string;
@@ -97,7 +119,7 @@ const BASE_GESTURES: readonly P1ComparisonGesture[] = [
 ];
 
 const CANDIDATE_GESTURES: readonly P1ComparisonGesture[] = ["lift", "spotlight"];
-const TRIALS_PER_GESTURE = 10;
+const TRIALS_PER_GESTURE = P1_TRIALS_PER_GESTURE;
 /** Protocol IDs of sessions saved before schema v5 recorded one. */
 export const P1_LEGACY_PROTOCOL_IDS: Readonly<Record<P1ThirdGesture, string>> = {
   clap: "p1-legacy-clap-30",
@@ -112,6 +134,98 @@ const FIVE_GESTURE_RECORD_FINDINGS: readonly string[] = [
   "v5-spotlight-variants",
 ];
 
+/**
+ * What one procedure is supposed to produce. Every check that used to assume "5 gestures, 50
+ * trials, 5 blocks" now reads it from here, so a 20-trial or 9-trial session is validated against
+ * its own procedure instead of being reported as broken.
+ */
+interface P1ProtocolExpectation {
+  readonly id: string;
+  readonly label: string;
+  readonly gestures: readonly P1ComparisonGesture[];
+  readonly trialsPerGesture: number;
+  readonly blockCount: number;
+  /** Successes needed per gesture. 8/10 for the ten-trial procedures. */
+  readonly successThreshold: number;
+  /** The gestures whose results form the P1-Controlled criterion, or null when this procedure alone cannot. */
+  readonly criterionGestures: readonly P1ComparisonGesture[] | null;
+  /** Shown as a finding when criterionGestures is null, so the reader knows why. */
+  readonly criterionNote: string | null;
+  /** Expected Spotlight variant split, or null when the procedure has no Spotlight trials. */
+  readonly spotlightVariants: { readonly leftUp: number; readonly rightUp: number } | null;
+}
+
+const FIVE_GESTURE_EXPECTATION: P1ProtocolExpectation = {
+  id: P1_FIVE_GESTURE_PROTOCOL_ID,
+  label: "5動作・50試行",
+  gestures: ["air-tap", "ribbon-swipe", "bloom", "lift", "spotlight"],
+  trialsPerGesture: TRIALS_PER_GESTURE,
+  blockCount: 5,
+  successThreshold: 8,
+  criterionGestures: ["air-tap", "ribbon-swipe", "bloom"],
+  criterionNote: null,
+  spotlightVariants: { leftUp: 5, rightUp: 5 },
+};
+
+const REMAINING_TWO_EXPECTATION: P1ProtocolExpectation = {
+  id: P1_REMAINING_TWO_PROTOCOL_ID,
+  label: "残る2動作・20試行",
+  gestures: ["ribbon-swipe", "bloom"],
+  trialsPerGesture: TRIALS_PER_GESTURE,
+  blockCount: 2,
+  successThreshold: 8,
+  criterionGestures: null,
+  criterionNote: "この試験手順はリボンスワイプとBloomだけを行います。3入力（エアタップ・リボンスワイプ・Bloom）がそろわないため、成立率は表示しますが、この結果だけでは合否候補にしません。エアタップの成立確認は5動作・50試行の結果を参照してください。",
+  spotlightVariants: null,
+};
+
+const REGRESSION_EXPECTATION: P1ProtocolExpectation = {
+  id: P1_REGRESSION_THREE_PROTOCOL_ID,
+  label: "回帰確認3動作・9試行",
+  gestures: ["air-tap", "lift", "spotlight"],
+  trialsPerGesture: P1_REGRESSION_TRIALS_PER_GESTURE,
+  blockCount: 3,
+  // Three trials cannot show 8/10; the run only asks whether a change broke what already passed.
+  successThreshold: P1_REGRESSION_TRIALS_PER_GESTURE,
+  criterionGestures: null,
+  criterionNote: "この試験手順は成立確認を終えた3動作の回帰確認です。各3回しか行わないため、合否候補にはしません。失敗があれば、直前に変えた判定の時間定数または座標の扱いを疑ってください。",
+  spotlightVariants: { leftUp: 1, rightUp: 2 },
+};
+
+const PROTOCOL_EXPECTATIONS: readonly P1ProtocolExpectation[] = [
+  FIVE_GESTURE_EXPECTATION,
+  REMAINING_TWO_EXPECTATION,
+  REGRESSION_EXPECTATION,
+];
+
+/**
+ * Sessions saved before schema v5 recorded no procedure. They always ran the three current inputs
+ * ten times each, so their expectation is built from the third gesture their vocabulary names.
+ */
+function legacyExpectation(thirdGesture: P1ThirdGesture): P1ProtocolExpectation {
+  return {
+    id: P1_LEGACY_PROTOCOL_IDS[thirdGesture],
+    label: "3入力・30試行",
+    gestures: [...BASE_GESTURES, thirdGesture],
+    trialsPerGesture: TRIALS_PER_GESTURE,
+    blockCount: 3,
+    successThreshold: 8,
+    criterionGestures: [...BASE_GESTURES, thirdGesture],
+    criterionNote: null,
+    spotlightVariants: null,
+  };
+}
+
+/** A v5+ id that matches no known procedure is validated against the five-gesture one, as before. */
+function protocolExpectation(
+  schemaVersion: P1SchemaVersion,
+  protocolId: string,
+  thirdGesture: P1ThirdGesture,
+): P1ProtocolExpectation {
+  if (schemaVersion < 5) return legacyExpectation(thirdGesture);
+  return PROTOCOL_EXPECTATIONS.find(({ id }) => id === protocolId) ?? FIVE_GESTURE_EXPECTATION;
+}
+
 export function parseP1SessionForComparison(
   text: string,
   fileName: string,
@@ -120,14 +234,15 @@ export function parseP1SessionForComparison(
   if (!isRecord(value) || value.schema !== "oto-motion-p1-controlled") {
     throw new TypeError("P1-ControlledセッションJSONではありません。");
   }
-  const schemaVersion = value.schemaVersion;
-  if (schemaVersion !== 2 && schemaVersion !== 3 && schemaVersion !== 4 && schemaVersion !== 5 && schemaVersion !== 6) {
-    throw new TypeError("対応していないP1 schema versionです。");
-  }
+  const schemaVersion = parseSchemaVersion(value.schemaVersion);
   const findings: P1ComparisonFinding[] = [];
   const thirdGesture = parseThirdGesture(value, schemaVersion, findings);
-  const candidateGestures = parseCandidateGestures(value, schemaVersion, findings);
-  const sessionGestures = [...comparisonGestures(thirdGesture), ...candidateGestures];
+  const protocol = isRecord(value.protocol) ? value.protocol : {};
+  const protocolId = parseProtocolId(schemaVersion, protocol, thirdGesture, findings);
+  // The procedure is read before the results, because it says which gestures should be there.
+  const expectation = protocolExpectation(schemaVersion, protocolId, thirdGesture);
+  const candidateGestures = parseCandidateGestures(value, schemaVersion, expectation, findings);
+  const sessionGestures = expectation.gestures;
   const session = sessionRecord(value);
   const sessionId = stringValue(session.sessionId);
   if (sessionId.length === 0) throw new TypeError("sessionIdがありません。");
@@ -138,14 +253,13 @@ export function parseP1SessionForComparison(
     gestures[gesture] = parseGestureSummary(
       byGesture[gesture],
       gesture,
+      expectation,
       findings,
       CANDIDATE_GESTURES.includes(gesture),
     );
   }
-  const protocol = isRecord(value.protocol) ? value.protocol : {};
-  const protocolId = parseProtocolId(schemaVersion, protocol, thirdGesture, findings);
-  if (schemaVersion >= 5) validateFiveGestureRecords(protocol, protocolId, findings);
-  const expectedTotal = sessionGestures.length * TRIALS_PER_GESTURE;
+  if (schemaVersion >= 5) validateProtocolRecords(protocol, protocolId, expectation, findings);
+  const expectedTotal = sessionGestures.length * expectation.trialsPerGesture;
   const completed = finiteNumber(protocol.completed) ?? sumGesture(gestures, "completed", sessionGestures);
   const total = finiteNumber(protocol.total) ?? expectedTotal;
   validateProtocol(
@@ -237,9 +351,20 @@ export function parseP1SessionForComparison(
     ));
   }
 
+  const device = isRecord(technical.device) ? technical.device : null;
+  const deviceModel = device === null ? null : (stringValue(device.model) || null);
+  // Pre-v7 files were always measured with the long-standing pipeline, so their defaults are exact.
+  const frameSourceOverride = stringValue(technical.frameSourceOverride) || "auto";
+  const pendingPolicy = stringValue(technical.pendingPolicy) || "hold";
+
   const dataComplete = findings.every(({ severity }) => severity !== "error");
+  const criterionGestures = expectation.criterionGestures;
+  if (criterionGestures === null && expectation.criterionNote !== null) {
+    findings.push(finding("protocol-not-criterion", "info", expectation.criterionNote));
+  }
   // Lift and Spotlight are candidates. Only the three current inputs form the P1-Controlled starting criterion.
-  const controlledCriterionCandidate = dataComplete
+  const controlledCriterionCandidate = criterionGestures !== null
+    && dataComplete
     && !delegateFallback
     && !findings.some(({ code }) => FIVE_GESTURE_RECORD_FINDINGS.includes(code))
     && appBuildId.length > 0
@@ -249,11 +374,18 @@ export function parseP1SessionForComparison(
     && trackingHz !== null
     && frameAgeP95Ms !== null
     && twoHandCoverage !== null
-    && comparisonGestures(thirdGesture).every((gesture) => gestures[gesture].success >= 8);
+    && criterionGestures.every((gesture) => gestures[gesture].success >= expectation.successThreshold);
   return {
     fileName,
     schemaVersion,
     protocolId,
+    protocolLabel: expectation.label,
+    sessionGestures: [...sessionGestures],
+    trialsPerGesture: expectation.trialsPerGesture,
+    successThreshold: expectation.successThreshold,
+    deviceModel,
+    frameSourceOverride,
+    pendingPolicy,
     sessionId,
     createdAtIso: stringValue(value.createdAtIso) || stringValue(session.createdAtIso),
     appBuildId,
@@ -335,10 +467,12 @@ export function compareP1Sessions(
   const sessionIds = sessions.map(({ sessionId }) => sessionId);
   const duplicateIds = distinctNonEmpty(sessionIds.filter((id, index) => sessionIds.indexOf(id) !== index));
   const distinctSessionCount = new Set(sessionIds).size;
+  const frameSources = distinctNonEmpty(sessions.map(({ frameSourceOverride }) => frameSourceOverride));
+  const pendingPolicies = distinctNonEmpty(sessions.map(({ pendingPolicy }) => pendingPolicy));
   const userAgents = sessions.map(({ userAgent }) => userAgent);
   const sameDeviceSuspected = distinctSessionCount >= 2
     && userAgents.every((agent) => agent.length > 0)
-    && new Set(userAgents).size === 1;
+    && new Set(deviceKeys(sessions)).size === 1;
   if (buildIds.length > 1) {
     findings.push(finding(
       "mixed-builds",
@@ -375,6 +509,20 @@ export function compareP1Sessions(
       `手の認識処理が混在しています（${delegates.join(" / ")}）。CPUに切り替わった結果はGPUの結果と同じ条件にまとめません。`,
     ));
   }
+  if (frameSources.length > 1) {
+    findings.push(finding(
+      "mixed-frame-sources",
+      "warning",
+      `カメラのフレームの取り方が混在しています（?frameSource=${frameSources.join(" / ")}）。処理速度の切り分けの比較として扱い、同じ条件の結果へまとめません。`,
+    ));
+  }
+  if (pendingPolicies.length > 1) {
+    findings.push(finding(
+      "mixed-pending-policies",
+      "warning",
+      `待機枠の扱いが混在しています（?pending=${pendingPolicies.join(" / ")}）。処理速度の切り分けの比較として扱い、同じ条件の結果へまとめません。`,
+    ));
+  }
   if (duplicateIds.length > 0) {
     findings.push(finding(
       "duplicate-sessions",
@@ -405,7 +553,9 @@ export function compareP1Sessions(
     && profileIds.length === 1
     && thirdGestures.length === 1
     && protocolIds.length === 1
-    && delegates.length <= 1;
+    && delegates.length <= 1
+    && frameSources.length <= 1
+    && pendingPolicies.length <= 1;
   const controlledCriterionCandidate = distinctSessionCount >= 2
     && candidateSessions.length === sessions.length
     && sameConditions
@@ -511,9 +661,18 @@ export class P1SessionComparisonController {
   }
 }
 
+/** Accepted versions. v2–v6 keep reading as before; only v7 carries the new technicalSnapshot items. */
+function parseSchemaVersion(value: unknown): P1SchemaVersion {
+  const accepted: readonly P1SchemaVersion[] = [2, 3, 4, 5, 6, 7];
+  const match = accepted.find((version) => version === value);
+  if (match === undefined) throw new TypeError("対応していないP1 schema versionです。");
+  return match;
+}
+
 function parseGestureSummary(
   value: unknown,
   gesture: P1ComparisonGesture,
+  expectation: P1ProtocolExpectation,
   findings: P1ComparisonFinding[],
   candidate: boolean,
 ): P1ComparisonGestureSummary {
@@ -532,8 +691,9 @@ function parseGestureSummary(
     + summary.machineMiss
     + summary.trackingLoss
     + summary.unclassified;
-  if (summary.completed !== TRIALS_PER_GESTURE) {
-    findings.push(finding(`${gesture}-count`, "error", `${gesture}が10試行ではありません（${summary.completed}件）。`));
+  const perGesture = expectation.trialsPerGesture;
+  if (summary.completed !== perGesture) {
+    findings.push(finding(`${gesture}-count`, "error", `${gesture}が${perGesture}試行ではありません（${summary.completed}件）。`));
   }
   if (outcomeTotal !== summary.completed) {
     findings.push(finding(
@@ -542,17 +702,19 @@ function parseGestureSummary(
       `${gesture}のoutcome合計${outcomeTotal}件とcompleted ${summary.completed}件が一致しません。`,
     ));
   }
-  if (summary.success < 8) {
+  // The two codes below stay as they are, whatever the threshold; they are identifiers, and the
+  // numbers a reader needs are in the message.
+  if (summary.success < expectation.successThreshold) {
     findings.push(candidate
       ? finding(
         `${gesture}-candidate-under-8`,
         "info",
-        `候補動作${gestureLabel(gesture)}のsuccessは${summary.success}/10です。採否判断の材料として記録します。`,
+        `候補動作${gestureLabel(gesture)}のsuccessは${summary.success}/${perGesture}です。採否判断の材料として記録します。`,
       )
       : finding(
         `${gesture}-under-controlled`,
         "warning",
-        `${gesture}のsuccessが8/10未満です（${summary.success}/10）。`,
+        `${gesture}のsuccessが${expectation.successThreshold}/${perGesture}未満です（${summary.success}/${perGesture}）。`,
       ));
   }
   return summary;
@@ -742,21 +904,30 @@ function chooseNextAction(
     return "旧clapと新Bloomのセッションを分け、同じ第三入力どうしで比較する";
   }
   if (findings.some(({ code }) => code === "mixed-protocols")) {
-    return "3入力・30試行と5動作・50試行を分け、同じ試験手順のセッションどうしで比較する";
+    return "試験手順ごとに分け、同じ試験手順のセッションどうしで比較する（3入力・30試行、5動作・50試行、残る2動作・20試行、回帰確認）";
+  }
+  if (findings.some(({ code }) => code === "mixed-frame-sources" || code === "mixed-pending-policies")) {
+    return "フレームの取り方と待機枠の扱いを1項目だけ変えたセッションどうしで、処理速度を比べる";
   }
   if (sessions.some((session) => session.findings.some(({ code }) => (
     code === "tracking-hz-low" || code === "frame-age-high"
   )))) {
     return "ジェスチャー閾値より先にMediaPipe処理負荷を一項目だけ比較する";
   }
-  const thirdGesture = sessions[0]?.thirdGesture ?? "bloom";
-  const lowest = comparisonGestures(thirdGesture)
+  // Only the non-candidate gestures every loaded session actually ran can be compared across them.
+  // Lift and Spotlight stay out: a weak candidate is information, not the next thing to fix.
+  const sharedGestures = (sessions[0]?.sessionGestures ?? []).filter((gesture) => (
+    !CANDIDATE_GESTURES.includes(gesture)
+    && sessions.every((session) => session.sessionGestures.includes(gesture))
+  ));
+  const threshold = Math.min(...sessions.map(({ successThreshold }) => successThreshold));
+  const lowest = sharedGestures
     .map((gesture) => ({
       gesture,
       success: Math.min(...sessions.map((session) => session.gestures[gesture].success)),
     }))
     .sort((a, b) => a.success - b.success)[0];
-  if (lowest !== undefined && lowest.success < 8) {
+  if (lowest !== undefined && lowest.success < threshold) {
     return `${gestureLabel(lowest.gesture)}の失敗理由を確認し、画角・ガイド・状態機械から一項目だけ選ぶ`;
   }
   if (findings.some(({ code }) => code === "mixed-delegates")
@@ -774,14 +945,17 @@ function chooseNextAction(
   if (sessions.some((session) => session.findings.some(({ code }) => FIVE_GESTURE_RECORD_FINDINGS.includes(code)))) {
     return "試験手順の記録が合わないセッションを、現行の画面で測り直す";
   }
+  // Which procedure to repeat is the one these sessions already used, not a fixed 50 trials.
+  const procedure = sessions[0] === undefined
+    ? "現行の試験手順"
+    : `${sessions[0].protocolLabel}（${sessions[0].total}試行）`;
   if (new Set(sessions.map(({ sessionId }) => sessionId)).size < 2) {
-    // The current app runs only the five-gesture, 50-trial procedure.
     return sessions.every(({ schemaVersion }) => schemaVersion < 5)
-      ? "現行の5動作・50試行で、両方の対象端末を同じビルドとプロファイルで測る"
-      : "もう一方の対象端末／テスターで同じビルドとプロファイルの50試行を行う";
+      ? "現行の試験手順で、両方の対象端末を同じビルドとプロファイルで測る"
+      : `もう一方の対象端末／テスターで同じビルドとプロファイルの${procedure}を行う`;
   }
   if (findings.some(({ code }) => code === "same-device-suspected")) {
-    return "別の対象端末（AndroidとiPhoneなど）で同じビルドとプロファイルの50試行を行う";
+    return `別の対象端末（AndroidとiPhoneなど）で同じビルドとプロファイルの${procedure}を行う`;
   }
   return "対象端末／テスター、手動分類、同期感を確認して合格／要改善／方針転換を記録する";
 }
@@ -789,17 +963,23 @@ function chooseNextAction(
 function renderSessionRow(session: P1ComparisonSession): HTMLTableRowElement {
   const row = document.createElement("tr");
   row.dataset.complete = String(session.dataComplete);
+  // A gesture the procedure never ran has no result, so it shows as — instead of a misleading 0.
+  const score = (gesture: P1ComparisonGesture): string => (
+    session.sessionGestures.includes(gesture)
+      ? `${session.gestures[gesture].success}/${session.trialsPerGesture}`
+      : "—"
+  );
   const candidate = (gesture: P1ComparisonGesture): string => (
-    session.candidateGestures.includes(gesture) ? `${session.gestures[gesture].success}/10` : "—"
+    session.candidateGestures.includes(gesture) ? score(gesture) : "—"
   );
   const values = [
     session.sessionId,
     `v${session.schemaVersion} / ${session.appBuildId || "ビルド不明"}`,
     session.experimentProfileId || "プロファイル不明",
     `${session.completed}/${session.total}`,
-    `${session.gestures["air-tap"].success}/10`,
-    `${session.gestures["ribbon-swipe"].success}/10`,
-    `${gestureLabel(session.thirdGesture)} ${session.gestures[session.thirdGesture].success}/10`,
+    score("air-tap"),
+    score("ribbon-swipe"),
+    `${gestureLabel(session.thirdGesture)} ${score(session.thirdGesture)}`,
     candidate("lift"),
     candidate("spotlight"),
     metric(session.trackingHz, "Hz"),
@@ -814,7 +994,9 @@ function renderSessionRow(session: P1ComparisonSession): HTMLTableRowElement {
   }
   row.title = [
     session.fileName,
-    session.protocolId,
+    `${session.protocolId}（${session.protocolLabel}）`,
+    session.deviceModel ?? "機種名の記録なし",
+    `frameSource=${session.frameSourceOverride} · pending=${session.pendingPolicy}`,
     session.viewport,
     session.requestedCamera,
     session.actualCamera,
@@ -882,23 +1064,33 @@ function parseThirdGesture(
   return "bloom";
 }
 
+/**
+ * From schema v5 the document lists the gestures it ran. It has to match the procedure its ID
+ * names, otherwise the results cannot be read against the right expectation.
+ */
 function parseCandidateGestures(
   document: Record<string, unknown>,
   schemaVersion: P1SchemaVersion,
+  expectation: P1ProtocolExpectation,
   findings: P1ComparisonFinding[],
 ): readonly P1ComparisonGesture[] {
   if (schemaVersion < 5) return [];
   const vocabulary = isRecord(document.gestureVocabulary) ? document.gestureVocabulary : {};
   const listed: readonly unknown[] = Array.isArray(vocabulary.gestures) ? vocabulary.gestures : [];
-  const candidates = CANDIDATE_GESTURES.filter((gesture) => listed.includes(gesture));
-  if (candidates.length !== CANDIDATE_GESTURES.length) {
+  const missing = expectation.gestures.filter((gesture) => !listed.includes(gesture));
+  const extra = listed.filter((gesture) => (
+    typeof gesture === "string" && !expectation.gestures.includes(gesture as P1ComparisonGesture)
+  ));
+  if (missing.length > 0 || extra.length > 0) {
     findings.push(finding(
       "gesture-vocabulary-candidates",
       "error",
-      "schema v5の動作一覧にLiftとSpotlightがそろっていません。",
+      `試験手順${expectation.id}（${expectation.label}）の動作一覧と結果の動作一覧が一致しません（不足 ${missing.join("・") || "なし"}／余分 ${extra.join("・") || "なし"}）。`,
     ));
   }
-  return candidates;
+  return CANDIDATE_GESTURES.filter((gesture) => (
+    expectation.gestures.includes(gesture) && listed.includes(gesture)
+  ));
 }
 
 function parseProtocolId(
@@ -920,63 +1112,78 @@ function protocolLabel(session: P1ComparisonSession): string {
   return `${session.protocolId}（v${session.schemaVersion}・${session.total}試行）`;
 }
 
+/**
+ * How to tell one device from another. The user agent alone is not enough on Chrome, which reports
+ * "Android 10; K" for every phone, so the model from the Client Hints API is added when every
+ * session has one. When any session lacks it, the comparison falls back to the user agent alone.
+ */
+function deviceKeys(sessions: readonly P1ComparisonSession[]): readonly string[] {
+  const withModel = sessions.every(({ deviceModel }) => deviceModel !== null && deviceModel.length > 0);
+  return sessions.map((session) => (
+    withModel ? `${session.userAgent} / ${session.deviceModel ?? ""}` : session.userAgent
+  ));
+}
+
 function preferredSession(existing: P1ComparisonSession, incoming: P1ComparisonSession): P1ComparisonSession {
   if (existing.completed !== incoming.completed) return incoming.completed > existing.completed ? incoming : existing;
   return incoming.createdAtIso >= existing.createdAtIso ? incoming : existing;
 }
 
-/** Schema v5 records the procedure itself; a record that does not match the five-gesture procedure is flagged. */
-function validateFiveGestureRecords(
+/**
+ * Schema v5 records the procedure itself. Each part of the record is checked against the procedure
+ * the ID names; a record that does not match keeps the session out of the criterion.
+ */
+function validateProtocolRecords(
   protocol: Record<string, unknown>,
   protocolId: string,
+  expectation: P1ProtocolExpectation,
   findings: P1ComparisonFinding[],
 ): void {
-  if (protocolId !== P1_FIVE_GESTURE_PROTOCOL_ID && protocolId !== "unknown") {
+  const known = PROTOCOL_EXPECTATIONS.some(({ id }) => id === protocolId);
+  if (!known && protocolId !== "unknown") {
     findings.push(finding(
       "protocol-id-unknown",
       "warning",
-      `schema v5の試験手順ID（${protocolId}）が5動作・50試行（${P1_FIVE_GESTURE_PROTOCOL_ID}）ではありません。合否候補にしません。`,
+      `試験手順ID（${protocolId}）が既知の手順ではありません。${expectation.label}（${expectation.id}）として点検し、合否候補にしません。`,
     ));
   }
   const trialsPerGesture = finiteNumber(protocol.trialsPerGesture);
-  if (trialsPerGesture !== TRIALS_PER_GESTURE) {
+  if (trialsPerGesture !== expectation.trialsPerGesture) {
     findings.push(finding(
       "trials-per-gesture",
       "warning",
-      `各動作の試行数（trialsPerGesture）が10ではありません（${trialsPerGesture ?? "記録なし"}）。`,
+      `各動作の試行数（trialsPerGesture）が${expectation.trialsPerGesture}ではありません（${trialsPerGesture ?? "記録なし"}）。`,
     ));
   }
   const blocks: readonly unknown[] = Array.isArray(protocol.blocks) ? protocol.blocks : [];
   const recordedBlocks = blocks.filter((block) => (
     isRecord(block) && finiteNumber(block.startedAtMs) !== null && finiteNumber(block.finishedAtMs) !== null
   )).length;
-  if (blocks.length !== 5 || recordedBlocks !== 5) {
+  if (blocks.length !== expectation.blockCount || recordedBlocks !== expectation.blockCount) {
     findings.push(finding(
       "v5-blocks-incomplete",
       "warning",
-      `5ブロックの開始と終了の記録がそろっていません（${recordedBlocks} / 5）。`,
+      `${expectation.blockCount}ブロックの開始と終了の記録がそろっていません（${recordedBlocks} / ${expectation.blockCount}）。`,
     ));
   }
   const results: readonly unknown[] = Array.isArray(protocol.results) ? protocol.results : [];
   if (results.some((result) => !isRecord(result) || countValue(result.attempt) < 1)) {
     findings.push(finding("v5-attempt-missing", "warning", "何回目の試みか（attempt）の記録がない試行結果があります。"));
   }
+  const expectedVariants = expectation.spotlightVariants;
+  if (expectedVariants === null) return;
   const variants = results.flatMap((result) => (
     isRecord(result) && isRecord(result.trial) && result.trial.gesture === "spotlight" ? [result.trial.spotlightVariant] : []
   ));
   const leftUp = variants.filter((variant) => variant === "left-up-right-down").length;
   const rightUp = variants.filter((variant) => variant === "right-up-left-down").length;
-  if (leftUp !== 5 || rightUp !== 5) {
+  if (leftUp !== expectedVariants.leftUp || rightUp !== expectedVariants.rightUp) {
     findings.push(finding(
       "v5-spotlight-variants",
       "warning",
-      `Spotlightの上下の割り当てが5回ずつではありません（左手上 ${leftUp}回・右手上 ${rightUp}回）。`,
+      `Spotlightの上下の割り当てが左手上 ${expectedVariants.leftUp}回・右手上 ${expectedVariants.rightUp}回ではありません（左手上 ${leftUp}回・右手上 ${rightUp}回）。`,
     ));
   }
-}
-
-function comparisonGestures(thirdGesture: P1ThirdGesture): readonly P1ComparisonGesture[] {
-  return [...BASE_GESTURES, thirdGesture];
 }
 
 function createEmptyGestureSummaries(): Record<P1ComparisonGesture, P1ComparisonGestureSummary> {

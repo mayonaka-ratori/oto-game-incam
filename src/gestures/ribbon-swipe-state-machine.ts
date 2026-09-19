@@ -39,6 +39,20 @@ export interface RibbonSwipeConfig {
   readonly maximumTrackingGapMs?: number;
 }
 
+/**
+ * Judgment constants. Exported read-only so the on-camera guide can place the start circle
+ * and the end ring from the same distances. Changing a value changes the judgment.
+ */
+/** The judgment measures the travel as a projection from the middle of the frame. */
+export const RIBBON_SWIPE_CENTER = { x: 0.5, y: 0.5 } as const;
+
+export const RIBBON_SWIPE_DEFAULTS = {
+  minimumDistance: 0.28,
+  maximumDurationMs: 850,
+  perpendicularTolerance: 0.18,
+  maximumTrackingGapMs: 150,
+} as const;
+
 export class RibbonSwipeStateMachine {
   readonly #config: Required<RibbonSwipeConfig>;
   readonly #direction: readonly [number, number];
@@ -47,10 +61,10 @@ export class RibbonSwipeStateMachine {
   constructor(config: RibbonSwipeConfig) {
     this.#config = {
       ...config,
-      minimumDistance: config.minimumDistance ?? 0.28,
-      maximumDurationMs: config.maximumDurationMs ?? 850,
-      perpendicularTolerance: config.perpendicularTolerance ?? 0.18,
-      maximumTrackingGapMs: config.maximumTrackingGapMs ?? 150,
+      minimumDistance: config.minimumDistance ?? RIBBON_SWIPE_DEFAULTS.minimumDistance,
+      maximumDurationMs: config.maximumDurationMs ?? RIBBON_SWIPE_DEFAULTS.maximumDurationMs,
+      perpendicularTolerance: config.perpendicularTolerance ?? RIBBON_SWIPE_DEFAULTS.perpendicularTolerance,
+      maximumTrackingGapMs: config.maximumTrackingGapMs ?? RIBBON_SWIPE_DEFAULTS.maximumTrackingGapMs,
     };
     this.#direction = directionVector(config.direction);
   }
@@ -212,6 +226,11 @@ export class RibbonSwipeStateMachine {
   }
 }
 
+/** The unit vector the judgment projects onto, so a guide can place points along the same axis. */
+export function ribbonSwipeDirectionVector(direction: RibbonSwipeDirection): readonly [number, number] {
+  return directionVector(direction);
+}
+
 function directionVector(direction: RibbonSwipeDirection): readonly [number, number] {
   const diagonal = Math.SQRT1_2;
   return {
@@ -223,11 +242,11 @@ function directionVector(direction: RibbonSwipeDirection): readonly [number, num
 }
 
 function projectFromCenter(x: number, y: number, direction: readonly [number, number]): number {
-  return (x - 0.5) * direction[0] + (y - 0.5) * direction[1];
+  return (x - RIBBON_SWIPE_CENTER.x) * direction[0] + (y - RIBBON_SWIPE_CENTER.y) * direction[1];
 }
 
 function perpendicularFromCenter(x: number, y: number, direction: readonly [number, number]): number {
-  return (x - 0.5) * -direction[1] + (y - 0.5) * direction[0];
+  return (x - RIBBON_SWIPE_CENTER.x) * -direction[1] + (y - RIBBON_SWIPE_CENTER.y) * direction[0];
 }
 
 function reject(frame: TrackedHandFrame, handId: string, reason: GestureReasonCode): GestureRejection {

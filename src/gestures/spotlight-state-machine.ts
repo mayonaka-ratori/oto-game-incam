@@ -75,7 +75,11 @@ interface WrongPose {
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
-const DEFAULTS = {
+/**
+ * Judgment constants. Exported read-only so the on-camera guide can draw the same upper and
+ * lower zones and the same hold time. Changing a value changes the judgment.
+ */
+export const SPOTLIGHT_DEFAULTS = {
   upperZoneMaxY: 0.42,
   lowerZoneMinY: 0.58,
   centerLineX: 0.5,
@@ -106,7 +110,7 @@ export class SpotlightStateMachine {
   #rejectionReasonCodes: GestureReasonCode[] = [];
 
   constructor(config: SpotlightConfig) {
-    this.#config = { ...DEFAULTS, ...config };
+    this.#config = { ...SPOTLIGHT_DEFAULTS, ...config };
   }
 
   /** Remember the count-in pose; a pose formed before the window opens must be released and formed again. */

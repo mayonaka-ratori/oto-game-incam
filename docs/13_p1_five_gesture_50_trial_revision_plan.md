@@ -3,7 +3,7 @@
 - 作成日: 2026-09-14
 - 更新日: 2026-09-17
 - 文書種別: Phase 1の次回改訂案・実装計画
-- ステータス: **実装済み。iPhone Safariの1回目の実測まで完了し、Android Chromeは未実施**
+- ステータス: **履歴。5動作・50試行の実装と、iPhone Safariの1回目の実測までの記録。Androidの実測と現行の試験画面は[17](./17_android_test_and_single_screen.md)と[18](./18_android_second_test_and_next_plan.md)にある**
 - 注記: 1〜13章は実装前の計画時点の記述である。文中の「現行」は計画時点（3入力・30試行、schema v4）を指す。実装の結果と、計画に細部の指定がなかった項目の決定は14章に記録する。
 - 対象: Technical LabのP1-Controlled試験
 - 参照結果: p1-20260913183111829.json、p1-20260913183111829-diagnostic-replay.json

@@ -56,9 +56,13 @@ describe("Phase1LabEngine", () => {
       inFlightFrames: 0,
       pendingFrames: 0,
       trackingError: null,
+      device: null,
+      frameSourceOverride: "auto",
+      pendingPolicy: "hold",
+      droppedFrames: 0,
     });
     expect(document.protocol.results[0]?.outcome).toBe("success");
-    expect(document.schemaVersion).toBe(6);
+    expect(document.schemaVersion).toBe(7);
     expect(document.gestureVocabulary).toEqual({
       thirdGesture: "bloom",
       gestures: ["air-tap", "ribbon-swipe", "bloom", "lift", "spotlight"],

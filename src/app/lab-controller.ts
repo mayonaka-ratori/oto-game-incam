@@ -9,7 +9,12 @@ import {
   inspectCameraSupport,
   type CameraSupportSnapshot,
 } from "../camera/camera-support";
+import {
+  resolveFramePipelineOptions,
+  type FramePipelineOptions,
+} from "../camera/frame-pipeline-options";
 import { FrameMetricsCollector, type FrameMetricsSnapshot } from "../metrics/frame-metrics";
+import { DeviceInfoCollector } from "../metrics/device-info";
 import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapshot";
 import type { TrackingMetricsSnapshot } from "../metrics/tracking-metrics";
 import { DEFAULT_OVERLAY_LAYERS, OverlayRenderer } from "../rendering/overlay-renderer";
@@ -40,6 +45,9 @@ export class LabController {
   #trackingClient: TrackingWorkerClient | null = null;
   readonly #overlayRenderer: OverlayRenderer;
   readonly #phase1Controller: Phase1LabController;
+  /** Fixed for the life of the page: one measurement changes one thing (docs/18 の5.4). */
+  readonly #framePipeline: FramePipelineOptions;
+  readonly #deviceInfo = new DeviceInfoCollector();
   #experimentProfile: TrackingExperimentProfile;
   #previewVisible = true;
   #orientationMessage = "横向き表示に切り替えてから、端末をスタンドへ置いてください。";
@@ -49,6 +57,9 @@ export class LabController {
     const searchParams = new URLSearchParams(window.location.search);
     const requestedProfileId = searchParams.get("profile");
     const showAnalysisPanels = searchParams.get("view") === "analysis";
+    this.#framePipeline = resolveFramePipelineOptions(window.location.search);
+    // Started before the camera so the WebGL probe never competes with the tracking Worker.
+    this.#deviceInfo.start();
     this.#experimentProfile = findTrackingExperimentProfile(requestedProfileId);
     this.#support = inspectCameraSupport();
     this.#camera = new CameraController((event) => this.#handleTrackEvent(event));
@@ -130,7 +141,7 @@ export class LabController {
         this.#overlayRenderer.setFrame(update.frame);
         if (update.frame !== null) this.#phase1Controller.processFrame(update.frame);
         this.#render();
-      });
+      }, this.#framePipeline);
       this.#trackingClient = trackingClient;
       try {
         await trackingClient.start(
@@ -286,6 +297,11 @@ export class LabController {
       inFlightFrames: scheduler?.inFlight ?? null,
       pendingFrames: scheduler?.pending ?? null,
       trackingError: this.#tracking?.fatalError ?? null,
+      // Re-read here, so the battery value belongs to the moment the tester saved the file.
+      device: this.#deviceInfo.snapshot(),
+      frameSourceOverride: this.#framePipeline.frameSourceOverride,
+      pendingPolicy: this.#framePipeline.pendingPolicy,
+      droppedFrames: scheduler?.dropped ?? null,
     };
   }
 

@@ -3,7 +3,7 @@
 - 作成日: 2026-09-18
 - 更新日: 2026-09-19
 - 文書種別: Phase 2以降の実装計画（typesafe.ai の調査から採用した2件）
-- ステータス: **計画。着手はAndroid Chromeの実測（README の次の作業）が終わってから。`src/` を変えない較正の下調べだけ2026-09-19に開始した（10.1）。対象のiPhoneセッションJSONが作業PCに無く、本番の較正は未実施**
+- ステータス: **計画。着手はREADME の次の作業（両端末の20回試行の比較）が終わってから。`src/` を変えない較正の下調べだけ2026-09-19に開始した（10.1）。対象のiPhoneセッションJSONが作業PCに無く、本番の較正は未実施**
 - 対象: A1 ジェスチャー成立の確信度で演出を3段階に分ける（Phase 2 Interaction POC）、B1 テスターの自由記述を外部AIで仕分ける（Phase 2で精度を試し、Phase 4で使う）
 - 調査の元: typesafe.ai の公式ドキュメント（確認日 2026-09-18）。判定経路に外部AIを入れない結論と、採用しなかった候補は9章に記録する
 - 関係する正本: [03_mvp_definition_and_roadmap.md](./03_mvp_definition_and_roadmap.md)、[04_mvp_uiux_direction.md](./04_mvp_uiux_direction.md)、[06_mvp_chart_scoring_spec.md](./06_mvp_chart_scoring_spec.md)、[05_poc_test_protocol.md](./05_poc_test_protocol.md)、[02_technical_strategy_and_plan.md](./02_technical_strategy_and_plan.md)、[01_game_design_policy.md](./01_game_design_policy.md)
@@ -80,7 +80,7 @@ typesafe.ai の調査から、次の2件を実装する。
 ### 4.1 変えないもの
 
 - 状態機械の閾値、成立条件、`GestureEvent` と `GestureRejection` の既存フィールド。
-- P1 の合否判定と P1 の結果 JSON（schema v6）。A1 は P1 の画面に入れない。
+- P1 の合否判定と P1 の結果 JSON（schema v7）。A1 は P1 の画面に入れない。
 - 05 の8章の分類（success／player miss／machine miss／false trigger／tracking loss／unclassified）。段階は表示の話で、分類の話ではない。
 - 04 の追跡喪失時の案内（該当側の光を薄くして「手を少し内側へ」）。追跡切れは3段階に混ぜず、案内を残す。
 - 06 の10章「同じイベント記録を再生すると同じ Resonance になる」。段階は記録済みの値だけから決める純粋関数にするので、再生しても同じ段階になる。

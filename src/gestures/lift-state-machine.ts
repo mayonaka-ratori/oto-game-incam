@@ -99,7 +99,11 @@ interface HandMotion {
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
-const DEFAULTS: Required<LiftConfig> = {
+/**
+ * Judgment constants. Exported read-only so the on-camera guide can place the start circles
+ * and the end rings from the same zones and distances. Changing a value changes the judgment.
+ */
+export const LIFT_DEFAULTS: Required<LiftConfig> = {
   startZoneMinY: 0.58,
   startZoneMaxY: 0.97,
   leftZoneMinX: 0.03,
@@ -143,7 +147,7 @@ export class LiftStateMachine {
   #identitySwapCount = 0;
 
   constructor(config: LiftConfig = {}) {
-    this.#config = { ...DEFAULTS, ...config };
+    this.#config = { ...LIFT_DEFAULTS, ...config };
     this.#readiness = new ReadinessGate({
       requiredStableMs: this.#config.readinessStableMs,
       maximumDriftDistance: this.#config.readinessMaximumDrift,

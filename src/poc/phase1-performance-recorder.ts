@@ -4,6 +4,7 @@ import {
   PerformanceScopeAccumulator,
   PERFORMANCE_HISTOGRAM_BUCKET_MS,
   readUsedJsHeapSizeBytes,
+  type LongTaskRecord,
   type PerformanceScopeCounters,
 } from "../metrics/session-performance";
 import type { HandTrackingFrame } from "../tracking/tracking-types";
@@ -27,7 +28,7 @@ interface BlockScope {
 /**
  * Whole-session and per-block performance for the P1 result JSON. The recent-window values in
  * technicalSummary say what the device was doing in the last few seconds before saving; these say
- * what it did from the start of the session, and separately inside each of the five blocks.
+ * what it did from the start of the session, and separately inside each block of the protocol.
  *
  * Nothing here feeds the gesture judgement, the trial progression, or the pass counts.
  */
@@ -42,7 +43,7 @@ export class Phase1PerformanceRecorder {
   constructor(getInputs: () => Phase1PerformanceInputs, now: () => number = () => performance.now()) {
     this.#getInputs = getInputs;
     this.#now = now;
-    this.#longTasks = new LongTaskMonitor((durationMs) => this.#addLongTask(durationMs));
+    this.#longTasks = new LongTaskMonitor((durationMs, record) => this.#addLongTask(durationMs, record));
   }
 
   start(): void {
@@ -110,10 +111,10 @@ export class Phase1PerformanceRecorder {
     };
   }
 
-  #addLongTask(durationMs: number): void {
-    this.#session?.addLongTask(durationMs);
+  #addLongTask(durationMs: number, record: LongTaskRecord): void {
+    this.#session?.addLongTask(durationMs, record);
     for (const block of this.#blocks) {
-      if (!block.accumulator.closed) block.accumulator.addLongTask(durationMs);
+      if (!block.accumulator.closed) block.accumulator.addLongTask(durationMs, record);
     }
   }
 

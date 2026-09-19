@@ -37,29 +37,29 @@ test("starts, measures, hides, and releases the camera", async ({ page }) => {
     .toBe(true);
 });
 
-test("fits the camera controls in a phone landscape viewport", async ({ page }) => {
+test("offers one button and the camera image in a phone landscape viewport", async ({ page }) => {
   await page.setViewportSize({ width: 844, height: 390 });
-  await page.goto("/");
+  await page.goto("/?tracking=mock");
 
-  await expect(page.getByRole("button", { name: "カメラを開始" })).toBeInViewport();
-  await expect(page.getByRole("heading", { name: "動作テスト" })).toBeInViewport();
-  await expect(page.getByRole("button", { name: "テストを開始" })).toBeInViewport();
-  await expect(page.locator("#p1-remaining")).toBeInViewport();
-  await expect(page.locator("#p1-motion-sample")).toBeInViewport({ ratio: 1 });
-  await expect(page.locator("#p1-instruction")).toBeInViewport({ ratio: 1 });
+  const start = page.getByRole("button", { name: "はじめる" });
+  await expect(start).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole("button", { name: "テストを開始" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "音を有効にする" })).toBeHidden();
   await expect(page.getByRole("heading", { name: "リアルタイム計測値" })).toBeHidden();
   await expect(page.locator("details.diagnostics-panel")).not.toHaveAttribute("open", "");
   await expect(page.locator("#orientation-notice")).toBeHidden();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  await start.click();
+  await expect(page.locator("#stage-tap")).toBeVisible({ timeout: 20_000 });
   const previewBox = await page.locator("#preview-shell").boundingBox();
   expect(previewBox).not.toBeNull();
   expect(previewBox!.width / previewBox!.height).toBeCloseTo(4 / 3, 1);
   expect(previewBox!.y + previewBox!.height).toBeLessThanOrEqual(390);
-  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator("#orientation-notice")).toBeHidden();
-  await expect(page.locator("#p1-instruction")).toBeInViewport({ ratio: 1 });
-  await expect(page.getByRole("heading", { name: "動作テスト" })).toBeVisible();
+  await expect(page.locator("#stage-instruction")).toBeInViewport({ ratio: 1 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
@@ -89,7 +89,7 @@ test("renders two mock hands and exposes tracking queue diagnostics", async ({ p
 });
 
 test("locks the selected experiment profile while the camera is active", async ({ page }) => {
-  await page.goto("/?tracking=mock&view=analysis");
+  await page.goto("/?tracking=mock&view=analysis&protocol=five");
   await page.locator("details.diagnostics-panel > summary").click();
   const profile = page.getByLabel("実験プロファイル");
   await expect(profile).toHaveValue("gpu-640x480-30");
@@ -146,7 +146,7 @@ for (const scenario of [
 ] as const) {
   test(`renders the ${scenario.query} tracking state`, async ({ page }) => {
     await page.goto(`/?tracking=mock&trackingScenario=${scenario.query}`);
-    await page.getByRole("button", { name: "カメラを開始" }).click();
+    await page.getByRole("button", { name: "はじめる" }).click();
     await expect(page.getByText(scenario.state)).toBeVisible();
     await expect(page.locator("#tracking-hands")).toHaveText(scenario.hands);
   });
@@ -154,7 +154,7 @@ for (const scenario of [
 
 test("recovers from synthetic per-frame inference errors without growing the queue", async ({ page }) => {
   await page.goto("/?tracking=mock&trackingScenario=frame-error");
-  await page.getByRole("button", { name: "カメラを開始" }).click();
+  await page.getByRole("button", { name: "はじめる" }).click();
   await expect.poll(async () => Number(await page.locator("#tracking-inflight").textContent())).toBeLessThanOrEqual(1);
   await expect.poll(async () => Number(await page.locator("#tracking-pending").textContent())).toBeLessThanOrEqual(1);
   await expect.poll(async () => Number(await page.locator("#tracking-errored").textContent())).toBeGreaterThan(0);
@@ -165,7 +165,7 @@ test("initializes MediaPipe in the Worker and processes a camera frame", async (
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto("/");
-  await page.getByRole("button", { name: "カメラを開始" }).click();
+  await page.getByRole("button", { name: "はじめる" }).click();
 
   await expect.poll(async () => {
     const status = await page.locator("#tracking-init").textContent();
@@ -187,7 +187,7 @@ test("continues rVFC tracking while the raw preview is hidden", async ({ page })
   await page.addInitScript(() => {
     Reflect.deleteProperty(globalThis, "MediaStreamTrackProcessor");
   });
-  await page.goto("/?tracking=mock");
+  await page.goto("/?tracking=mock&view=analysis");
   await page.getByRole("button", { name: "カメラを開始" }).click();
 
   await expect(page.locator("#tracking-source")).toHaveText("映像フレーム通知");
@@ -207,13 +207,16 @@ test("shows only the tester workflow on the standard URL", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.locator("#preview-shell")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "動作テスト" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "はじめる" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "リアルタイム計測値" })).toBeHidden();
   await expect(page.getByText("検証用の重ね表示")).toBeHidden();
-  await expect(page.getByRole("button", { name: "結果JSONを保存" })).toBeHidden();
-  await expect(page.getByRole("button", { name: "詳しい診断データを保存" })).toBeHidden();
-  await expect(page.locator("#p1-block-label")).toHaveText("ブロック 1 / 5");
-  await expect(page.locator("#p1-progress")).toHaveText("0 / 50");
+  await expect(page.getByRole("button", { name: "結果を保存" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "診断データだけをもう一度保存" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "カメラを停止" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "テストを開始" })).toBeHidden();
+  // The default protocol is the two gestures that have not passed yet: ten trials each.
+  await expect(page.locator("#p1-block-label")).toHaveText("ブロック 1 / 2");
+  await expect(page.locator("#p1-progress")).toHaveText("0 / 20");
   await expect(page.getByRole("button", { name: "この動きを開始" })).toBeHidden();
   await expect(page.getByRole("heading", { name: "実機確認レポート" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "P1セッション比較" })).toHaveCount(0);
@@ -245,7 +248,7 @@ test("manages, exports, and resumes the device check as JSON", async ({ page }) 
     privacy: { includesCameraFrames: boolean };
     session: { testerId: string; device: string };
   };
-  expect(report.schemaVersion).toBe("2.3");
+  expect(report.schemaVersion).toBe("2.4");
   expect(report.progress).toMatchObject({ completed: 2, total: 25, issue: 1 });
   expect(report.session).toMatchObject({ testerId: "tester-a", device: "iPhone 15" });
   expect(report.privacy.includesCameraFrames).toBe(false);
@@ -261,7 +264,7 @@ test("manages, exports, and resumes the device check as JSON", async ({ page }) 
 test("runs and exports a P1 controlled trial without raw media", async ({ page }) => {
   // Three downloads, two imports, and many form steps: a busy machine needs more than 30 seconds.
   test.setTimeout(60_000);
-  await page.goto("/?tracking=mock&view=analysis");
+  await page.goto("/?tracking=mock&view=analysis&protocol=five");
   await page.getByRole("button", { name: "カメラを開始" }).click();
   await expect(page.locator("#tracking-init")).toHaveText("準備完了");
   await page.getByRole("button", { name: "テストを開始" }).click();
@@ -303,7 +306,7 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
     trialEnvironments: Array<{ viewportWidth: number; orientation: string }>;
   };
   expect(report.schema).toBe("oto-motion-p1-controlled");
-  expect(report.schemaVersion).toBe(6);
+  expect(report.schemaVersion).toBe(7);
   expect(report.measurementNotes).toEqual({
     technicalSummaryScope: "recent-window",
     technicalSummaryWindowSamples: 180,
@@ -379,7 +382,7 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
     viewport: "844 × 390",
   });
   expect(finalReport.technicalSource.mode).toBe("p1-import");
-  expect(finalReport.technicalSource).toMatchObject({ p1SchemaVersion: 6, p1ProtocolId: "p1-five-gesture-50" });
+  expect(finalReport.technicalSource).toMatchObject({ p1SchemaVersion: 7, p1ProtocolId: "p1-five-gesture-50" });
 
   // A legacy clap session never leaves the earlier Bloom value in place.
   await expect(page.locator('[name="bloomSuccess"]')).toHaveValue("0");
@@ -391,12 +394,12 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
   await expect(page.locator('[name="bloomSuccess"]')).toHaveValue("");
 });
 
-test("times out and auto-advances all 50 trials in five blocks without double-finishing", async ({ page }) => {
+test("times out and advances all 50 trials in five blocks without double-finishing", async ({ page }) => {
   test.setTimeout(180_000);
   await page.addInitScript(() => {
     Object.defineProperty(window, "AudioContext", { value: undefined });
   });
-  await page.goto("/?tracking=mock&trackingScenario=none");
+  await page.goto("/?tracking=mock&trackingScenario=none&view=analysis&protocol=five");
   await page.getByRole("button", { name: "カメラを開始" }).click();
   await expect(page.locator("#tracking-init")).toHaveText("準備完了");
   await page.clock.install();
@@ -425,9 +428,11 @@ test("times out and auto-advances all 50 trials in five blocks without double-fi
     if (nextBlock === undefined) {
       await page.clock.fastForward(1_001);
     } else {
-      await expect(page.locator("#p1-state")).toContainText("次の動きまで");
-      await expect(page.getByRole("button", { name: "この動きを開始" })).toBeHidden();
-      await page.clock.fastForward(2_501);
+      // A new movement waits for a tap on the camera image instead of advancing by itself.
+      await expect(page.locator("#p1-state")).toHaveText("画面をタップして開始");
+      await expect(page.locator("#stage-tap")).toBeVisible();
+      await page.clock.fastForward(450);
+      await page.locator("#preview-shell").click({ force: true, position: { x: 12, y: 12 } });
       await expect(motionSample).toHaveAttribute("data-gesture", nextBlock.gesture);
       await expect(motionSample).toHaveAttribute("data-variant", nextBlock.variant);
       await expect.poll(() => page.locator(nextBlock.hand).evaluate(
@@ -441,14 +446,10 @@ test("times out and auto-advances all 50 trials in five blocks without double-fi
   await expect(page.locator("#p1-block")).toHaveAttribute("data-state", "complete");
   await expect(page.locator("#p1-latest-rejection")).toHaveText("10秒で未成立として記録しました");
   await expect(page.locator("#p1-skip")).toBeDisabled();
-  await expect(page.locator("#p1-skip")).toBeHidden();
-  await expectTopmost(page, "#p1-export");
-  await expect(page.locator("#p1-motion-sample")).toBeHidden();
-  await expect(page.locator("#p1-next-trial")).toBeHidden();
-  await expect(page.locator("#p1-export-replay")).toBeInViewport({ ratio: 1 });
+  await expect(page.locator("#p1-next-trial")).toBeDisabled();
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "結果JSONを保存" }).click();
+  await page.getByRole("button", { name: "P1結果JSONを保存" }).click();
   const download = await downloadPromise;
   const path = await download.path();
   expect(path).not.toBeNull();
@@ -463,7 +464,7 @@ test("times out and auto-advances all 50 trials in five blocks without double-fi
     summary: { byGesture: Record<string, { readinessTimeout: number; recognitionTimeout: number }> };
     performance: { blocks: Array<{ blockIndex: number; gesture: string; open: boolean }> } | null;
   };
-  expect(report.schemaVersion).toBe(6);
+  expect(report.schemaVersion).toBe(7);
   expect(report.protocol).toMatchObject({ id: "p1-five-gesture-50", total: 50 });
   expect(report.protocol.results).toHaveLength(50);
   expect(report.protocol.results.every(({ outcome, resolution }) => (
@@ -478,7 +479,7 @@ test("times out and auto-advances all 50 trials in five blocks without double-fi
     startedAtMs !== null && finishedAtMs !== null
   ))).toBe(true);
   expect(report.protocol.blocks.slice(1).every(({ restBeforeMs }) => restBeforeMs !== null)).toBe(true);
-  // Schema v6 measures each block on its own, and every finished block is closed.
+  // Every block is measured on its own, and every finished block is closed.
   expect(report.performance?.blocks.map(({ gesture }) => gesture)).toEqual([
     "air-tap",
     "ribbon-swipe",
@@ -493,25 +494,21 @@ test("pauses inside a block and repeats the abandoned attempt after resume", asy
   await page.addInitScript(() => {
     Object.defineProperty(window, "AudioContext", { value: undefined });
   });
-  await page.goto("/?tracking=mock&trackingScenario=none");
-  await page.getByRole("button", { name: "カメラを開始" }).click();
-  await expect(page.locator("#tracking-init")).toHaveText("準備完了");
-  await page.getByRole("button", { name: "テストを開始" }).click();
-  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 50");
+  await openAndStartTest(page);
 
   await page.getByRole("button", { name: "中断", exact: true }).click();
   await expect(page.locator("#p1-state")).toHaveText("中断中");
   await expect(page.locator("#p1-block")).toHaveAttribute("data-state", "paused");
-  await expect(page.locator("#p1-progress")).toHaveText("0 / 50");
+  await expect(page.locator("#p1-progress")).toHaveText("0 / 20");
   await expect(page.locator("#p1-remaining")).toHaveText("—");
   await page.getByRole("button", { name: "再開", exact: true }).click();
-  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 50");
+  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 20");
   await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
-  await expect(page.locator("#p1-progress")).toHaveText("1 / 50");
+  await expect(page.locator("#p1-progress")).toHaveText("1 / 20");
 
   await page.getByRole("button", { name: "中断", exact: true }).click();
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "結果JSONを保存" }).click();
+  await page.getByRole("button", { name: "結果を保存" }).click();
   const download = await downloadPromise;
   const path = await download.path();
   expect(path).not.toBeNull();
@@ -524,7 +521,7 @@ test("pauses inside a block and repeats the abandoned attempt after resume", asy
   expect(report.protocol.results).toEqual([expect.objectContaining({ attempt: 2, resolution: "manual-skip" })]);
   expect(report.protocol.blocks[0]?.pauses).toEqual([expect.objectContaining({
     reason: "manual",
-    abandonedTrialId: "air-tap-1",
+    abandonedTrialId: "ribbon-swipe-1",
     resumedAtMs: expect.any(Number),
   }), expect.objectContaining({ reason: "manual", resumedAtMs: null })]);
 });
@@ -535,25 +532,24 @@ test("waits for two-hand readiness before the Bloom count-in", async ({ page }) 
   await page.addInitScript(() => {
     Object.defineProperty(window, "AudioContext", { value: undefined });
   });
-  await page.goto("/?tracking=mock");
-  await page.getByRole("button", { name: "カメラを開始" }).click();
-  await expect(page.locator("#tracking-init")).toHaveText("準備完了");
-  await page.getByRole("button", { name: "テストを開始" }).click();
-  for (let ordinal = 1; ordinal <= 20; ordinal += 1) {
-    await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal} / 50`);
+  await openAndStartTest(page, "?tracking=mock");
+  for (let ordinal = 1; ordinal <= 10; ordinal += 1) {
+    await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal} / 20`);
     await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
-    await expect(page.locator("#p1-progress")).toHaveText(`${ordinal} / 50`);
+    await expect(page.locator("#p1-progress")).toHaveText(`${ordinal} / 20`);
   }
+  await tapStage(page);
 
-  await expect(page.locator("#p1-motion-sample")).toHaveAttribute("data-gesture", "bloom");
+  await expect(page.locator("#p1-gesture")).toHaveText("Bloom");
+  await expect(page.locator("#stage-instruction")).toHaveText("丸印から輪まで 両手を開く");
   await expect(page.locator("#p1-state")).toHaveText(/準備OK|カウント|^[12]$|GO|判定中/, { timeout: 15_000 });
   await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
-  await expect(page.locator("#p1-progress")).toHaveText("21 / 50");
+  await expect(page.locator("#p1-progress")).toHaveText("11 / 20");
 
   await page.getByRole("button", { name: "中断", exact: true }).click();
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "結果JSONを保存" }).click();
+  await page.getByRole("button", { name: "結果を保存" }).click();
   const download = await downloadPromise;
   const path = await download.path();
   expect(path).not.toBeNull();
@@ -566,7 +562,7 @@ test("waits for two-hand readiness before the Bloom count-in", async ({ page }) 
       }>;
     };
   };
-  expect(report.protocol.results[20]).toMatchObject({
+  expect(report.protocol.results[10]).toMatchObject({
     resolution: "manual-skip",
     readiness: { requiredStableMs: 200, readyAtMs: expect.any(Number) },
     timing: { readyAtMs: expect.any(Number) },
@@ -599,48 +595,44 @@ test("compares multiple complete P1 sessions without declaring an automatic pass
   await expect(page.locator("#p1-comparison-body tr")).toHaveCount(0);
 });
 
-test("allows pausing at an automatic block transition and asks before a restart", async ({ page }) => {
+test("waits for a tap at a movement change and asks before a restart", async ({ page }) => {
   test.setTimeout(120_000);
   await disableAudio(page);
   await page.setViewportSize({ width: 844, height: 390 });
-  await page.goto("/?tracking=mock&trackingScenario=none");
-  await page.getByRole("button", { name: "カメラを開始" }).click();
-  await expect(page.locator("#tracking-init")).toHaveText("準備完了");
-  await page.clock.install();
-  await page.getByRole("button", { name: "テストを開始" }).click();
+  await openAndStartTest(page);
   for (let ordinal = 1; ordinal <= 9; ordinal += 1) {
-    await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal} / 50`);
+    await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal} / 20`);
     await page.locator("#p1-skip").dispatchEvent("click");
-    await expect(page.locator("#p1-progress")).toHaveText(`${ordinal} / 50`);
-    await page.clock.fastForward(1_001);
+    await expect(page.locator("#p1-progress")).toHaveText(`${ordinal} / 20`);
   }
-  await expect(page.locator("#p1-trial-number")).toHaveText("10 / 50");
-  // The tester scrolled the operation panel down before the block ended.
-  await page.locator(".p1-panel").evaluate((panel) => {
-    panel.scrollTop = panel.scrollHeight;
-  });
-  await page.clock.fastForward(10_201);
-  await expect(page.locator("#p1-state")).toContainText("次の動きまで");
+  await expect(page.locator("#p1-trial-number")).toHaveText("10 / 20");
+  await page.locator("#p1-skip").dispatchEvent("click");
+  // The next movement is shown and waits: nothing advances on its own here.
+  await expect(page.locator("#stage-tap")).toBeVisible();
+  await expect(page.locator("#p1-state")).toHaveText("画面をタップして開始");
+  await page.waitForTimeout(3_000);
+  await expect(page.locator("#p1-trial-number")).toHaveText("—");
   await expectTopmost(page, "#p1-pause");
 
-  // A reaction noticed during the rest belongs to the block that just ended.
+  // A reaction noticed while the next movement is shown belongs to the block that just ended.
   await page.locator("#p1-false-trigger").dispatchEvent("click");
   const report = await downloadJson(page, () => page.locator("#p1-export").dispatchEvent("click")) as {
     protocol: { falseTriggers: Array<{ gestureType: string }> };
   };
-  expect(report.protocol.falseTriggers.map(({ gestureType }) => gestureType)).toEqual(["air-tap"]);
+  expect(report.protocol.falseTriggers.map(({ gestureType }) => gestureType)).toEqual(["ribbon-swipe"]);
 
+  // Pausing works while the prompt waits.
   await page.getByRole("button", { name: "中断", exact: true }).click();
-  await page.clock.fastForward(3_000);
   await expect(page.locator("#p1-state")).toHaveText("中断中");
+  await expect(page.locator("#stage-tap")).toBeHidden();
 
   // Restarting discards the recorded trials, so it asks first.
   page.once("dialog", (dialog) => void dialog.dismiss());
   await page.getByRole("button", { name: "テストを最初からやり直す" }).click();
-  await expect(page.locator("#p1-progress")).toHaveText("10 / 50");
+  await expect(page.locator("#p1-progress")).toHaveText("10 / 20");
   page.once("dialog", (dialog) => void dialog.accept());
   await page.getByRole("button", { name: "テストを最初からやり直す" }).click();
-  await expect(page.locator("#p1-progress")).toHaveText("0 / 50");
+  await expect(page.locator("#p1-progress")).toHaveText("0 / 20");
 });
 
 test("pauses when the page is hidden, also between trials", async ({ page }) => {
@@ -651,7 +643,7 @@ test("pauses when the page is hidden, also between trials", async ({ page }) => 
   await expect(page.locator("#p1-block")).toHaveAttribute("data-state", "paused");
   await setVisibility(page, "visible");
   await page.getByRole("button", { name: "再開", exact: true }).click();
-  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 50");
+  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 20");
   // Hidden while the result is shown between trials: the next trial must not start on return.
   // Skipping and hiding run in one task, so on a busy machine the 1-second result hold cannot
   // run out in between and start the next trial first.
@@ -670,22 +662,26 @@ test("pauses when the page is hidden, also between trials", async ({ page }) => 
   await expect(page.locator("#p1-state")).toHaveText("中断中");
   await expect(page.locator("#p1-trial-number")).toHaveText("—");
   await page.getByRole("button", { name: "再開", exact: true }).click();
-  await expect(page.locator("#p1-trial-number")).toHaveText("2 / 50");
+  await expect(page.locator("#p1-trial-number")).toHaveText("2 / 20");
 
   await page.getByRole("button", { name: "中断", exact: true }).click();
-  const report = await downloadJson(page, () => page.getByRole("button", { name: "結果JSONを保存" }).click()) as {
+  const report = await downloadJson(page, () => page.getByRole("button", { name: "結果を保存" }).click()) as {
     protocol: { blocks: Array<{ pauses: Array<{ reason: string; abandonedTrialId: string | null }> }> };
   };
   expect(report.protocol.blocks[0]?.pauses).toEqual([
-    expect.objectContaining({ reason: "page-hidden", abandonedTrialId: "air-tap-1" }),
+    expect.objectContaining({ reason: "page-hidden", abandonedTrialId: "ribbon-swipe-1" }),
     expect.objectContaining({ reason: "page-hidden", abandonedTrialId: null }),
-    expect.objectContaining({ reason: "manual", abandonedTrialId: "air-tap-2" }),
+    expect.objectContaining({ reason: "manual", abandonedTrialId: "ribbon-swipe-2" }),
   ]);
 });
 
 test("pauses when the camera stops and resumes only after the camera starts again", async ({ page }) => {
   await disableAudio(page);
-  await openAndStartTest(page);
+  await page.goto("/?tracking=mock&trackingScenario=none&view=analysis&protocol=five");
+  await page.getByRole("button", { name: "カメラを開始" }).click();
+  await expect(page.locator("#tracking-init")).toHaveText("準備完了");
+  await page.getByRole("button", { name: "テストを開始" }).click();
+  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 50");
 
   await page.getByRole("button", { name: "カメラを停止" }).click();
   await expect(page.locator("#p1-block")).toHaveAttribute("data-state", "paused");
@@ -698,7 +694,7 @@ test("pauses when the camera stops and resumes only after the camera starts agai
   await expect(page.locator("#p1-trial-number")).toHaveText("1 / 50");
 
   await page.getByRole("button", { name: "中断", exact: true }).click();
-  const report = await downloadJson(page, () => page.getByRole("button", { name: "結果JSONを保存" }).click()) as {
+  const report = await downloadJson(page, () => page.getByRole("button", { name: "P1結果JSONを保存" }).click()) as {
     protocol: { blocks: Array<{ pauses: Array<{ reason: string; abandonedTrialId: string | null }> }> };
   };
   expect(report.protocol.blocks[0]?.pauses).toEqual([
@@ -730,7 +726,7 @@ test("runs a trial without a count-in while the audio clock is suspended and bri
   // A suspended audio clock stands still; a GO computed from it after a while would lie in the past.
   await page.waitForTimeout(2_000);
   await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
-  await expect(page.locator("#p1-trial-number")).toHaveText("2 / 50");
+  await expect(page.locator("#p1-trial-number")).toHaveText("2 / 20");
   await expect(page.locator("#p1-remaining")).toHaveText(/^(10|9)秒$/);
   await expect(page.locator("#p1-block-message")).toContainText("カウント音なし");
 
@@ -749,7 +745,7 @@ test("runs a trial without a count-in while the audio clock is suspended and bri
       .observe(label, { childList: true, characterData: true, subtree: true });
     document.querySelector<HTMLButtonElement>("#p1-skip")?.click();
   });
-  await expect(page.locator("#p1-trial-number")).toHaveText("3 / 50");
+  await expect(page.locator("#p1-trial-number")).toHaveText("3 / 20");
   await expect.poll(() => page.evaluate(() => (window as unknown as { __p1States: string[] }).__p1States))
     .toContain("2");
   await expect(page.locator("#p1-block-message")).not.toContainText("カウント音なし");
@@ -767,11 +763,12 @@ test("schedules the Bloom count-in only after the start position settles", async
     };
   });
   await openAndStartTest(page, "?tracking=mock");
-  for (let ordinal = 1; ordinal <= 20; ordinal += 1) {
-    await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal} / 50`);
+  for (let ordinal = 1; ordinal <= 10; ordinal += 1) {
+    await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal} / 20`);
     await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
-    await expect(page.locator("#p1-progress")).toHaveText(`${ordinal} / 50`);
+    await expect(page.locator("#p1-progress")).toHaveText(`${ordinal} / 20`);
   }
+  await tapStage(page);
   const blockStartedAt = await page.evaluate(() => {
     (window as unknown as { __clickTimes: number[] }).__clickTimes.length = 0;
     return performance.now();
@@ -784,19 +781,25 @@ test("schedules the Bloom count-in only after the start position settles", async
   expect(Math.min(...clickTimes) - blockStartedAt).toBeGreaterThanOrEqual(200);
 });
 
-test("keeps the skip button on screen in landscape when the performance warning appears", async ({ page }) => {
+test("keeps the buttons on screen in landscape when the performance warning appears", async ({ page }) => {
   await disableAudio(page);
   await page.setViewportSize({ width: 844, height: 390 });
   await openAndStartTest(page);
   for (const viewport of [{ width: 844, height: 390 }, { width: 740, height: 360 }, { width: 667, height: 375 }]) {
     await page.setViewportSize(viewport);
+    // The warning sits small on the camera image and must not push a button off screen.
     const placement = await page.evaluate(() => {
       const warning = document.getElementById("p1-performance-warning");
       const skip = document.getElementById("p1-skip");
-      if (warning === null || skip === null) throw new Error("P1 controls are missing.");
+      const preview = document.getElementById("preview-shell");
+      if (warning === null || skip === null || preview === null) throw new Error("P1 controls are missing.");
       warning.hidden = false;
+      warning.textContent = "手の認識が遅れています";
       const rect = skip.getBoundingClientRect();
       const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      const warningRect = warning.getBoundingClientRect();
+      const previewRect = preview.getBoundingClientRect();
+      if (warningRect.bottom > previewRect.bottom + 1) throw new Error("The warning left the camera image.");
       return { topmost: hit !== null && (hit === skip || skip.contains(hit)), bottom: rect.bottom, height: window.innerHeight };
     });
 
@@ -815,7 +818,7 @@ test("does not undo a pause with the second click of a double click", async ({ p
   await expect(page.getByRole("button", { name: "再開", exact: true })).toBeEnabled();
   await expect(page.locator("#p1-block")).toHaveAttribute("data-state", "paused");
 
-  const report = await downloadJson(page, () => page.getByRole("button", { name: "結果JSONを保存" }).click()) as {
+  const report = await downloadJson(page, () => page.getByRole("button", { name: "結果を保存" }).click()) as {
     protocol: { blocks: Array<{ pauses: Array<{ resumedAtMs: number | null }> }> };
   };
   expect(report.protocol.blocks[0]?.pauses).toEqual([expect.objectContaining({ resumedAtMs: null })]);
@@ -845,12 +848,22 @@ async function disableAudio(page: Page): Promise<void> {
   });
 }
 
+/**
+ * The tester screen starts with one press and then waits for a tap on the camera image.
+ * The prompt ignores presses for 400ms, so the tap comes after that.
+ */
+async function tapStage(page: Page): Promise<void> {
+  await expect(page.locator("#stage-tap")).toBeVisible({ timeout: 20_000 });
+  await page.waitForTimeout(450);
+  await page.locator("#preview-shell").click({ force: true, position: { x: 12, y: 12 } });
+}
+
 async function openAndStartTest(page: Page, query = "?tracking=mock&trackingScenario=none"): Promise<void> {
   await page.goto(`/${query}`);
-  await page.getByRole("button", { name: "カメラを開始" }).click();
+  await page.getByRole("button", { name: "はじめる" }).click();
   await expect(page.locator("#tracking-init")).toHaveText("準備完了");
-  await page.getByRole("button", { name: "テストを開始" }).click();
-  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 50");
+  await tapStage(page);
+  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 20");
 }
 
 async function setVisibility(page: Page, state: "hidden" | "visible"): Promise<void> {

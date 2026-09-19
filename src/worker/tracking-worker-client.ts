@@ -1,4 +1,8 @@
 import { createBestFrameSource } from "../camera/create-frame-source";
+import {
+  DEFAULT_FRAME_PIPELINE_OPTIONS,
+  type FramePipelineOptions,
+} from "../camera/frame-pipeline-options";
 import type { FrameSource } from "../camera/frame-source";
 import { LatestFrameScheduler } from "../camera/latest-frame-scheduler";
 import { TrackingMetricsCollector, type TrackingMetricsSnapshot } from "../metrics/tracking-metrics";
@@ -25,6 +29,7 @@ export interface TrackingClientUpdate {
 
 export class TrackingWorkerClient {
   readonly #onUpdate: (update: TrackingClientUpdate) => void;
+  readonly #pipeline: FramePipelineOptions;
   readonly #metrics = new TrackingMetricsCollector();
   #worker: TrackingWorkerEndpoint | null = null;
   #source: FrameSource | null = null;
@@ -34,8 +39,12 @@ export class TrackingWorkerClient {
   #resolveReady: (() => void) | null = null;
   #rejectReady: ((reason: Error) => void) | null = null;
 
-  constructor(onUpdate: (update: TrackingClientUpdate) => void) {
+  constructor(
+    onUpdate: (update: TrackingClientUpdate) => void,
+    pipeline: FramePipelineOptions = DEFAULT_FRAME_PIPELINE_OPTIONS,
+  ) {
     this.#onUpdate = onUpdate;
+    this.#pipeline = pipeline;
   }
 
   async start(
@@ -60,7 +69,7 @@ export class TrackingWorkerClient {
         timestamp: frame.timestamp,
       };
       worker.postMessage(message, [frame.image]);
-    });
+    }, this.#pipeline.pendingPolicy);
 
     const ready = new Promise<void>((resolve, reject) => {
       this.#resolveReady = resolve;
@@ -85,6 +94,7 @@ export class TrackingWorkerClient {
         this.#metrics.markError(`frame-source: ${detail}`);
         this.#emit();
       },
+      this.#pipeline.frameSourceOverride,
     );
     this.#metrics.setFrameSource(this.#source.kind);
     this.#source.start();

@@ -21,9 +21,16 @@ import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapsh
 /**
  * v6: whole-session and per-block performance, per-trial orientation and video size, audio latency,
  * long task and heap records, screen wake lock, and diagnostics that carry a repeat count.
- * v5 and earlier stay readable in the comparison and device-check screens; their new items read as null.
+ *
+ * v7: the protocol is no longer always the five-gesture, 50-trial one, so protocol.id,
+ * protocol.trialsPerGesture and gestureVocabulary.gestures must be read to know what was run.
+ * technicalSnapshot gains device (what the browser says about the phone), frameSourceOverride,
+ * pendingPolicy and droppedFrames, and performance…longTask gains the three longest tasks.
+ *
+ * v6 and earlier stay readable in the comparison and device-check screens; their new items read as
+ * null, and their protocol is treated as the procedure their id names.
  */
-export const P1_SESSION_SCHEMA_VERSION = 6 as const;
+export const P1_SESSION_SCHEMA_VERSION = 7 as const;
 
 export interface Phase1TechnicalSummary {
   readonly inferenceP50Ms: number | null;

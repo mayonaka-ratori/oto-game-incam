@@ -12,6 +12,25 @@ export const P1_READINESS_TIMEOUT_MS = 10_000;
 export const P1_EARLY_WINDOW_MS = 500;
 export const P1_TRIALS_PER_GESTURE = 10;
 export const P1_FIVE_GESTURE_PROTOCOL_ID = "p1-five-gesture-50";
+/** Routine protocol after 2026-09-19: only the two gestures that have not passed yet. */
+export const P1_REMAINING_TWO_PROTOCOL_ID = "p1-remaining-two-20";
+/** Short regression run for the three gestures whose confirmation is already complete. */
+export const P1_REGRESSION_THREE_PROTOCOL_ID = "p1-regression-three-9";
+export const P1_REMAINING_TWO_GESTURES: readonly P1Gesture[] = ["ribbon-swipe", "bloom"];
+export const P1_REGRESSION_GESTURES: readonly P1Gesture[] = ["air-tap", "lift", "spotlight"];
+export const P1_REGRESSION_TRIALS_PER_GESTURE = 3;
+/**
+ * The ten ribbon-swipe directions of the five-gesture protocol. Every protocol that runs
+ * ribbon-swipe takes the first n of them, so the same trial number always means the same
+ * direction and results stay comparable across procedures.
+ */
+const RIBBON_SWIPE_DIRECTIONS: readonly RibbonSwipeDirection[] = [
+  "left-to-right", "right-to-left",
+  "left-to-right", "right-to-left",
+  "left-to-right", "right-to-left",
+  "lower-left-to-upper-right", "lower-right-to-upper-left",
+  "lower-left-to-upper-right", "lower-right-to-upper-left",
+];
 /** Current MVP inputs. Their 8/10 results feed the P1-Controlled starting criterion. */
 export const P1_CORE_GESTURES: readonly P1Gesture[] = ["air-tap", "ribbon-swipe", "bloom"];
 /** Experimental candidates measured to choose the Interaction POC vocabulary. */
@@ -199,7 +218,46 @@ export const P1_FIVE_GESTURE_PROTOCOL: P1ProtocolDefinition = createP1ProtocolDe
   P1_FIVE_GESTURE_PROTOCOL_ID,
 );
 
+/** Default since 2026-09-19: ribbon-swipe and Bloom, the two gestures still short of 8/10. */
+export const P1_REMAINING_TWO_PROTOCOL: P1ProtocolDefinition = createP1ProtocolDefinition(
+  buildRemainingTwoTrials(),
+  P1_REMAINING_TWO_PROTOCOL_ID,
+);
+
+/** Re-checks air-tap, Lift and Spotlight after a change to timing constants or coordinates. */
+export const P1_REGRESSION_THREE_PROTOCOL: P1ProtocolDefinition = createP1ProtocolDefinition(
+  buildRegressionTrials(),
+  P1_REGRESSION_THREE_PROTOCOL_ID,
+);
+
 export const P1_CONTROLLED_TRIALS: readonly P1TrialDefinition[] = P1_FIVE_GESTURE_PROTOCOL.trials;
+
+export type P1ProtocolSelector = "remaining-two" | "five" | "regression";
+
+/** Default when the query string names no protocol, or names one that does not exist. */
+export const DEFAULT_P1_PROTOCOL_SELECTOR: P1ProtocolSelector = "remaining-two";
+
+const P1_PROTOCOLS_BY_SELECTOR: Readonly<Record<P1ProtocolSelector, P1ProtocolDefinition>> = {
+  "remaining-two": P1_REMAINING_TWO_PROTOCOL,
+  five: P1_FIVE_GESTURE_PROTOCOL,
+  regression: P1_REGRESSION_THREE_PROTOCOL,
+};
+
+function isP1ProtocolSelector(value: string): value is P1ProtocolSelector {
+  return Object.prototype.hasOwnProperty.call(P1_PROTOCOLS_BY_SELECTOR, value);
+}
+
+/** Reads `?protocol=` and falls back to the default for a missing or unknown value. */
+export function resolveP1ProtocolSelector(search: string): P1ProtocolSelector {
+  const requested = new URLSearchParams(search).get("protocol");
+  if (requested === null) return DEFAULT_P1_PROTOCOL_SELECTOR;
+  const normalized = requested.trim().toLowerCase();
+  return isP1ProtocolSelector(normalized) ? normalized : DEFAULT_P1_PROTOCOL_SELECTOR;
+}
+
+export function resolveP1Protocol(search: string): P1ProtocolDefinition {
+  return P1_PROTOCOLS_BY_SELECTOR[resolveP1ProtocolSelector(search)];
+}
 
 /**
  * Retained only for replaying and interpreting pre-Bloom P1 sessions.
@@ -531,61 +589,97 @@ export function spotlightVariantLabel(variant: SpotlightVariant): string {
   return variant === "left-up-right-down" ? "左手を上・右手を下" : "右手を上・左手を下";
 }
 
-function buildFiveGestureTrials(): readonly P1TrialDefinition[] {
-  const trials: P1TrialDefinition[] = [];
-  const add = (trial: Omit<P1TrialDefinition, "ordinal">): void => {
-    trials.push({ ...trial, ordinal: trials.length + 1 });
-  };
-  for (let index = 0; index < P1_TRIALS_PER_GESTURE; index += 1) {
-    const side = index % 2 === 0 ? "left" : "right";
-    add({
+type P1TrialTemplate = Omit<P1TrialDefinition, "ordinal">;
+
+/** Every protocol builds its trials here, so the same gesture always has the same definition. */
+function airTapTrials(count: number): readonly P1TrialTemplate[] {
+  return Array.from({ length: count }, (_, index) => {
+    const side = index % 2 === 0 ? "left" as const : "right" as const;
+    return {
       id: `air-tap-${index + 1}`,
-      gesture: "air-tap",
+      gesture: "air-tap" as const,
       airTapSide: side,
       instruction: `${side === "left" ? "左" : "右"}手の人差し指を、外からリングの中へ通す`,
-    });
-  }
-  const swipeDirections: readonly RibbonSwipeDirection[] = [
-    "left-to-right", "right-to-left",
-    "left-to-right", "right-to-left",
-    "left-to-right", "right-to-left",
-    "lower-left-to-upper-right", "lower-right-to-upper-left",
-    "lower-left-to-upper-right", "lower-right-to-upper-left",
-  ];
-  for (const [index, direction] of swipeDirections.entries()) {
-    add({
-      id: `ribbon-swipe-${index + 1}`,
-      gesture: "ribbon-swipe",
-      swipeDirection: direction,
-      instruction: `${swipeDirectionLabel(direction)}、片手を帯に沿って素早く動かす`,
-    });
-  }
-  for (let index = 0; index < P1_TRIALS_PER_GESTURE; index += 1) {
-    add({
-      id: `bloom-${index + 1}`,
-      gesture: "bloom",
-      requiresReadiness: true,
-      instruction: "両手を離して画面中央の左右の丸印に合わせて止め、GOで左右斜め上へ開く",
-    });
-  }
-  for (let index = 0; index < P1_TRIALS_PER_GESTURE; index += 1) {
-    add({
-      id: `lift-${index + 1}`,
-      gesture: "lift",
-      requiresReadiness: true,
-      instruction: "両手を画面の下側に構えて止め、GOで両手をそろえて真上へ上げる",
-    });
-  }
-  for (let index = 0; index < P1_TRIALS_PER_GESTURE; index += 1) {
-    const variant = index % 2 === 0 ? "left-up-right-down" : "right-up-left-down";
-    add({
+    };
+  });
+}
+
+function ribbonSwipeTrials(count: number): readonly P1TrialTemplate[] {
+  return RIBBON_SWIPE_DIRECTIONS.slice(0, count).map((direction, index) => ({
+    id: `ribbon-swipe-${index + 1}`,
+    gesture: "ribbon-swipe" as const,
+    swipeDirection: direction,
+    instruction: `${swipeDirectionLabel(direction)}、片手を帯に沿って素早く動かす`,
+  }));
+}
+
+function bloomTrials(count: number): readonly P1TrialTemplate[] {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `bloom-${index + 1}`,
+    gesture: "bloom" as const,
+    requiresReadiness: true,
+    instruction: "両手を離して画面中央の左右の丸印に合わせて止め、GOで左右斜め上へ開く",
+  }));
+}
+
+function liftTrials(count: number): readonly P1TrialTemplate[] {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `lift-${index + 1}`,
+    gesture: "lift" as const,
+    requiresReadiness: true,
+    instruction: "両手を画面の下側に構えて止め、GOで両手をそろえて真上へ上げる",
+  }));
+}
+
+function spotlightTrials(
+  count: number,
+  firstVariant: SpotlightVariant = "left-up-right-down",
+): readonly P1TrialTemplate[] {
+  const other: SpotlightVariant = firstVariant === "left-up-right-down"
+    ? "right-up-left-down"
+    : "left-up-right-down";
+  return Array.from({ length: count }, (_, index) => {
+    const variant = index % 2 === 0 ? firstVariant : other;
+    return {
       id: `spotlight-${index + 1}`,
-      gesture: "spotlight",
+      gesture: "spotlight" as const,
       spotlightVariant: variant,
       instruction: `GOで${spotlightVariantLabel(variant)}へ動かし、その形で一瞬止める`,
-    });
-  }
-  return trials;
+    };
+  });
+}
+
+function numberTrials(groups: readonly (readonly P1TrialTemplate[])[]): readonly P1TrialDefinition[] {
+  return groups.flat().map((trial, index) => ({ ...trial, ordinal: index + 1 }));
+}
+
+function buildFiveGestureTrials(): readonly P1TrialDefinition[] {
+  return numberTrials([
+    airTapTrials(P1_TRIALS_PER_GESTURE),
+    ribbonSwipeTrials(P1_TRIALS_PER_GESTURE),
+    bloomTrials(P1_TRIALS_PER_GESTURE),
+    liftTrials(P1_TRIALS_PER_GESTURE),
+    spotlightTrials(P1_TRIALS_PER_GESTURE),
+  ]);
+}
+
+function buildRemainingTwoTrials(): readonly P1TrialDefinition[] {
+  return numberTrials([
+    ribbonSwipeTrials(P1_TRIALS_PER_GESTURE),
+    bloomTrials(P1_TRIALS_PER_GESTURE),
+  ]);
+}
+
+/**
+ * Three trials cannot split a side evenly, so air-tap starts on the left and spotlight starts on
+ * the right. Across the six two-sided trials each leading side appears three times.
+ */
+function buildRegressionTrials(): readonly P1TrialDefinition[] {
+  return numberTrials([
+    airTapTrials(P1_REGRESSION_TRIALS_PER_GESTURE),
+    liftTrials(P1_REGRESSION_TRIALS_PER_GESTURE),
+    spotlightTrials(P1_REGRESSION_TRIALS_PER_GESTURE, "right-up-left-down"),
+  ]);
 }
 
 function buildLegacyClapTrials(): readonly P1TrialDefinition[] {

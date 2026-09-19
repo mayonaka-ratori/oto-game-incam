@@ -1,7 +1,14 @@
 import { HAND_CONNECTIONS } from "../tracking/hand-connections";
 import type { P1TrialDefinition } from "../poc/phase1-protocol";
 import type { DetectedHand, HandTrackingFrame } from "../tracking/tracking-types";
-import { createBloomGuideGeometry } from "./bloom-guide";
+import {
+  createGestureGuide,
+  guideDotPosition,
+  guideDotProgress,
+  type GestureGuide,
+  type GuidePoint,
+  type GuideZone,
+} from "./gesture-guides";
 import { calculatePalmCursor } from "./palm-cursor";
 import {
   createVideoCoverTransform,
@@ -15,6 +22,26 @@ export interface OverlayLayers {
   readonly cursor: boolean;
   readonly labels: boolean;
 }
+
+/**
+ * What the camera overlay needs to draw the guide of one attempt. The guide shape comes from
+ * the trial, and the travelling dot from the GO time, which is the audio clock's time on the
+ * performance clock. Null means no trial is being shown.
+ */
+export interface P1GuideView {
+  readonly trial: P1TrialDefinition;
+  readonly goTimeMs: number | null;
+  /** preview: shown before the attempt starts. readiness: waiting for the start pose. */
+  readonly phase: "preview" | "readiness" | "recognition";
+}
+
+type Transform = NonNullable<ReturnType<typeof createVideoCoverTransform>>;
+
+const GUIDE_COLOR = "#ffc56d";
+const GUIDE_REACHED_COLOR = "#62f2dc";
+const GUIDE_DOT_COLOR = "#ffffff";
+/** The dot stays visible for a moment after it lands, so a late glance still shows the target. */
+const DOT_HOLD_MS = 300;
 
 export const DEFAULT_OVERLAY_LAYERS: OverlayLayers = {
   landmarks: true,
@@ -33,8 +60,13 @@ export class OverlayRenderer {
   readonly #video: HTMLVideoElement;
   readonly #canvas: HTMLCanvasElement;
   readonly #context: CanvasRenderingContext2D;
+  /** The tester screen keeps the camera image readable: only the palm cursor, no skeleton. */
+  readonly #minimalHands: boolean;
   #frame: HandTrackingFrame | null = null;
-  #guide: P1TrialDefinition | null = null;
+  #guide: P1GuideView | null = null;
+  #gestureGuide: GestureGuide | null = null;
+  /** When both Spotlight zones have been occupied without a break, for the hold indicator. */
+  #holdSinceMs: number | null = null;
   #layers: OverlayLayers = DEFAULT_OVERLAY_LAYERS;
   #rafId: number | null = null;
   #resizeObserver: ResizeObserver | null = null;
@@ -52,6 +84,7 @@ export class OverlayRenderer {
     this.#video = video;
     this.#canvas = canvas;
     this.#context = context;
+    this.#minimalHands = canvas.closest(".tester-view") !== null;
     if (typeof ResizeObserver !== "undefined") {
       // Reading clientWidth every frame forces a layout; the observer reports the size instead.
       const observer = new ResizeObserver((entries) => {
@@ -79,9 +112,11 @@ export class OverlayRenderer {
     this.#dirty = true;
   }
 
-  setP1Guide(guide: P1TrialDefinition | null): void {
-    if (this.#guide === guide) return;
+  setP1Guide(guide: P1GuideView | null): void {
+    if (sameGuide(this.#guide, guide)) return;
+    if (guide === null || this.#guide?.trial !== guide.trial) this.#holdSinceMs = null;
     this.#guide = guide;
+    this.#gestureGuide = guide === null ? null : createGestureGuide(guide.trial);
     this.#dirty = true;
   }
 
@@ -99,10 +134,22 @@ export class OverlayRenderer {
     if (this.#resizeObserver === null) this.#measureCanvas();
     this.#syncPixelRatio();
     this.#syncVideoSize();
+    // Only the travelling dot and the hold indicator move on their own; everything else
+    // is redrawn when the picture changes.
+    if (this.#animating()) this.#dirty = true;
     if (!this.#dirty) return;
     this.#dirty = false;
     this.#renderFrame();
   };
+
+  #animating(): boolean {
+    if (this.#holdSinceMs !== null) return true;
+    const guide = this.#guide;
+    const gestureGuide = this.#gestureGuide;
+    if (guide === null || gestureGuide === null || guide.goTimeMs === null) return false;
+    const now = performance.now();
+    return now >= guide.goTimeMs && now <= guide.goTimeMs + gestureGuide.travelMs + DOT_HOLD_MS;
+  }
 
   /** Fallback for browsers without ResizeObserver, and the first size before the observer reports. */
   #measureCanvas(): void {
@@ -153,109 +200,147 @@ export class OverlayRenderer {
       true,
     );
     if (transform === null) return;
-    if (this.#guide !== null) this.#drawGuide(this.#guide, transform);
+    const guide = this.#guide;
+    const gestureGuide = this.#gestureGuide;
+    if (guide !== null && gestureGuide !== null) this.#drawGuide(guide, gestureGuide, transform);
+    else this.#holdSinceMs = null;
     if (this.#frame !== null) {
       for (const hand of this.#frame.hands) this.#drawHand(hand, transform);
     }
   }
 
-  #drawGuide(
-    guide: P1TrialDefinition,
-    transform: NonNullable<ReturnType<typeof createVideoCoverTransform>>,
-  ): void {
-    this.#context.save();
-    this.#context.globalAlpha = 0.9;
-    this.#context.strokeStyle = "#ffc56d";
-    this.#context.fillStyle = "rgba(255, 197, 109, 0.14)";
-    this.#context.lineWidth = 3;
-    this.#context.setLineDash([9, 7]);
-    if (guide.gesture === "air-tap") {
-      const center = mapPreviewLandmark(transform, {
-        x: guide.airTapSide === "left" ? 0.3 : 0.7,
-        y: 0.5,
-      });
-      this.#context.beginPath();
-      this.#context.arc(center.x, center.y, 44, 0, Math.PI * 2);
-      this.#context.fill();
-      this.#context.stroke();
-    } else if (guide.gesture === "ribbon-swipe") {
-      const [start, end] = swipeGuide(guide, transform);
-      this.#context.beginPath();
-      this.#context.moveTo(start.x, start.y);
-      this.#context.lineTo(end.x, end.y);
-      this.#context.stroke();
-      this.#drawArrowHead(start.x, start.y, end.x, end.y);
-    } else if (guide.gesture === "bloom") {
-      this.#drawBloomGuide(transform);
-    } else if (guide.gesture === "lift") {
-      for (const x of [0.28, 0.72]) {
-        this.#strokeZone(transform, { x: x - 0.14, y: 0.6 }, { x: x + 0.14, y: 0.92 });
-        const bottom = mapPreviewLandmark(transform, { x, y: 0.74 });
-        const top = mapPreviewLandmark(transform, { x, y: 0.36 });
-        this.#context.beginPath();
-        this.#context.moveTo(bottom.x, bottom.y);
-        this.#context.lineTo(top.x, top.y);
-        this.#context.stroke();
-        this.#drawArrowHead(bottom.x, bottom.y, top.x, top.y);
-        this.#context.setLineDash([9, 7]);
-      }
-    } else if (guide.gesture === "spotlight") {
-      const leftUp = guide.spotlightVariant !== "right-up-left-down";
-      const upper = { top: 0.06, bottom: 0.42 };
-      const lower = { top: 0.58, bottom: 0.94 };
-      const leftZone = leftUp ? upper : lower;
-      const rightZone = leftUp ? lower : upper;
-      this.#strokeZone(transform, { x: 0.06, y: leftZone.top }, { x: 0.46, y: leftZone.bottom });
-      this.#strokeZone(transform, { x: 0.54, y: rightZone.top }, { x: 0.94, y: rightZone.bottom });
-    } else {
-      // The legacy "clap" trials keep the older two-hands-to-the-center drawing.
-      const left = mapPreviewLandmark(transform, { x: 0.3, y: 0.5 });
-      const right = mapPreviewLandmark(transform, { x: 0.7, y: 0.5 });
-      const center = mapPreviewLandmark(transform, { x: 0.5, y: 0.5 });
-      this.#context.beginPath();
-      this.#context.arc(center.x, center.y, 34, 0, Math.PI * 2);
-      this.#context.fill();
-      this.#context.stroke();
-      this.#context.beginPath();
-      this.#context.moveTo(left.x, left.y);
-      this.#context.lineTo(center.x - 38, center.y);
-      this.#context.moveTo(right.x, right.y);
-      this.#context.lineTo(center.x + 38, center.y);
-      this.#context.stroke();
+  /**
+   * The guide is drawn where the movement really has to happen: a circle to start from, a line
+   * with an arrow to follow, and a ring to reach. All of it comes from the judgment constants
+   * (`createGestureGuide`), in the same mirrored coordinates the judgment reads.
+   */
+  #drawGuide(guide: P1GuideView, shape: GestureGuide, transform: Transform): void {
+    const pointers = this.#pointerPositions(shape.pointer);
+    const context = this.#context;
+    const unit = transform.videoWidth * transform.scale;
+    context.save();
+    context.lineJoin = "round";
+    for (const zone of shape.zones) this.#drawZone(zone, transform, pointers);
+    if (shape.holdMs !== null) this.#drawHold(shape, transform, pointers);
+    for (const ring of shape.rings) {
+      const reached = pointers.some((point) => distance(point, ring.center) <= ring.radius);
+      this.#strokeCircle(mapPreviewLandmark(transform, ring.center), ring.radius * unit, reached, true);
     }
-    this.#context.restore();
+    for (const path of shape.paths) {
+      const start = mapPreviewLandmark(transform, path.start);
+      const end = mapPreviewLandmark(transform, path.end);
+      context.globalAlpha = 0.85;
+      context.strokeStyle = GUIDE_COLOR;
+      context.lineWidth = 3;
+      context.setLineDash([10, 8]);
+      context.beginPath();
+      context.moveTo(start.x, start.y);
+      context.lineTo(end.x, end.y);
+      context.stroke();
+      this.#drawArrowHead(start.x, start.y, end.x, end.y);
+      const onStart = pointers.some((point) => distance(point, path.start) <= shape.startRadius);
+      const onEnd = pointers.some((point) => distance(point, path.end) <= shape.endRadius);
+      this.#strokeCircle(start, shape.startRadius * unit, onStart, false);
+      if (shape.rings.length === 0) this.#strokeCircle(end, shape.endRadius * unit, onEnd, true);
+    }
+    const progress = guideDotProgress(performance.now(), guide.goTimeMs, shape.travelMs);
+    if (guide.goTimeMs !== null && progress > 0) {
+      for (const path of shape.paths) {
+        const dot = mapPreviewLandmark(transform, guideDotPosition(path, progress));
+        this.#drawDot(dot);
+      }
+    }
+    context.restore();
+  }
+
+  /** Mirrored-preview positions of the point each gesture judges: palm center or index fingertip. */
+  #pointerPositions(pointer: "palm" | "index-tip"): readonly GuidePoint[] {
+    const hands = this.#frame?.hands ?? [];
+    const points: GuidePoint[] = [];
+    for (const hand of hands) {
+      const source = pointer === "index-tip" ? hand.landmarks2D[8] : calculatePalmCursor(hand.landmarks2D);
+      // The judgment reads mirrored preview coordinates, so the guide compares the same value.
+      if (source !== undefined && source !== null) points.push({ x: 1 - source.x, y: source.y });
+    }
+    return points;
+  }
+
+  #drawZone(zone: GuideZone, transform: Transform, pointers: readonly GuidePoint[]): void {
+    const occupied = pointers.some((point) => (
+      point.x >= zone.minX && point.x <= zone.maxX && point.y >= zone.minY && point.y <= zone.maxY
+    ));
+    const color = occupied ? GUIDE_REACHED_COLOR : GUIDE_COLOR;
+    this.#context.globalAlpha = 0.9;
+    this.#context.strokeStyle = color;
+    this.#context.fillStyle = occupied ? "rgba(98, 242, 220, 0.16)" : "rgba(255, 197, 109, 0.1)";
+    this.#context.lineWidth = 3;
+    this.#context.setLineDash(occupied ? [] : [10, 8]);
+    this.#strokeZone(transform, { x: zone.minX, y: zone.minY }, { x: zone.maxX, y: zone.maxY });
   }
 
   /**
-   * Bloom arms only from a settled two-hand start pose, so the guide shows both parts of that
-   * condition: the box the midpoint between the hands has to stay inside, and the two target
-   * circles whose distance sits in the middle of the accepted span.
+   * How much of the hold is done, drawn as a bar that fills along the bottom of each zone.
+   * It is a display only: the judgment measures its own hold from the capture times.
    */
-  #drawBloomGuide(
-    transform: NonNullable<ReturnType<typeof createVideoCoverTransform>>,
-  ): void {
-    const geometry = createBloomGuideGeometry();
-    const zone = geometry.midpointZone;
-    this.#strokeZone(transform, { x: zone.minX, y: zone.minY }, { x: zone.maxX, y: zone.maxY });
-    const left = mapPreviewLandmark(transform, geometry.leftTarget);
-    const right = mapPreviewLandmark(transform, geometry.rightTarget);
-    const span = Math.abs(right.x - left.x);
-    const radius = Math.max(10, Math.min(44, span / 4));
-    this.#context.setLineDash([]);
-    this.#context.beginPath();
-    this.#context.moveTo(left.x + radius, left.y);
-    this.#context.lineTo(right.x - radius, right.y);
-    this.#context.stroke();
-    for (const target of [left, right]) {
-      this.#context.beginPath();
-      this.#context.arc(target.x, target.y, radius, 0, Math.PI * 2);
-      this.#context.fill();
-      this.#context.stroke();
+  #drawHold(shape: GestureGuide, transform: Transform, pointers: readonly GuidePoint[]): void {
+    const holdMs = shape.holdMs ?? 0;
+    const held = shape.zones.length > 0 && shape.zones.every((zone) => pointers.some((point) => (
+      point.x >= zone.minX && point.x <= zone.maxX && point.y >= zone.minY && point.y <= zone.maxY
+    )));
+    if (!held) {
+      this.#holdSinceMs = null;
+      return;
+    }
+    const now = performance.now();
+    if (this.#holdSinceMs === null) this.#holdSinceMs = now;
+    const progress = holdMs <= 0 ? 1 : Math.min(1, (now - this.#holdSinceMs) / holdMs);
+    for (const zone of shape.zones) {
+      const start = mapPreviewLandmark(transform, { x: zone.minX, y: zone.maxY });
+      const end = mapPreviewLandmark(transform, { x: zone.maxX, y: zone.maxY });
+      const left = Math.min(start.x, end.x);
+      const width = Math.abs(end.x - start.x);
+      this.#context.globalAlpha = 1;
+      this.#context.setLineDash([]);
+      this.#context.fillStyle = progress >= 1 ? GUIDE_REACHED_COLOR : "rgba(98, 242, 220, 0.6)";
+      this.#context.fillRect(left, start.y - 8, width * progress, 6);
     }
   }
 
+  #strokeCircle(
+    center: { readonly x: number; readonly y: number },
+    radius: number,
+    reached: boolean,
+    solid: boolean,
+  ): void {
+    const context = this.#context;
+    context.globalAlpha = 1;
+    context.strokeStyle = reached ? GUIDE_REACHED_COLOR : GUIDE_COLOR;
+    context.fillStyle = reached ? "rgba(98, 242, 220, 0.28)" : "rgba(255, 197, 109, 0.12)";
+    context.lineWidth = reached ? 4 : 3;
+    context.setLineDash(solid || reached ? [] : [8, 6]);
+    context.beginPath();
+    context.arc(center.x, center.y, Math.max(8, radius), 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+  }
+
+  /** The travelling dot: the pace to follow, placed from the time, not from the frame count. */
+  #drawDot(center: { readonly x: number; readonly y: number }): void {
+    const context = this.#context;
+    context.globalAlpha = 1;
+    context.setLineDash([]);
+    context.fillStyle = "rgba(98, 242, 220, 0.35)";
+    context.beginPath();
+    context.arc(center.x, center.y, 16, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = GUIDE_DOT_COLOR;
+    context.beginPath();
+    context.arc(center.x, center.y, 8, 0, Math.PI * 2);
+    context.fill();
+  }
+
   #strokeZone(
-    transform: NonNullable<ReturnType<typeof createVideoCoverTransform>>,
+    transform: Transform,
     first: { readonly x: number; readonly y: number },
     second: { readonly x: number; readonly y: number },
   ): void {
@@ -285,6 +370,11 @@ export class OverlayRenderer {
     transform: NonNullable<ReturnType<typeof createVideoCoverTransform>>,
   ): void {
     const color = hand.handedness === "left" ? "#62f2dc" : hand.handedness === "right" ? "#e57ad9" : "#ffc56d";
+    if (this.#minimalHands) {
+      // The tester follows the guide, so the skeleton would only cover it: the palm cursor is enough.
+      this.#drawPalmCursor(hand, transform, color);
+      return;
+    }
     const points = hand.landmarks2D.map((point) => mapVideoLandmark(transform, point));
     if (this.#layers.connections) {
       this.#context.strokeStyle = color;
@@ -336,6 +426,21 @@ export class OverlayRenderer {
     }
     this.#context.globalAlpha = 1;
   }
+
+  /** A thin ring on the palm: enough to see that the hand is tracked, thin enough to see the guide. */
+  #drawPalmCursor(hand: DetectedHand, transform: Transform, color: string): void {
+    const palm = calculatePalmCursor(hand.landmarks2D);
+    if (palm === null) return;
+    const center = mapVideoLandmark(transform, palm);
+    this.#context.globalAlpha = 0.9;
+    this.#context.setLineDash([]);
+    this.#context.strokeStyle = color;
+    this.#context.lineWidth = 2;
+    this.#context.beginPath();
+    this.#context.arc(center.x, center.y, 13, 0, Math.PI * 2);
+    this.#context.stroke();
+    this.#context.globalAlpha = 1;
+  }
 }
 
 function sameLayers(first: OverlayLayers, second: OverlayLayers): boolean {
@@ -345,18 +450,13 @@ function sameLayers(first: OverlayLayers, second: OverlayLayers): boolean {
     && first.labels === second.labels;
 }
 
-function swipeGuide(
-  guide: P1TrialDefinition,
-  transform: NonNullable<ReturnType<typeof createVideoCoverTransform>>,
-): readonly [{ x: number; y: number }, { x: number; y: number }] {
-  const points = {
-    "left-to-right": [{ x: 0.25, y: 0.5 }, { x: 0.75, y: 0.5 }],
-    "right-to-left": [{ x: 0.75, y: 0.5 }, { x: 0.25, y: 0.5 }],
-    "lower-left-to-upper-right": [{ x: 0.28, y: 0.7 }, { x: 0.72, y: 0.3 }],
-    "lower-right-to-upper-left": [{ x: 0.72, y: 0.7 }, { x: 0.28, y: 0.3 }],
-  }[guide.swipeDirection ?? "left-to-right"];
-  return [
-    mapPreviewLandmark(transform, points[0]!),
-    mapPreviewLandmark(transform, points[1]!),
-  ];
+function sameGuide(first: P1GuideView | null, second: P1GuideView | null): boolean {
+  if (first === null || second === null) return first === second;
+  return first.trial === second.trial
+    && first.goTimeMs === second.goTimeMs
+    && first.phase === second.phase;
+}
+
+function distance(first: GuidePoint, second: GuidePoint): number {
+  return Math.hypot(first.x - second.x, first.y - second.y);
 }

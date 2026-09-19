@@ -8,6 +8,7 @@ import { Phase1LabEngine, type Phase1LabSnapshot } from "./phase1-lab-engine";
 import {
   P1_READINESS_TIMEOUT_MS,
   P1_TRIAL_TIMEOUT_MS,
+  resolveP1Protocol,
   spotlightVariantLabel,
   type P1BlockRecord,
   type P1Outcome,
@@ -15,6 +16,16 @@ import {
   type P1RunnerSnapshot,
   type P1TrialDefinition,
 } from "./phase1-protocol";
+import { guideInstruction, guideReadinessHint } from "../rendering/gesture-guides";
+import {
+  COUNT_IN_BPM,
+  COUNT_IN_LEAD_MS,
+  GOOD_DISPLAY_MS,
+  GO_DISPLAY_MS,
+  stageCue,
+  type StageCueTiming,
+} from "../rendering/stage-cue";
+import type { P1GuideView } from "../rendering/overlay-renderer";
 import type {
   Phase1EnvironmentReport,
   Phase1TechnicalSummary,
@@ -31,10 +42,8 @@ const RESULT_HOLD_MS = 1_000;
 const TIMER_RENDER_INTERVAL_MS = 250;
 const POST_ROLL_POLL_MS = 50;
 const POST_ROLL_WAIT_TIMEOUT_MS = 5_000;
-const GO_DISPLAY_MS = 500;
-const COUNT_IN_BPM = 120;
-/** The count-in clicks two beats before GO and on GO itself. */
-const COUNT_IN_LEAD_MS = 2 * 60_000 / COUNT_IN_BPM;
+/** The diagnostic file follows the result file after a short pause, so both downloads are offered. */
+const SECOND_EXPORT_DELAY_MS = 500;
 /** A GO target must leave room for the whole count-in; a nearer or much later target means a stale audio clock. */
 const MIN_TARGET_LEAD_MS = COUNT_IN_LEAD_MS;
 const MAX_TARGET_LEAD_MS = 4_000;
@@ -67,13 +76,15 @@ export interface Phase1LabControllerOptions {
   readonly getPerformanceLow: () => boolean;
   readonly getCameraActive: () => boolean;
   readonly requestLandscape: () => Promise<void>;
-  readonly onGuideChange: (trial: P1TrialDefinition | null) => void;
+  readonly onGuideChange: (guide: P1GuideView | null) => void;
 }
 
 export class Phase1LabController {
   readonly #root: HTMLElement;
   readonly #options: Phase1LabControllerOptions;
-  readonly #engine = new Phase1LabEngine();
+  readonly #engine = new Phase1LabEngine(resolveP1Protocol(window.location.search));
+  /** The tester screen starts with one button and advances on a tap; the analysis screen keeps its buttons. */
+  readonly #testerView: boolean;
   readonly #audio = new AudioClock();
   readonly #performance: Phase1PerformanceRecorder;
   readonly #wakeLock = new ScreenWakeLock();
@@ -99,10 +110,24 @@ export class Phase1LabController {
   /** Why the latest trial ran without a count-in: the audio stopped, or there is no audio clock at all. */
   #audioNotice: "stopped" | "unavailable" | null = null;
   #exportNotice: string | null = null;
+  /** What a tap on the camera image starts: the session, the next movement, or nothing. */
+  #tapStart: "session" | "block" | null = null;
+  /** A freshly shown prompt ignores taps for a moment, so a double tap cannot skip a step. */
+  #tapArmedAtMs = 0;
+  /** "はじめる" was pressed: the camera and the tracking are being prepared. */
+  #startRequested = false;
+  #trackingReady = false;
+  #goodUntilMs = Number.NEGATIVE_INFINITY;
+  #cueTiming: StageCueTiming | null = null;
+  #cueRafId: number | null = null;
+  #cueText = "";
+  #saving = false;
+  #savedFileNames: readonly string[] = [];
 
   constructor(root: HTMLElement, options: Phase1LabControllerOptions) {
     this.#root = root;
     this.#options = options;
+    this.#testerView = root.classList.contains("tester-view");
     this.#performance = new Phase1PerformanceRecorder(() => options.getPerformanceInputs());
     requiredButton(root, "#p1-enable-audio").addEventListener("click", () => void this.#enableAudio());
     requiredButton(root, "#p1-start-session").addEventListener("click", () => void this.#startTest());
@@ -111,15 +136,19 @@ export class Phase1LabController {
       if (this.#blockActionAllowed()) this.#pause("manual");
     });
     requiredButton(root, "#p1-resume").addEventListener("click", () => void this.#resume());
-    requiredButton(root, "#p1-block-export").addEventListener("click", () => void this.#export());
+    requiredButton(root, "#p1-block-export").addEventListener("click", () => void this.#saveResults());
     requiredButton(root, "#p1-next-trial").addEventListener("click", () => this.#beginNextTrial());
     requiredButton(root, "#p1-skip").addEventListener("click", () => this.#skip());
     requiredButton(root, "#p1-false-trigger").addEventListener("click", () => this.#recordFalseTrigger());
     for (const button of root.querySelectorAll<HTMLButtonElement>("[data-p1-outcome]")) {
       button.addEventListener("click", () => this.#recordOutcome(button.dataset.p1Outcome as Exclude<P1Outcome, "success">));
     }
-    requiredButton(root, "#p1-export").addEventListener("click", () => void this.#export());
+    requiredButton(root, "#p1-export").addEventListener("click", () => void this.#saveResults());
     requiredButton(root, "#p1-export-replay").addEventListener("click", () => void this.#exportReplay());
+    // "はじめる" starts the camera through the lab view; the audio clock may only start inside
+    // the same press, and the test itself starts on the tap that follows the guide.
+    requiredButton(root, "#start-camera").addEventListener("click", () => this.#handleStartPressed());
+    root.addEventListener("click", this.#handleStageTap);
     const replayInput = root.querySelector("#p1-replay-file");
     if (!(replayInput instanceof HTMLInputElement)) throw new Error("Required replay input not found.");
     replayInput.addEventListener("change", () => void this.#loadReplay(replayInput));
@@ -128,11 +157,18 @@ export class Phase1LabController {
     this.#renderTimer = window.setInterval(() => {
       if (!this.#disposed && document.visibilityState === "visible") this.#render();
     }, TIMER_RENDER_INTERVAL_MS);
+    this.#cueRafId = requestAnimationFrame(this.#tickCue);
     this.#render();
   }
 
   processFrame(frame: HandTrackingFrame): void {
-    if (!this.#sessionStarted || this.#disposed) return;
+    if (this.#disposed) return;
+    if (!this.#trackingReady) {
+      // The first tracking frame means the worker is running: the test may be offered now.
+      this.#trackingReady = true;
+      this.#render();
+    }
+    if (!this.#sessionStarted) return;
     // One snapshot per frame: building it copies the results and blocks.
     const previous = this.#engine.snapshot;
     const before = previous.protocol.completed;
@@ -154,8 +190,41 @@ export class Phase1LabController {
   /** Called when the camera starts, stops, or loses its track. Trials never run without camera frames. */
   cameraStateChanged(): void {
     if (this.#disposed) return;
-    if (this.#sessionStarted && !this.#options.getCameraActive()) this.#pause("camera-stopped");
+    if (!this.#options.getCameraActive()) {
+      this.#trackingReady = false;
+      if (this.#sessionStarted) this.#pause("camera-stopped");
+      else this.#tapStart = null;
+    }
     this.#render();
+  }
+
+  /** "はじめる": the camera starts through the lab view, and the audio clock starts on this press. */
+  #handleStartPressed(): void {
+    if (this.#disposed || !this.#testerView) return;
+    this.#startRequested = true;
+    // A browser starts an AudioContext only inside a user gesture, so it cannot wait for the tap.
+    void this.#enableAudio();
+    this.#render();
+  }
+
+  /**
+   * A tap on the camera image starts the session or the next movement. Taps on buttons keep their
+   * own meaning, and while a trial is running a tap does nothing, so a moving hand cannot skip it.
+   */
+  readonly #handleStageTap = (event: MouseEvent): void => {
+    const pending = this.#tapStart;
+    if (pending === null || this.#disposed || performance.now() < this.#tapArmedAtMs) return;
+    const target = event.target;
+    if (target instanceof Element && target.closest("button, a, input, select, textarea, label") !== null) return;
+    this.#tapStart = null;
+    if (pending === "session") void this.#startTest();
+    else void this.#startNextBlock();
+  };
+
+  /** Shows a prompt and waits for the tap that starts the next part of the test. */
+  #armTap(kind: "session" | "block"): void {
+    this.#tapStart = kind;
+    this.#tapArmedAtMs = performance.now() + BLOCK_ACTION_LOCK_MS;
   }
 
   experimentProfileChanged(): void {
@@ -173,6 +242,9 @@ export class Phase1LabController {
     if (this.#audioTimer !== null) window.clearInterval(this.#audioTimer);
     if (this.#renderTimer !== null) window.clearInterval(this.#renderTimer);
     if (this.#unlockTimer !== null) window.clearTimeout(this.#unlockTimer);
+    if (this.#cueRafId !== null) cancelAnimationFrame(this.#cueRafId);
+    this.#cueRafId = null;
+    this.#root.removeEventListener("click", this.#handleStageTap);
     this.#audioTimer = null;
     this.#renderTimer = null;
     this.#unlockTimer = null;
@@ -247,7 +319,7 @@ export class Phase1LabController {
     const sessionId = `p1-${new Date().toISOString().replace(/[-:.TZ]/g, "")}`;
     this.#engine.startSession(sessionId, this.#options.getProvider(), {
       appVersion: this.#options.appBuildId,
-      notes: "ブロック間の必須休憩なし。次の動作を2.5秒表示して自動進行。",
+      notes: "同じ動作の中の試行は自動進行。動作の切り替わりは画面タップで開始。必須休憩なし。",
     });
     this.#performance.start();
     // A trial can run 10 seconds without a touch, so the screen must not dim in the middle of one.
@@ -256,6 +328,9 @@ export class Phase1LabController {
     this.#sessionStarted = true;
     this.#audioNotice = null;
     this.#exportNotice = null;
+    this.#savedFileNames = [];
+    this.#goodUntilMs = Number.NEGATIVE_INFINITY;
+    this.#tapStart = null;
     this.#options.onGuideChange(null);
     requiredElement(this.#root, "#p1-session-id").textContent = sessionId;
     requiredElement(this.#root, "#p1-export-status").textContent = "";
@@ -284,6 +359,26 @@ export class Phase1LabController {
       if (!this.#blockActionCanContinue()) return;
       void this.#wakeLock.acquire();
       if (this.#engine.startBlock(performance.now())) this.#beginNextTrial();
+    } finally {
+      this.#blockActionPending = false;
+      this.#render();
+    }
+  }
+
+  /**
+   * Starts the movement the tap prompt is showing. The block itself was opened when the previous
+   * one ended, so a pause, a hidden page, or a stopped camera work while the prompt waits.
+   */
+  async #startNextBlock(): Promise<void> {
+    if (!this.#blockActionAllowed()) return;
+    this.#blockActionPending = true;
+    this.#render();
+    try {
+      await this.#resumeAudio();
+      if (!this.#blockActionCanContinue()) return;
+      void this.#wakeLock.acquire();
+      this.#engine.startBlock(performance.now());
+      this.#beginNextTrial();
     } finally {
       this.#blockActionPending = false;
       this.#render();
@@ -331,9 +426,33 @@ export class Phase1LabController {
     const targetTimeMs = protocol.nextTrial?.requiresReadiness === true ? null : this.#scheduleTarget();
     const trial = this.#engine.beginNextTrial(targetTimeMs, preparedAtMs);
     if (trial !== null) this.#engine.recordTrialEnvironment(this.#trialEnvironment(preparedAtMs));
-    this.#options.onGuideChange(trial);
+    this.#pushGuide();
     this.#scheduleDeadline();
     this.#render();
+  }
+
+  /**
+   * Hands the camera overlay the guide of the attempt on screen. The GO time is the audio clock's
+   * time on the performance clock, so the travelling dot and the count-in clicks share one clock.
+   */
+  #pushGuide(): void {
+    const protocol = this.#engine.snapshot.protocol;
+    const active = protocol.activeTrial;
+    if (active === null) {
+      this.#cueTiming = null;
+      const next = this.#sessionStarted || this.#tapStart !== null ? protocol.nextTrial : null;
+      this.#options.onGuideChange(next === null ? null : { trial: next, goTimeMs: null, phase: "preview" });
+      return;
+    }
+    const timing = protocol.activeTiming;
+    this.#cueTiming = timing === null
+      ? null
+      : { targetTimeMs: timing.targetTimeMs, windowOpenedAtMs: timing.windowOpenedAtMs };
+    this.#options.onGuideChange({
+      trial: active,
+      goTimeMs: timing === null ? null : timing.targetTimeMs ?? timing.windowOpenedAtMs,
+      phase: timing === null ? "readiness" : "recognition",
+    });
   }
 
   /** Orientation and video size decide how the guide maps to the camera image, so each attempt records them. */
@@ -353,8 +472,12 @@ export class Phase1LabController {
 
   #startRecognition(): void {
     const targetTimeMs = this.#scheduleTarget();
-    if (this.#engine.startRecognition(targetTimeMs)) this.#scheduleDeadline();
-    else this.#cancelCountIn();
+    if (this.#engine.startRecognition(targetTimeMs)) {
+      this.#scheduleDeadline();
+      this.#pushGuide();
+    } else {
+      this.#cancelCountIn();
+    }
   }
 
   /**
@@ -415,6 +538,9 @@ export class Phase1LabController {
     if (this.#engine.pause(performance.now(), reason)) {
       this.#clearProgressTimers();
       this.#cancelCountIn();
+      this.#tapStart = null;
+      this.#cueTiming = null;
+      this.#goodUntilMs = Number.NEGATIVE_INFINITY;
       this.#options.onGuideChange(null);
       this.#revealBlockOnRender = true;
       // No trial is running while paused, so the screen may sleep again until "再開".
@@ -426,19 +552,33 @@ export class Phase1LabController {
   #handleTrialFinished(snapshot: Phase1LabSnapshot = this.#engine.snapshot): void {
     this.#clearDeadlineTimer();
     this.#cancelCountIn();
-    this.#options.onGuideChange(null);
+    this.#cueTiming = null;
     const protocol = snapshot.protocol;
+    // A trial that succeeded says so over the camera image; a timeout shows nothing and moves on.
+    if (protocol.results.at(-1)?.outcome === "success") this.#goodUntilMs = performance.now() + GOOD_DISPLAY_MS;
     this.#performance.syncBlocks(protocol);
     if (protocol.state === "complete") {
       this.#clearAutoAdvanceTimer();
       this.#autoAdvanceAtMs = null;
+      this.#options.onGuideChange(null);
       this.#revealBlockOnRender = true;
       void this.#wakeLock.release();
       return;
     }
-    // Open the next block now so manual/visibility/camera pauses work during its preview.
-    if (protocol.awaitingBlockStart) this.#engine.startBlock(performance.now());
-    this.#autoAdvanceAtMs = performance.now() + (protocol.awaitingBlockStart ? 2_500 : RESULT_HOLD_MS);
+    const blockChange = protocol.awaitingBlockStart;
+    // Open the next block now so manual/visibility/camera pauses work while the guide is shown.
+    if (blockChange) this.#engine.startBlock(performance.now());
+    // The next circles and path appear at once, so the tester can get into position.
+    this.#pushGuide();
+    if (blockChange) {
+      // A new movement waits for a tap: nobody is rushed into a gesture they have not read yet.
+      this.#clearAutoAdvanceTimer();
+      this.#autoAdvanceAtMs = null;
+      this.#armTap("block");
+      this.#render();
+      return;
+    }
+    this.#autoAdvanceAtMs = performance.now() + RESULT_HOLD_MS;
     this.#scheduleAutoAdvance();
   }
 
@@ -528,7 +668,41 @@ export class Phase1LabController {
     this.#render();
   }
 
-  async #export(): Promise<void> {
+  /**
+   * The tester screen has one save button. It writes the result JSON and then, a moment later,
+   * the diagnostic file, and names both files so the tester knows what to send back.
+   */
+  async #saveResults(): Promise<void> {
+    if (!this.#testerView) {
+      await this.#export();
+      return;
+    }
+    if (this.#saving) return;
+    this.#saving = true;
+    this.#savedFileNames = [];
+    this.#render();
+    const status = requiredElement(this.#root, "#p1-export-status");
+    const names = requiredElement(this.#root, "#p1-replay-export-status");
+    try {
+      const resultName = await this.#export();
+      if (resultName === null) return;
+      status.textContent = "結果を保存しました。診断データを保存しています…";
+      // Chrome asks once before a second download; the pause keeps that prompt away from the first file.
+      await new Promise<void>((resolve) => window.setTimeout(resolve, SECOND_EXPORT_DELAY_MS));
+      const replayName = await this.#exportReplay();
+      this.#savedFileNames = replayName === null ? [resultName] : [resultName, replayName];
+      status.textContent = replayName === null
+        ? "結果は保存できましたが、診断データを保存できませんでした。「診断データだけをもう一度保存」を押してください。"
+        : "保存した2つのファイルを送ってください。";
+      names.textContent = this.#savedFileNames.join(" ／ ");
+    } finally {
+      this.#saving = false;
+      this.#render();
+    }
+  }
+
+  /** Saves the result JSON and returns its file name, or null when it could not be written. */
+  async #export(): Promise<string | null> {
     const status = requiredElement(this.#root, "#p1-export-status");
     const sessionId = this.#engine.sessionId;
     try {
@@ -536,24 +710,29 @@ export class Phase1LabController {
         throw new Error("実験プロファイルが変わっています。テストを最初からやり直してから保存してください。");
       }
       if (this.#engine.diagnosticFrameCount > 0) await this.#waitForDiagnosticPostRoll(status);
-      if (this.#engine.sessionId !== sessionId) return;
+      if (this.#engine.sessionId !== sessionId) return null;
       this.#performance.syncBlocks(this.#engine.snapshot.protocol);
       const document = this.#engine.createDocument(
         this.#options.getTechnicalSummary(),
         this.#options.getTechnicalSnapshot(),
         { performance: this.#performance.report(), environment: this.#environmentReport() },
       );
-      downloadJson(document, `${document.session.sessionId}.json`);
+      const fileName = `${document.session.sessionId}.json`;
+      downloadJson(document, fileName);
       status.textContent = "軽量なP1結果JSONを保存しました。映像・音声・リプレイ用フレームは含みません。";
       this.#exportNotice = "結果JSONを保存しました。映像と音声は含みません。";
+      this.#render();
+      return fileName;
     } catch (error) {
       status.textContent = error instanceof Error ? error.message : String(error);
       this.#exportNotice = status.textContent;
+      this.#render();
+      return null;
     }
-    this.#render();
   }
 
-  async #exportReplay(): Promise<void> {
+  /** Saves the diagnostic replay and returns its file name, or null when it could not be written. */
+  async #exportReplay(): Promise<string | null> {
     const status = requiredElement(this.#root, "#p1-replay-export-status");
     const sessionId = this.#engine.sessionId;
     try {
@@ -561,12 +740,15 @@ export class Phase1LabController {
         throw new Error("実験プロファイルが変わっています。テストを最初からやり直してから保存してください。");
       }
       await this.#waitForDiagnosticPostRoll(status);
-      if (this.#engine.sessionId !== sessionId) return;
+      if (this.#engine.sessionId !== sessionId) return null;
       const document = this.#engine.createDiagnosticReplay();
-      downloadJson(document, `${document.session.sessionId}-diagnostic-replay.json`);
+      const fileName = `${document.session.sessionId}-diagnostic-replay.json`;
+      downloadJson(document, fileName);
       status.textContent = `${document.frames.length}フレームの診断リプレイを別ファイルで保存しました。`;
+      return fileName;
     } catch (error) {
       status.textContent = error instanceof Error ? error.message : String(error);
+      return null;
     }
   }
 
@@ -613,10 +795,26 @@ export class Phase1LabController {
     const now = performance.now();
     const block = currentBlock(protocol);
     const cameraActive = this.#options.getCameraActive();
+    // The very first movement is offered the same way as every later one: guide first, then a tap.
+    if (this.#testerView
+      && this.#tapStart === null
+      && !this.#sessionStarted
+      && this.#startRequested
+      && this.#trackingReady
+      && cameraActive) {
+      this.#armTap("session");
+      this.#pushGuide();
+    }
     setData(this.#root, "testState", !this.#sessionStarted ? "idle"
       : protocol.state === "complete" ? "complete" : protocol.paused ? "paused" : "running");
     setText(this.#root, "p1-progress", `${protocol.completed} / ${protocol.total}`);
-    setText(this.#root, "p1-state", trialStateLabel(this.#sessionStarted, snapshot, this.#autoAdvanceAtMs, now));
+    setText(
+      this.#root,
+      "p1-state",
+      this.#tapStart !== null && this.#options.getCameraActive()
+        ? "画面をタップして開始"
+        : trialStateLabel(this.#sessionStarted, snapshot, this.#autoAdvanceAtMs, now),
+    );
     setText(this.#root, "p1-remaining", remainingLabel(currentDeadline(protocol), now));
     setText(this.#root, "p1-trial-number", active === null ? "—" : `${active.ordinal} / ${protocol.total}`);
     setText(
@@ -671,14 +869,66 @@ export class Phase1LabController {
     if (startButton.textContent !== startLabel) startButton.textContent = startLabel;
     requiredButton(this.#root, "#p1-skip").disabled = active === null;
     const sessionProfileMatches = this.#sessionProfileMatches();
-    requiredButton(this.#root, "#p1-export").disabled = !this.#sessionStarted || !sessionProfileMatches;
-    requiredButton(this.#root, "#p1-block-export").disabled = !this.#sessionStarted || !sessionProfileMatches;
-    requiredButton(this.#root, "#p1-export-replay").disabled = !this.#sessionStarted || !sessionProfileMatches;
+    const canExport = this.#sessionStarted && sessionProfileMatches && !this.#saving;
+    requiredButton(this.#root, "#p1-export").disabled = !canExport;
+    requiredButton(this.#root, "#p1-block-export").disabled = !canExport;
+    const replayButton = requiredButton(this.#root, "#p1-export-replay");
+    replayButton.disabled = !canExport;
+    // The tester only needs the diagnostic file on its own when the second save failed.
+    if (this.#testerView) replayButton.hidden = this.#savedFileNames.length === 0;
+    this.#renderStage(protocol, cameraActive, now);
     requiredButton(this.#root, "#p1-replay-run").disabled = this.#replay === null || active === null;
     for (const button of this.#root.querySelectorAll<HTMLButtonElement>("[data-p1-outcome]")) {
       button.disabled = active === null;
     }
     this.#renderAudio();
+  }
+
+  /**
+   * Writes what belongs on the camera image: the one-line instruction, the hint before the
+   * count-in, the tap prompt, and the warnings. The count-in itself is written by #tickCue,
+   * which reads the same GO time the count-in clicks were scheduled from.
+   */
+  #renderStage(protocol: P1RunnerSnapshot, cameraActive: boolean, now: number): void {
+    const active = protocol.activeTrial;
+    const trial = active ?? protocol.nextTrial;
+    const running = this.#sessionStarted && protocol.state === "running" && !protocol.paused;
+    const showGuideText = trial !== null && (running || this.#tapStart !== null);
+    setText(this.#root, "stage-instruction", showGuideText ? guideInstruction(trial) : "");
+    const waitingForReady = running && active !== null && protocol.activeTiming === null;
+    const preparing = this.#startRequested && !this.#sessionStarted && this.#tapStart === null;
+    setText(
+      this.#root,
+      "stage-hint",
+      preparing
+        ? "準備しています"
+        : waitingForReady
+          ? guideReadinessHint(active.gesture)
+          : "",
+    );
+    const tapPrompt = requiredElement(this.#root, "#stage-tap");
+    tapPrompt.hidden = this.#tapStart === null || !cameraActive;
+    this.#writeCue(now);
+  }
+
+  readonly #tickCue = (): void => {
+    this.#cueRafId = requestAnimationFrame(this.#tickCue);
+    if (this.#disposed) return;
+    this.#writeCue(performance.now());
+  };
+
+  /**
+   * "2", "1", "GO" and "GOOD" over the middle of the camera image. The count is derived from the
+   * GO time, which #scheduleTarget computed from the audio clock and gave to the metronome, so the
+   * number on screen and the click in the speaker come from the same instant.
+   */
+  #writeCue(now: number): void {
+    const cue = stageCue(now, this.#cueTiming, this.#goodUntilMs);
+    if (cue.text === this.#cueText) return;
+    this.#cueText = cue.text;
+    const element = requiredElement(this.#root, "#stage-cue");
+    element.textContent = cue.text;
+    element.dataset.kind = cue.kind;
   }
 
   #renderBlock(
@@ -698,12 +948,15 @@ export class Phase1LabController {
       state = "idle";
       label = `ブロック 1 / ${totalBlocks}`;
       title = first === undefined ? "—" : blockTitle(first);
-      message = `「テストを開始」で${first === undefined ? "最初の動き" : gestureLabel(first.gesture)}から始めます。${totalBlocks}つの動きを10回ずつ、合計${protocol.total}回です。`;
+      message = `${first === undefined ? "最初の動き" : gestureLabel(first.gesture)}から始めます。${totalBlocks}つの動きで合計${protocol.total}回です。`;
     } else if (protocol.state === "complete") {
       state = "complete";
       label = `全${totalBlocks}ブロック完了`;
       title = `${protocol.total}回すべて記録しました`;
-      message = this.#exportNotice ?? "結果と詳しい診断データを保存してください。";
+      message = this.#exportNotice
+        ?? (this.#testerView
+          ? "「結果を保存」を押すと、結果と診断データの2つのファイルを保存します。"
+          : "結果と詳しい診断データを保存してください。");
     } else if (protocol.paused) {
       state = "paused";
       label = `ブロック ${block.index} / ${totalBlocks}・中断中`;
@@ -834,9 +1087,9 @@ function blockTitle(block: P1BlockRecord): string {
 
 function restMessage(previous: P1BlockRecord | undefined): string {
   if (previous?.restAfter === "extended") {
-    return "ここで休憩します。腕を下ろして肩と手首を休め、準備ができたら「この動きを開始」を押してください。";
+    return "腕を下ろして肩と手首を休め、準備ができたら画面をタップしてください。";
   }
-  return "短く休んでから「この動きを開始」を押してください。";
+  return "準備ができたら画面をタップしてください。";
 }
 
 function trialStateLabel(

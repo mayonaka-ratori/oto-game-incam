@@ -1,4 +1,7 @@
 import { P1_LEGACY_PROTOCOL_IDS } from "./p1-session-comparison";
+import type { FrameSourceOverride } from "../camera/create-frame-source";
+import type { PendingFramePolicy } from "../camera/latest-frame-scheduler";
+import type { DeviceInfo } from "../metrics/device-info";
 import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapshot";
 
 export type DeviceCheckStatus = "pending" | "pass" | "issue" | "na";
@@ -103,8 +106,15 @@ export interface DeviceCheckFormValues {
   readonly notes: string;
 }
 
+/**
+ * 2.4: the technical snapshot inside the report gained the automatic device record and the two
+ * frame-pipeline settings (P1 schema v7). Reports from 2.0 to 2.3 still load; their new items read
+ * as "no record", "auto" and "hold", which is what the app did when they were saved.
+ */
+export const DEVICE_CHECK_SCHEMA_VERSION = "2.4" as const;
+
 export interface DeviceCheckReport {
-  readonly schemaVersion: "2.3";
+  readonly schemaVersion: typeof DEVICE_CHECK_SCHEMA_VERSION;
   readonly reportType: "phase1-device-check";
   readonly controlledGesture: "bloom";
   readonly exportedAt: string;
@@ -156,7 +166,7 @@ export function createDeviceCheckReport(
   const count = (status: DeviceCheckStatus): number => checks.filter((item) => item.status === status).length;
   const completed = checks.filter((item) => item.status !== "pending").length;
   return {
-    schemaVersion: "2.3",
+    schemaVersion: DEVICE_CHECK_SCHEMA_VERSION,
     reportType: "phase1-device-check",
     controlledGesture: "bloom",
     exportedAt,
@@ -202,7 +212,8 @@ export function parseDeviceCheckReport(text: string): DeviceCheckReport {
   if (!isRecord(value) || value.reportType !== "phase1-device-check") {
     throw new TypeError("Phase 1実機確認JSONではありません。");
   }
-  if (value.schemaVersion === "2.0" || value.schemaVersion === "2.1" || value.schemaVersion === "2.2" || value.schemaVersion === "2.3") {
+  const version2 = ["2.0", "2.1", "2.2", "2.3", "2.4"];
+  if (typeof value.schemaVersion === "string" && version2.includes(value.schemaVersion)) {
     return parseVersion2(value);
   }
   if (value.schemaVersion === "1.0") return migrateVersion1(value);
@@ -339,8 +350,9 @@ export class DeviceChecklistController {
     try {
       const imported = readP1SessionForChecklist(JSON.parse(await input.files[0].text()));
       // Every import rewrites all three rows, so values from an earlier file never stay mixed in.
-      applyGestureResult(this.#form, "airTap", imported.airTap);
-      applyGestureResult(this.#form, "ribbonSwipe", imported.ribbonSwipe);
+      // A gesture the procedure did not run clears its row rather than leaving the earlier value.
+      applyGestureResult(this.#form, "airTap", imported.airTap ?? emptyGestureResult());
+      applyGestureResult(this.#form, "ribbonSwipe", imported.ribbonSwipe ?? emptyGestureResult());
       applyGestureResult(this.#form, "bloom", imported.bloom ?? emptyGestureResult());
       if (imported.technical !== null) {
         this.#technicalOverride = {
@@ -355,9 +367,19 @@ export class DeviceChecklistController {
         };
         if (imported.sessionId !== null) setFormValue(this.#form, "sessionId", imported.sessionId);
         if (imported.technical.appBuildId.length > 0) setFormValue(this.#form, "appVersion", imported.technical.appBuildId);
-        this.#status.textContent = imported.thirdGesture === "bloom"
-          ? `P1セッションから3入力（Bloomを含む）とスマホの自動計測値を取り込みました。PCで記入してもスマホ値を保持します。${imported.schemaVersion >= 5 ? "候補動作のLift／SpotlightはP1セッション比較で確認してください。" : ""}`
-          : "旧P1セッションからair-tap／ribbon-swipeを取り込み、Bloom行を空にしました。旧clap結果は比較画面でBloomと分けて扱います。";
+        const skipped = [
+          imported.airTap === null ? "エアタップ" : null,
+          imported.ribbonSwipe === null ? "リボンスワイプ" : null,
+          imported.bloom === null ? "Bloom" : null,
+        ].filter((label): label is string => label !== null);
+        const candidateNote = imported.schemaVersion >= 5
+          ? "候補動作のLift／SpotlightはP1セッション比較で確認してください。"
+          : "";
+        this.#status.textContent = imported.thirdGesture !== "bloom"
+          ? "旧P1セッションからair-tap／ribbon-swipeを取り込み、Bloom行を空にしました。旧clap結果は比較画面でBloomと分けて扱います。"
+          : skipped.length === 0
+            ? `P1セッションから3入力（Bloomを含む）とスマホの自動計測値を取り込みました。PCで記入してもスマホ値を保持します。${candidateNote}`
+            : `P1セッションから実施した動作とスマホの自動計測値を取り込みました。この試験手順は${skipped.join("・")}を行っていないため、その行は空のままです。${candidateNote}`;
       } else {
         // Device values of an earlier file must not stay attached to this file's results.
         this.#technicalOverride = null;
@@ -533,11 +555,14 @@ function controlledRowStatus(form: HTMLFormElement, label: string, prefix: strin
 }
 
 export interface P1ChecklistImport {
-  readonly schemaVersion: 2 | 3 | 4 | 5 | 6;
+  readonly schemaVersion: 2 | 3 | 4 | 5 | 6 | 7;
   readonly protocolId: string | null;
+  /** The gestures the imported procedure actually ran, so a skipped row stays empty. */
+  readonly ranGestures: readonly string[];
   readonly thirdGesture: "bloom" | "clap";
-  readonly airTap: ControlledGestureResult;
-  readonly ribbonSwipe: ControlledGestureResult;
+  /** Null when the procedure did not run this gesture, so the row stays empty instead of showing 0. */
+  readonly airTap: ControlledGestureResult | null;
+  readonly ribbonSwipe: ControlledGestureResult | null;
   /** Null for legacy clap sessions: their clap result never fills the Bloom row. */
   readonly bloom: ControlledGestureResult | null;
   readonly technical: DeviceCheckTechnicalSnapshot | null;
@@ -550,8 +575,9 @@ export function readP1SessionForChecklist(value: unknown): P1ChecklistImport {
   if (!isRecord(value) || value.schema !== "oto-motion-p1-controlled" || !isRecord(value.summary)) {
     throw new TypeError("P1-ControlledセッションJSONではありません。");
   }
-  const schemaVersion = value.schemaVersion;
-  if (schemaVersion !== 2 && schemaVersion !== 3 && schemaVersion !== 4 && schemaVersion !== 5 && schemaVersion !== 6) {
+  const accepted = [2, 3, 4, 5, 6, 7] as const;
+  const schemaVersion = accepted.find((version) => version === value.schemaVersion);
+  if (schemaVersion === undefined) {
     throw new TypeError("対応していないP1 schema versionです。");
   }
   const byGesture = value.summary.byGesture;
@@ -563,6 +589,11 @@ export function readP1SessionForChecklist(value: unknown): P1ChecklistImport {
     }
     thirdGesture = "bloom";
   }
+  // From v7 a session may run only part of the vocabulary, so the rows it did not run stay empty.
+  const vocabulary = isRecord(value.gestureVocabulary) ? value.gestureVocabulary : {};
+  const listed: readonly unknown[] = Array.isArray(vocabulary.gestures) ? vocabulary.gestures : [];
+  const ranGestures = listed.filter((gesture): gesture is string => typeof gesture === "string");
+  const ran = (gesture: string): boolean => ranGestures.length === 0 || ranGestures.includes(gesture);
   const sessionId = isRecord(value.session)
     ? nullableString(value.session.sessionId)
     : isRecord(value.replay) && isRecord(value.replay.session)
@@ -573,10 +604,11 @@ export function readP1SessionForChecklist(value: unknown): P1ChecklistImport {
     protocolId: schemaVersion >= 5
       ? (isRecord(value.protocol) ? nullableString(value.protocol.id) : null)
       : P1_LEGACY_PROTOCOL_IDS[thirdGesture],
+    ranGestures,
     thirdGesture,
-    airTap: gestureResultFromSummary(byGesture["air-tap"]),
-    ribbonSwipe: gestureResultFromSummary(byGesture["ribbon-swipe"]),
-    bloom: thirdGesture === "bloom" ? gestureResultFromSummary(byGesture.bloom) : null,
+    airTap: ran("air-tap") ? gestureResultFromSummary(byGesture["air-tap"]) : null,
+    ribbonSwipe: ran("ribbon-swipe") ? gestureResultFromSummary(byGesture["ribbon-swipe"]) : null,
+    bloom: thirdGesture === "bloom" && ran("bloom") ? gestureResultFromSummary(byGesture.bloom) : null,
     technical: isRecord(value.technicalSnapshot) ? parseTechnical(value.technicalSnapshot) : null,
     sessionId,
     capturedAt: nullableString(value.createdAtIso),
@@ -782,7 +814,29 @@ function parseTechnical(value: Record<string, unknown>): DeviceCheckTechnicalSna
     inFlightFrames: finite(value.inFlightFrames),
     pendingFrames: finite(value.pendingFrames),
     trackingError: nullableString(value.trackingError),
+    // v7 items. A report or P1 session saved before v7 has none of them, and they read as the
+    // defaults that were in force then: no device record, the automatic capture path, hold.
+    device: parseDeviceInfo(value.device),
+    frameSourceOverride: frameSourceOverride(value.frameSourceOverride),
+    pendingPolicy: pendingPolicy(value.pendingPolicy),
+    droppedFrames: finite(value.droppedFrames),
   };
+}
+
+function frameSourceOverride(value: unknown): FrameSourceOverride {
+  return value === "rvfc" || value === "timer" || value === "auto" ? value : "auto";
+}
+
+function pendingPolicy(value: unknown): PendingFramePolicy {
+  return value === "drop" || value === "hold" ? value : "hold";
+}
+
+/**
+ * The device record is written by the app, never typed in, so it is copied through as it stands.
+ * Anything that is not an object reads as "no record".
+ */
+function parseDeviceInfo(value: unknown): DeviceInfo | null {
+  return isRecord(value) ? value as unknown as DeviceInfo : null;
 }
 
 function emptyValues(): DeviceCheckFormValues {
@@ -833,6 +887,10 @@ function emptyTechnical(): DeviceCheckTechnicalSnapshot {
     inFlightFrames: null,
     pendingFrames: null,
     trackingError: null,
+    device: null,
+    frameSourceOverride: "auto",
+    pendingPolicy: "hold",
+    droppedFrames: null,
   };
 }
 

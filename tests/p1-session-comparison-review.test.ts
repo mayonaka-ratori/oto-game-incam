@@ -54,6 +54,10 @@ const TECHNICAL_SNAPSHOT: DeviceTechnicalSnapshot = {
   inFlightFrames: 0,
   pendingFrames: 0,
   trackingError: null,
+  device: null,
+  frameSourceOverride: "auto",
+  pendingPolicy: "hold",
+  droppedFrames: 0,
 };
 
 interface DocumentOptions {
@@ -266,9 +270,10 @@ describe("P1 session comparison after the review fixes", () => {
     expect(parse(protocolId).dataComplete).toBe(false);
   });
 
-  it("asks for the current 50-trial procedure when only an old 30-trial session is loaded", () => {
+  it("asks for the current procedure when only an old 30-trial session is loaded", () => {
+    // The current app no longer always runs 50 trials, so the wording names no trial count.
     const result = compareP1Sessions([parse(threeInputDocument("bloom-30"))]);
 
-    expect(result.nextAction).toBe("現行の5動作・50試行で、両方の対象端末を同じビルドとプロファイルで測る");
+    expect(result.nextAction).toBe("現行の試験手順で、両方の対象端末を同じビルドとプロファイルで測る");
   });
 });

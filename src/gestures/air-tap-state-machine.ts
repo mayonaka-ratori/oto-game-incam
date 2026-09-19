@@ -20,6 +20,16 @@ export interface AirTapConfig {
   readonly cooldownMs?: number;
 }
 
+/**
+ * Judgment constants. Exported read-only so the on-camera guide can draw the ring at the
+ * radius the judgment uses. Changing a value changes the judgment.
+ */
+export const AIR_TAP_DEFAULTS = {
+  radius: 0.11,
+  minimumSpeed: 0.35,
+  cooldownMs: 280,
+} as const;
+
 export class AirTapStateMachine {
   readonly #config: Required<AirTapConfig>;
   readonly #samples = new Map<string, Sample>();
@@ -28,9 +38,9 @@ export class AirTapStateMachine {
   constructor(config: AirTapConfig) {
     this.#config = {
       ...config,
-      radius: config.radius ?? 0.11,
-      minimumSpeed: config.minimumSpeed ?? 0.35,
-      cooldownMs: config.cooldownMs ?? 280,
+      radius: config.radius ?? AIR_TAP_DEFAULTS.radius,
+      minimumSpeed: config.minimumSpeed ?? AIR_TAP_DEFAULTS.minimumSpeed,
+      cooldownMs: config.cooldownMs ?? AIR_TAP_DEFAULTS.cooldownMs,
     };
   }
 

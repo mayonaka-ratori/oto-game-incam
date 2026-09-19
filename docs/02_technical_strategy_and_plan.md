@@ -2,7 +2,7 @@
 
 - 更新日: 2026-09-19
 - 文書種別: 技術選定 / アーキテクチャ / 検証計画
-- ステータス: v0.4（P1を5動作・50試行へ拡張。Bloomの準備完了後の合図、Lift／Spotlight候補、schema v5を追加。2026-09-19: セッション比較の記述をschema v5以降へ直した。記録項目の正本は05の5.7）
+- ステータス: v0.4（P1を5動作・50試行へ拡張。Bloomの準備完了後の合図、Lift／Spotlight候補、schema v5を追加。2026-09-19: セッション比較の記述をschema v5以降へ直した。記録項目の正本は05の5.7。9.2へ取得経路のURL指定を追記）
 - 対象: PC内蔵・外付けWebカメラ、スマートフォンのインカメ
 
 長期的なゲーム内容は`01_game_design_policy.md`、現行POC / MVPの範囲は`03_mvp_definition_and_roadmap.md`、POCゲートの実施は`05_poc_test_protocol.md`、MVP採点は`06_mvp_chart_scoring_spec.md`を正本とする。本書の技術選定と実装順序はそれらを検証するために従属する。読む順序と現在地は`docs/README.md`を参照する。
@@ -372,6 +372,13 @@ Liftは、画面下側の左右開始ゾーンで準備完了を確認した後�
 - `captureTime`等が得られる場合は保存し、得られない場合も提示時刻と受信時刻を区別する。
 - 機能検出で分岐し、ユーザーエージェント文字列で決め打ちしない。
 
+2026-09-19の実測（[18](./18_android_second_test_and_next_plan.md)の2.2）で、Android Chromeの`MediaStreamTrackProcessor`経路では、待機枠のフレームが約80ms古くなってから処理されていると推定した（カメラは毎秒25.8枚を供給、置き換えは4046枚中0件）。未解放のフレームが2枚あると、次のフレームが渡されないとみられる。原因を切り分けるため、既定の挙動は変えずに、URLの指定で次を切り替えられるようにした。処理中1枚・待機1枚以下という決まりは、どの指定でも守る。
+
+- `?frameSource=rvfc`: `MediaStreamTrackProcessor`を使わず、2の経路を強制する。`?frameSource=timer`は3の経路を強制する。
+- `?pending=drop`: 待機枠を持たない。推論中に届いたフレームはすぐ`close()`して捨て、推論が終わった後に届く最初のフレームを処理する。捨てた数は`dropped`として数える。
+
+指定した内容は結果JSONへ残す（[05](./05_poc_test_protocol.md)の5.7）。9.4のとおり、1回の実測で変える指定は1つにする。既定を変えるかどうかは、Androidの比較結果を見て決める。
+
 ### 9.3 30fpsと60fps
 
 30fpsではフレーム量子化だけで最大約33.3ms、平均的には半分程度の時刻不確実性が生まれる。60fpsはこれを改善し得るが、カメラ内部バッファや露出時間、ブラウザの処理、推論速度が支配する場合は効果が小さい。
@@ -650,7 +657,7 @@ R1は競技モードが製品方針として承認された場合だけ使用す
 
 複数端末から返されたP1結果JSONは、手作業で表へ転記する前に次を自動検証する。
 
-- schema、試験手順ごとの試行数（3入力版は30試行、5動作版は50試行）、各動作10試行、outcome合計、summaryとtrial resultsの一致、重複trial、privacy宣言。schema v5以降はprotocol ID（`p1-five-gesture-50`）と5動作の語彙を検証し、3入力版と同じ条件へまとめない
+- schema、試験手順ごとの試行数（3入力版30、5動作版50、残る2動作版20、回帰確認版9）とブロック数、各動作の試行数、outcome合計、summaryとtrial resultsの一致、重複trial、privacy宣言。schema v5以降はprotocol IDと、その手順が行う動作の語彙を検証し、手順IDが違う結果を同じ条件へまとめない。回帰確認版は3回中3回で点検する
 - app build ID、実験profile ID、要求設定と実設定、provider／model
 - success、player miss、machine miss、tracking loss、unclassified、拒否理由
 - tracking Hz、推論p95、frame age p95、二手coverage、queue状態

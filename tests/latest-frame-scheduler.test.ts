@@ -58,6 +58,55 @@ describe("LatestFrameScheduler", () => {
     expect(frames.filter((frame) => frame.closeCount === 1).length).toBe(9_998);
   });
 
+  it("holds no pending frame under the drop policy and counts what it threw away", () => {
+    const sent: number[] = [];
+    const scheduler = new LatestFrameScheduler<FakeFrame>((frame) => sent.push(frame.frameId), "drop");
+    const first = new FakeFrame();
+    const duringInference = new FakeFrame();
+    const alsoDuringInference = new FakeFrame();
+    const afterInference = new FakeFrame();
+
+    scheduler.offer(first, timestamp);
+    expect(scheduler.offer(duringInference, timestamp)).toBeNull();
+    scheduler.offer(alsoDuringInference, timestamp);
+
+    // Nothing waits: both frames are closed at once, so neither can grow stale.
+    expect(duringInference.closeCount).toBe(1);
+    expect(alsoDuringInference.closeCount).toBe(1);
+    expect(scheduler.snapshot).toMatchObject({
+      captured: 3,
+      sent: 1,
+      inFlight: 1,
+      pending: 0,
+      replaced: 0,
+      dropped: 2,
+      pendingPolicy: "drop",
+    });
+
+    // The first frame that arrives after the inference is the one that gets processed.
+    scheduler.complete(1);
+    expect(scheduler.snapshot).toMatchObject({ inFlight: 0, pending: 0, completed: 1 });
+    scheduler.offer(afterInference, timestamp);
+    expect(sent).toEqual([1, 2]);
+    expect(afterInference.closeCount).toBe(0);
+  });
+
+  it("keeps in-flight and pending at one or less under both policies during a burst", () => {
+    for (const policy of ["hold", "drop"] as const) {
+      const scheduler = new LatestFrameScheduler<FakeFrame>(() => undefined, policy);
+      for (let index = 0; index < 1_000; index += 1) {
+        scheduler.offer(new FakeFrame(), timestamp);
+        expect(scheduler.snapshot.inFlight, policy).toBeLessThanOrEqual(1);
+        expect(scheduler.snapshot.pending, policy).toBeLessThanOrEqual(1);
+      }
+      const snapshot = scheduler.snapshot;
+      expect(snapshot.captured, policy).toBe(1_000);
+      // Every captured frame is either sent, held for later, replaced, or dropped. None leak.
+      expect(snapshot.sent + snapshot.pending + snapshot.replaced + snapshot.dropped, policy).toBe(1_000);
+      expect(policy === "drop" ? snapshot.replaced : snapshot.dropped, policy).toBe(0);
+    }
+  });
+
   it("closes pending and future frames when stopped", () => {
     const scheduler = new LatestFrameScheduler<FakeFrame>(() => undefined);
     const pending = new FakeFrame();

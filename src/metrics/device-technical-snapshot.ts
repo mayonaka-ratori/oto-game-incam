@@ -1,3 +1,7 @@
+import type { PendingFramePolicy } from "../camera/latest-frame-scheduler";
+import type { FrameSourceOverride } from "../camera/create-frame-source";
+import type { DeviceInfo } from "./device-info";
+
 export interface DeviceTechnicalSnapshot {
   readonly appBuildId: string;
   readonly experimentProfileId: string;
@@ -33,4 +37,15 @@ export interface DeviceTechnicalSnapshot {
   readonly inFlightFrames: number | null;
   readonly pendingFrames: number | null;
   readonly trackingError: string | null;
+  /**
+   * v7: what the browser says about the phone, collected automatically so the tester types
+   * nothing. Null while the collection is still running, and every field inside it can be null.
+   */
+  readonly device: DeviceInfo | null;
+  /** v7: `?frameSource=`. "auto" means the best supported capture path was chosen. */
+  readonly frameSourceOverride: FrameSourceOverride;
+  /** v7: `?pending=`. "hold" is the long-standing behaviour. */
+  readonly pendingPolicy: PendingFramePolicy;
+  /** v7: frames closed on arrival under the `drop` policy. 0 under `hold`. */
+  readonly droppedFrames: number | null;
 }

@@ -59,6 +59,10 @@ const TECHNICAL_SNAPSHOT: DeviceTechnicalSnapshot = {
   inFlightFrames: 0,
   pendingFrames: 0,
   trackingError: null,
+  device: null,
+  frameSourceOverride: "auto",
+  pendingPolicy: "hold",
+  droppedFrames: 0,
 };
 
 function skipTrials(engine: Phase1LabEngine, count: number): void {

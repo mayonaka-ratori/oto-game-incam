@@ -44,6 +44,10 @@ const technical: DeviceCheckTechnicalSnapshot = {
   inFlightFrames: 0,
   pendingFrames: 0,
   trackingError: null,
+  device: null,
+  frameSourceOverride: "auto",
+  pendingPolicy: "hold",
+  droppedFrames: 0,
 };
 
 describe("P1 result import for the device check", () => {
@@ -118,7 +122,7 @@ describe("P1 result import for the device check", () => {
     const withoutVocabulary = p1Document(5);
     delete withoutVocabulary.gestureVocabulary;
 
-    expect(() => readP1SessionForChecklist(p1Document(7))).toThrow(/schema version/);
+    expect(() => readP1SessionForChecklist(p1Document(8))).toThrow(/schema version/);
     expect(() => readP1SessionForChecklist(withoutVocabulary)).toThrow(/第三入力/);
   });
 
@@ -166,7 +170,7 @@ describe("device check report", () => {
     expect(report.checks.some((item) => item.status === "pending")).toBe(true);
     expect(report.privacy).toEqual({ includesCameraFrames: false, includesAudio: false });
     expect(JSON.parse(JSON.stringify(report))).toMatchObject({
-      schemaVersion: "2.3",
+      schemaVersion: "2.4",
       reportType: "phase1-device-check",
       technicalSource: { mode: "current-device", sessionId: "session-1" },
     });
@@ -183,7 +187,7 @@ describe("device check report", () => {
     legacy.schemaVersion = "2.0";
     delete legacy.technicalSource;
     const parsed = parseDeviceCheckReport(JSON.stringify(legacy));
-    expect(parsed.schemaVersion).toBe("2.3");
+    expect(parsed.schemaVersion).toBe("2.4");
     expect(parsed.technicalSource).toMatchObject({ mode: "report-import", sessionId: "session-1" });
     expect(parsed.technical.userAgent).toBe("test-agent");
   });
@@ -210,7 +214,7 @@ describe("device check report", () => {
       checks: [{ id: "privacy", completed: true }],
       technical,
     }));
-    expect(migrated.schemaVersion).toBe("2.3");
+    expect(migrated.schemaVersion).toBe("2.4");
     expect(migrated.checks.find(({ id }) => id === "privacy")?.status).toBe("pass");
   });
 });
