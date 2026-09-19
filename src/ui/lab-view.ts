@@ -11,6 +11,7 @@ import {
 import type { FrameMetricsSnapshot } from "../metrics/frame-metrics";
 import type { TrackingMetricsSnapshot } from "../metrics/tracking-metrics";
 import type { OverlayLayers } from "../rendering/overlay-renderer";
+import { createTestModeMenu } from "./test-mode-menu";
 
 export interface LabViewCallbacks {
   readonly onStart: () => void;
@@ -260,6 +261,10 @@ function configureTesterView(root: HTMLElement): void {
   for (const selector of hiddenSelectors) {
     for (const element of root.querySelectorAll<HTMLElement>(selector)) element.hidden = true;
   }
+
+  // Testers pick the test on the start card instead of typing a query string.
+  requiredElement(root, "#state-card .action-row", HTMLElement)
+    .before(createTestModeMenu(window.location.pathname, window.location.search));
 
   const skipButton = root.querySelector<HTMLButtonElement>("#p1-skip");
   if (skipButton !== null) skipButton.textContent = "反応しなかったので次へ";

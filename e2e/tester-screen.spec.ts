@@ -181,3 +181,19 @@ test("the five-gesture protocol still runs, one tap per movement", async ({ page
   expect(report.protocol.id).toBe("p1-five-gesture-50");
   expect(report.protocol.results).toHaveLength(50);
 });
+
+test("the start screen offers the tests and keeps the rest of the query", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?tracking=mock");
+  await expect(page.locator('[data-test-mode="portrait-three"]')).toHaveAttribute("aria-current", "true");
+  await expect(page.getByRole("button", { name: "はじめる" })).toBeInViewport({ ratio: 1 });
+
+  await page.locator('[data-test-mode="speed-check"]').click();
+  await expect(page).toHaveURL(/tracking=mock&mode=speedcheck/);
+  await expect(page.locator("#speed-start")).toBeVisible();
+
+  await page.locator('[data-test-mode="regression"]').click();
+  await expect(page).toHaveURL(/tracking=mock&protocol=regression/);
+  await expect(page.locator('[data-test-mode="regression"]')).toHaveAttribute("aria-current", "true");
+  await expect(page.getByRole("button", { name: "はじめる" })).toBeVisible();
+});

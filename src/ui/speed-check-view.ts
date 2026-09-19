@@ -1,4 +1,5 @@
 import "./speed-check.css";
+import { createTestModeMenu } from "./test-mode-menu";
 
 export interface SpeedCheckViewCallbacks {
   readonly onStart: () => void;
@@ -65,6 +66,8 @@ export class SpeedCheckView {
     this.#saveStatus = requiredElement(root, "#speed-save-status", HTMLElement);
     this.#preview = requiredElement(root, "#speed-preview", HTMLElement);
     this.#introError = requiredElement(root, "#speed-intro-error", HTMLElement);
+    // The same list as the lab start screen, so the tester can go back to the usual test.
+    this.#introError.after(createTestModeMenu(window.location.pathname, window.location.search));
 
     this.#startButton.addEventListener("click", callbacks.onStart);
     this.#stopButton.addEventListener("click", callbacks.onStop);

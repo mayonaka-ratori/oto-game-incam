@@ -3097,3 +3097,65 @@ details[open] summary {
   .tester-view .preview-shell { --preview-max-height: calc(100cqh - 86px); }
   .tester-view[data-camera="active"] .preview-shell { --preview-max-height: 100cqh; }
 }
+
+/* Test picker on the start screens (lab tester view and speed check). */
+.test-mode-menu {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.test-mode-heading {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.test-mode-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.test-mode-option {
+  display: grid;
+  gap: 2px;
+  min-height: 44px;
+  padding: 7px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  /* Opaque: in landscape the start card sits over the camera placeholder. */
+  background: #071114;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.test-mode-option strong { font-size: 13px; }
+.test-mode-option span { color: var(--muted); font-size: 11px; line-height: 1.35; }
+
+.test-mode-option[aria-current="true"] {
+  border-color: var(--cyan);
+  background: #0c2a29;
+}
+
+/* The page styles give every <details> a framed box; this one is a plain fold. */
+.test-mode-more {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.test-mode-more summary {
+  min-height: 32px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 32px;
+}
+
+.test-mode-more[open] .test-mode-list { margin-top: 2px; }
