@@ -143,6 +143,7 @@ export class Phase1LabController {
     let snapshot = this.#engine.processFrame(frame);
     if (snapshot.protocol.completed > before) {
       this.#handleTrialFinished(snapshot);
+      snapshot = this.#engine.snapshot;
     } else if (snapshot.readinessReached) {
       this.#startRecognition();
       snapshot = this.#engine.snapshot;
@@ -231,7 +232,8 @@ export class Phase1LabController {
     if (this.#sessionStarted && !this.#confirmRestart()) return;
     this.#starting = true;
     this.#render();
-    const landscapeRequest = this.#options.requestLandscape();
+    const landscapeRequest = this.#root.classList.contains("tester-view")
+      ? Promise.resolve() : this.#options.requestLandscape();
     await Promise.allSettled([landscapeRequest, this.#enableAudio()]);
     if (this.#disposed) return;
     if (!this.#options.getCameraActive()) {
@@ -245,6 +247,7 @@ export class Phase1LabController {
     const sessionId = `p1-${new Date().toISOString().replace(/[-:.TZ]/g, "")}`;
     this.#engine.startSession(sessionId, this.#options.getProvider(), {
       appVersion: this.#options.appBuildId,
+      notes: "ブロック間の必須休憩なし。次の動作を2.5秒表示して自動進行。",
     });
     this.#performance.start();
     // A trial can run 10 seconds without a touch, so the screen must not dim in the middle of one.
@@ -258,7 +261,7 @@ export class Phase1LabController {
     requiredElement(this.#root, "#p1-export-status").textContent = "";
     requiredElement(this.#root, "#p1-replay-export-status").textContent = "";
     this.#starting = false;
-    // The first block starts with the test itself; later blocks wait for "この動きを開始".
+    // Block boundaries advance automatically after showing the next movement.
     this.#engine.startBlock(performance.now());
     this.#beginNextTrial();
   }
@@ -426,15 +429,16 @@ export class Phase1LabController {
     this.#options.onGuideChange(null);
     const protocol = snapshot.protocol;
     this.#performance.syncBlocks(protocol);
-    if (protocol.state === "complete" || protocol.awaitingBlockStart) {
-      // A finished block waits for the tester; the rest time is recorded as restBeforeMs.
+    if (protocol.state === "complete") {
       this.#clearAutoAdvanceTimer();
       this.#autoAdvanceAtMs = null;
       this.#revealBlockOnRender = true;
-      if (protocol.state === "complete") void this.#wakeLock.release();
+      void this.#wakeLock.release();
       return;
     }
-    this.#autoAdvanceAtMs = performance.now() + RESULT_HOLD_MS;
+    // Open the next block now so manual/visibility/camera pauses work during its preview.
+    if (protocol.awaitingBlockStart) this.#engine.startBlock(performance.now());
+    this.#autoAdvanceAtMs = performance.now() + (protocol.awaitingBlockStart ? 2_500 : RESULT_HOLD_MS);
     this.#scheduleAutoAdvance();
   }
 
@@ -609,6 +613,8 @@ export class Phase1LabController {
     const now = performance.now();
     const block = currentBlock(protocol);
     const cameraActive = this.#options.getCameraActive();
+    setData(this.#root, "testState", !this.#sessionStarted ? "idle"
+      : protocol.state === "complete" ? "complete" : protocol.paused ? "paused" : "running");
     setText(this.#root, "p1-progress", `${protocol.completed} / ${protocol.total}`);
     setText(this.#root, "p1-state", trialStateLabel(this.#sessionStarted, snapshot, this.#autoAdvanceAtMs, now));
     setText(this.#root, "p1-remaining", remainingLabel(currentDeadline(protocol), now));
@@ -640,7 +646,12 @@ export class Phase1LabController {
     );
     setText(this.#root, "p1-latest-rejection", latestVisibleReason(snapshot, latestResult));
     const performanceWarning = requiredElement(this.#root, "#p1-performance-warning");
-    performanceWarning.hidden = !this.#options.getPerformanceLow();
+    const notices = [
+      this.#options.getPerformanceLow() ? "手の認識が遅れています" : "",
+      this.#audioNotice !== null ? "音なし。画面のGOで動いてください" : "",
+    ].filter(Boolean);
+    setText(this.#root, "p1-performance-warning", notices.join("。"));
+    performanceWarning.hidden = notices.length === 0;
     const canBegin = this.#sessionStarted
       && cameraActive
       && protocol.state === "running"
@@ -692,7 +703,7 @@ export class Phase1LabController {
       state = "complete";
       label = `全${totalBlocks}ブロック完了`;
       title = `${protocol.total}回すべて記録しました`;
-      message = this.#exportNotice ?? "「結果を保存する」を押して、結果JSONを保存してください。";
+      message = this.#exportNotice ?? "結果と詳しい診断データを保存してください。";
     } else if (protocol.paused) {
       state = "paused";
       label = `ブロック ${block.index} / ${totalBlocks}・中断中`;
@@ -752,6 +763,7 @@ export class Phase1LabController {
    * restart button, would cover the block buttons.
    */
   #revealBlock(): void {
+    if (this.#root.classList.contains("tester-view")) return;
     const block = requiredElement(this.#root, "#p1-block");
     const heading = this.#root.querySelector<HTMLElement>(".p1-trial-card .p1-card-heading");
     const stickyHeight = heading !== null && getComputedStyle(heading).position === "sticky"
@@ -845,7 +857,7 @@ function trialStateLabel(
     if (timing.targetTimeMs !== null) {
       // "準備OK" lasts until the first count-in click; the count is shown while the clicks play.
       if (now < timing.targetTimeMs - COUNT_IN_LEAD_MS) return timing.readyAtMs === null ? "カウント" : "準備OK";
-      if (now < timing.targetTimeMs) return "カウント";
+      if (now < timing.targetTimeMs) return String(Math.ceil((timing.targetTimeMs - now) / (60_000 / COUNT_IN_BPM)));
       if (now < timing.targetTimeMs + GO_DISPLAY_MS) return "GO";
       return "判定中";
     }
@@ -853,7 +865,7 @@ function trialStateLabel(
     return "判定中";
   }
   if (autoAdvanceAtMs !== null) {
-    return protocol.results.at(-1)?.outcome === "success" ? "成立を記録" : "未成立を記録";
+    return `次の動きまで ${Math.max(1, Math.ceil((autoAdvanceAtMs - now) / 1_000))}秒`;
   }
   if (protocol.awaitingBlockStart) return protocol.results.length === 0 ? "ブロック開始待ち" : "休憩中";
   return "次の試行待ち";
@@ -864,7 +876,7 @@ function instructionLabel(sessionStarted: boolean, snapshot: Phase1LabSnapshot):
   const active = protocol.activeTrial;
   if (!sessionStarted) return protocol.nextTrial?.instruction ?? "セッションを開始してください";
   if (protocol.state === "complete") return "すべての試行が終わりました。結果JSONを保存してください";
-  if (protocol.paused) return "中断中です。再開すると、止めた試行を最初からやり直します";
+  if (protocol.paused) return "「再開」で、止めた試行を最初からやり直します";
   if (active !== null && protocol.activeTiming === null) {
     if (snapshot.readiness !== null && snapshot.readiness.visibleHands < 2) {
       return "両手が映るのを待っています。両手をカメラに向けてください";

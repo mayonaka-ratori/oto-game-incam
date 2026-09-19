@@ -22,6 +22,9 @@
   --radius: 18px;
 }
 
+/* The tester screen owns one visible viewport, including mobile browser bars.
+ * Detailed analysis keeps the original document layout. */
+
 * {
   box-sizing: border-box;
 }
@@ -2656,4 +2659,139 @@ details[open] summary {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
+
+.tester-view .app-shell {
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
+    max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  font-family: "Noto Sans JP", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+}
+.tester-view .topbar,
+.tester-view .camera-panel > .section-heading,
+.tester-view .orientation-notice,
+.tester-view .preview-label,
+.tester-view .state-badge,
+.tester-view .p1-audio-card,
+.tester-view .p1-panel > .check-intro,
+.tester-view .section-index,
+.tester-view .p1-trial-card > .p1-mini-metrics,
+.tester-view .p1-card-heading > div,
+.tester-view .p1-motion-copy,
+.tester-view .p1-observation-row,
+.tester-view #p1-next-trial,
+.tester-view #p1-block-export { display: none !important; }
+.tester-view .lab-layout {
+  height: 100%;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+}
+.tester-view .camera-panel,
+.tester-view .p1-panel {
+  height: 100%;
+  min-height: 0;
+  padding: 8px;
+  grid-row: 1;
+  overflow: visible;
+}
+.tester-view .camera-panel {
+  grid-column: 1;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 6px;
+  container-type: size;
+}
+.tester-view .preview-shell {
+  --preview-max-height: calc(100cqh - 56px);
+  align-self: center;
+}
+.tester-view .state-card {
+  position: static;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+}
+.tester-view .state-copy h3 { font-size: 12px; margin: 0; }
+.tester-view .state-copy p { font-size: 12px; margin: 0; }
+.tester-view .state-card[data-state="active"] .state-copy { display: none; }
+.tester-view .action-row { margin: 0; gap: 4px; flex-wrap: nowrap; }
+.tester-view .button { min-height: 40px; padding: 6px 9px; font-size: 12px; }
+.tester-view .tracking-state { top: 4px; left: 4px; max-width: calc(100% - 8px); font-size: 11px; padding: 3px 5px; }
+.tester-view .p1-panel { grid-column: 2; display: flex; flex-direction: column; gap: 6px; }
+.tester-view .p1-heading { margin: 0; flex: 0 0 auto; }
+.tester-view .p1-heading h2 { font-size: 14px; }
+.tester-view .check-progress { font-size: 13px; padding: 2px 6px; }
+.tester-view .p1-grid { display: flex; flex: 1; min-height: 0; margin: 0; }
+.tester-view .p1-trial-card {
+  display: flex; flex-direction: column; width: 100%; min-height: 0;
+  padding: 0; border: 0; background: transparent; gap: 6px;
+}
+.tester-view .p1-trial-card .p1-card-heading { position: static; order: 5; margin: 0; padding: 0; border: 0; }
+.tester-view[data-test-state="running"] .p1-card-heading { display: none; }
+.tester-view .tester-cue { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 8px; }
+.tester-view #p1-gesture { grid-column: 1 / -1; margin: 0; font-size: 16px; font-weight: 700; }
+.tester-view #p1-state { font-size: clamp(22px, 4vh, 36px); line-height: 1.1; color: var(--cyan); }
+.tester-view #p1-remaining { margin: 0; font-size: 16px; }
+.tester-view #p1-block { display: none; }
+.tester-view .p1-instruction {
+  flex: 1; min-height: 90px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, .6fr);
+  gap: 8px; align-items: center; margin: 0; padding: 8px;
+}
+.tester-view .p1-instruction-copy { gap: 3px; }
+.tester-view .p1-instruction-copy > span { display: none; }
+.tester-view .p1-instruction strong { font-size: 15px; line-height: 1.5; }
+.tester-view .p1-motion-sample { display: block; min-width: 0; }
+.tester-view .p1-motion-stage { min-height: 82px; }
+.tester-view .p1-motion-stage::before { font-size: 9px; }
+.tester-view .p1-motion-stage::after { font-size: 8px; }
+.tester-view .p1-live-diagnostic { min-height: 0; margin: 0; padding: 0; border: 0; background: none; }
+.tester-view .p1-live-diagnostic span { display: none; }
+.tester-view .p1-live-diagnostic strong { font-size: 11px; line-height: 1.35; }
+.tester-view .p1-trial-footer { position: static; margin: 0; padding: 0; box-shadow: none; background: none; }
+.tester-view .p1-trial-footer .p1-performance-warning {
+  white-space: normal; margin: 0 0 3px; padding: 0; font-size: 11px; line-height: 1.3;
+}
+.tester-view .p1-trial-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.tester-view .p1-trial-actions .button { flex: 1; }
+.tester-view .p1-footer { display: none; margin: 0; }
+.tester-view[data-test-state="idle"] .p1-live-diagnostic,
+.tester-view[data-test-state="idle"] .p1-trial-footer { display: none; }
+.tester-view[data-test-state="paused"] .p1-live-diagnostic { display: none; }
+.tester-view[data-test-state="paused"] .p1-footer,
+.tester-view[data-test-state="complete"] .p1-footer { display: block; }
+.tester-view[data-test-state="paused"] .p1-instruction { min-height: 0; }
+.tester-view[data-test-state="paused"] .p1-motion-sample { display: none; }
+.tester-view[data-test-state="paused"] #p1-gesture,
+.tester-view[data-test-state="paused"] #p1-remaining,
+.tester-view[data-test-state="paused"] #p1-skip,
+.tester-view[data-test-state="paused"] #p1-false-trigger,
+.tester-view[data-test-state="paused"] .p1-performance-warning { display: none; }
+.tester-view[data-test-state="paused"] .p1-instruction { display: block; flex: none; }
+.tester-view[data-test-state="complete"] .tester-cue,
+.tester-view[data-test-state="complete"] .p1-instruction,
+.tester-view[data-test-state="complete"] .p1-live-diagnostic,
+.tester-view[data-test-state="complete"] .p1-trial-footer { display: none; }
+.tester-view[data-test-state="complete"] #p1-block { display: block; margin: 0; padding: 8px; }
+.tester-view[data-test-state="complete"] .p1-grid { flex: none; display: block; }
+.tester-view .p1-export-block { width: 100%; max-width: none; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tester-view .p1-export-block .button { width: 100%; }
+.tester-view .tester-save-note,
+.tester-view .export-status { grid-column: 1 / -1; margin: 0; font-size: 12px; line-height: 1.4; text-align: left; }
+.tester-view .export-status:empty { display: none; }
+
+@media (orientation: portrait) {
+  .tester-view .lab-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, .85fr) minmax(0, 1fr); }
+  .tester-view .p1-panel { grid-column: 1; grid-row: 2; }
+  .tester-view .state-card { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+  .tester-view .state-copy p { display: none; }
+  .tester-view .p1-instruction strong { font-size: 16px; }
+  .tester-view .p1-motion-stage { min-height: 100px; }
+  .tester-view[data-test-state="complete"] .lab-layout,
+  .tester-view[data-test-state="paused"] .lab-layout { grid-template-rows: minmax(0, .45fr) minmax(0, 1fr); }
 }

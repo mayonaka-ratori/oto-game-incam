@@ -2,7 +2,7 @@ import { expect, test, type Download, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
 test("starts, measures, hides, and releases the camera", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?view=analysis");
 
   await expect(page.getByRole("heading", { name: "手の追跡・時刻・ジェスチャー検証" })).toBeVisible();
   await expect(page.getByText("映像・音声は保存しません")).toBeVisible();
@@ -45,9 +45,8 @@ test("fits the camera controls in a phone landscape viewport", async ({ page }) 
   await expect(page.getByRole("heading", { name: "動作テスト" })).toBeInViewport();
   await expect(page.getByRole("button", { name: "テストを開始" })).toBeInViewport();
   await expect(page.locator("#p1-remaining")).toBeInViewport();
-  await expect(page.locator("#p1-motion-sample")).toBeInViewport();
-  await expect(page.locator("#p1-block")).toBeInViewport();
-  await expect(page.getByRole("button", { name: "反応しなかったので次へ" })).toBeInViewport();
+  await expect(page.locator("#p1-motion-sample")).toBeInViewport({ ratio: 1 });
+  await expect(page.locator("#p1-instruction")).toBeInViewport({ ratio: 1 });
   await expect(page.getByRole("heading", { name: "リアルタイム計測値" })).toBeHidden();
   await expect(page.locator("details.diagnostics-panel")).not.toHaveAttribute("open", "");
   await expect(page.locator("#orientation-notice")).toBeHidden();
@@ -58,8 +57,8 @@ test("fits the camera controls in a phone landscape viewport", async ({ page }) 
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator("#orientation-notice")).toBeVisible();
-  await expect(page.getByRole("button", { name: "横向き表示を試す" })).toBeVisible();
+  await expect(page.locator("#orientation-notice")).toBeHidden();
+  await expect(page.locator("#p1-instruction")).toBeInViewport({ ratio: 1 });
   await expect(page.getByRole("heading", { name: "動作テスト" })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
@@ -207,13 +206,12 @@ test("continues rVFC tracking while the raw preview is hidden", async ({ page })
 test("shows only the tester workflow on the standard URL", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "インカメ映像" })).toBeVisible();
+  await expect(page.locator("#preview-shell")).toBeVisible();
   await expect(page.getByRole("heading", { name: "動作テスト" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "リアルタイム計測値" })).toBeHidden();
   await expect(page.getByText("検証用の重ね表示")).toBeHidden();
-  await expect(page.getByRole("button", { name: "結果JSONを保存" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "診断リプレイを保存" })).toBeHidden();
-  await expect(page.getByRole("button", { name: "意図せず反応した" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "結果JSONを保存" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "詳しい診断データを保存" })).toBeHidden();
   await expect(page.locator("#p1-block-label")).toHaveText("ブロック 1 / 5");
   await expect(page.locator("#p1-progress")).toHaveText("0 / 50");
   await expect(page.getByRole("button", { name: "この動きを開始" })).toBeHidden();
@@ -281,7 +279,7 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
       rejection: document.querySelector("#p1-latest-rejection")?.textContent ?? null,
     };
   });
-  expect(afterSkip).toEqual({ state: "未成立を記録", rejection: "未成立として次へ進みました" });
+  expect(afterSkip).toEqual({ state: "次の動きまで 1秒", rejection: "未成立として次へ進みました" });
   await expect(page.locator("#p1-progress")).toHaveText("1 / 50");
   await page.getByRole("button", { name: "誤検出を記録" }).click();
   await expect(page.locator("#p1-false-trigger-count")).toHaveText("1");
@@ -427,14 +425,9 @@ test("times out and auto-advances all 50 trials in five blocks without double-fi
     if (nextBlock === undefined) {
       await page.clock.fastForward(1_001);
     } else {
-      await expect(page.locator("#p1-state")).toHaveText("休憩中");
-      await expect(page.locator("#p1-block")).toHaveAttribute("data-state", "rest");
-      await expect(page.getByRole("button", { name: "この動きを開始" })).toBeInViewport();
-      await expectTopmost(page, "#p1-start-block");
-      if (ordinal === 20 || ordinal === 40) {
-        await expect(page.locator("#p1-block-message")).toContainText("ここで休憩します");
-      }
-      await page.getByRole("button", { name: "この動きを開始" }).click();
+      await expect(page.locator("#p1-state")).toContainText("次の動きまで");
+      await expect(page.getByRole("button", { name: "この動きを開始" })).toBeHidden();
+      await page.clock.fastForward(2_501);
       await expect(motionSample).toHaveAttribute("data-gesture", nextBlock.gesture);
       await expect(motionSample).toHaveAttribute("data-variant", nextBlock.variant);
       await expect.poll(() => page.locator(nextBlock.hand).evaluate(
@@ -447,11 +440,15 @@ test("times out and auto-advances all 50 trials in five blocks without double-fi
   await expect(page.locator("#p1-state")).toHaveText("完了");
   await expect(page.locator("#p1-block")).toHaveAttribute("data-state", "complete");
   await expect(page.locator("#p1-latest-rejection")).toHaveText("10秒で未成立として記録しました");
-  await expect(page.getByRole("button", { name: "反応しなかったので次へ" })).toBeDisabled();
-  await expectTopmost(page, "#p1-block-export");
+  await expect(page.locator("#p1-skip")).toBeDisabled();
+  await expect(page.locator("#p1-skip")).toBeHidden();
+  await expectTopmost(page, "#p1-export");
+  await expect(page.locator("#p1-motion-sample")).toBeHidden();
+  await expect(page.locator("#p1-next-trial")).toBeHidden();
+  await expect(page.locator("#p1-export-replay")).toBeInViewport({ ratio: 1 });
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "結果を保存する" }).click();
+  await page.getByRole("button", { name: "結果JSONを保存" }).click();
   const download = await downloadPromise;
   const path = await download.path();
   expect(path).not.toBeNull();
@@ -512,6 +509,7 @@ test("pauses inside a block and repeats the abandoned attempt after resume", asy
   await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
   await expect(page.locator("#p1-progress")).toHaveText("1 / 50");
 
+  await page.getByRole("button", { name: "中断", exact: true }).click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "結果JSONを保存" }).click();
   const download = await downloadPromise;
@@ -528,7 +526,7 @@ test("pauses inside a block and repeats the abandoned attempt after resume", asy
     reason: "manual",
     abandonedTrialId: "air-tap-1",
     resumedAtMs: expect.any(Number),
-  })]);
+  }), expect.objectContaining({ reason: "manual", resumedAtMs: null })]);
 });
 
 test("waits for two-hand readiness before the Bloom count-in", async ({ page }) => {
@@ -545,15 +543,14 @@ test("waits for two-hand readiness before the Bloom count-in", async ({ page }) 
     await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal} / 50`);
     await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
     await expect(page.locator("#p1-progress")).toHaveText(`${ordinal} / 50`);
-    if (ordinal === 10 || ordinal === 20) {
-      await page.getByRole("button", { name: "この動きを開始" }).click();
-    }
   }
 
   await expect(page.locator("#p1-motion-sample")).toHaveAttribute("data-gesture", "bloom");
-  await expect(page.locator("#p1-state")).toHaveText(/準備OK|カウント|GO|判定中/, { timeout: 15_000 });
+  await expect(page.locator("#p1-state")).toHaveText(/準備OK|カウント|^[12]$|GO|判定中/, { timeout: 15_000 });
   await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
   await expect(page.locator("#p1-progress")).toHaveText("21 / 50");
+
+  await page.getByRole("button", { name: "中断", exact: true }).click();
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "結果JSONを保存" }).click();
@@ -602,7 +599,7 @@ test("compares multiple complete P1 sessions without declaring an automatic pass
   await expect(page.locator("#p1-comparison-body tr")).toHaveCount(0);
 });
 
-test("keeps the block buttons clear of the sticky heading at a rest in landscape and asks before a restart", async ({ page }) => {
+test("allows pausing at an automatic block transition and asks before a restart", async ({ page }) => {
   test.setTimeout(120_000);
   await disableAudio(page);
   await page.setViewportSize({ width: 844, height: 390 });
@@ -623,9 +620,8 @@ test("keeps the block buttons clear of the sticky heading at a rest in landscape
     panel.scrollTop = panel.scrollHeight;
   });
   await page.clock.fastForward(10_201);
-  await expect(page.locator("#p1-block")).toHaveAttribute("data-state", "rest");
-  await expectTopmost(page, "#p1-start-block");
-  expect(await page.locator("#p1-block-message").evaluate((element) => getComputedStyle(element).whiteSpace)).toBe("normal");
+  await expect(page.locator("#p1-state")).toContainText("次の動きまで");
+  await expectTopmost(page, "#p1-pause");
 
   // A reaction noticed during the rest belongs to the block that just ended.
   await page.locator("#p1-false-trigger").dispatchEvent("click");
@@ -633,6 +629,10 @@ test("keeps the block buttons clear of the sticky heading at a rest in landscape
     protocol: { falseTriggers: Array<{ gestureType: string }> };
   };
   expect(report.protocol.falseTriggers.map(({ gestureType }) => gestureType)).toEqual(["air-tap"]);
+
+  await page.getByRole("button", { name: "中断", exact: true }).click();
+  await page.clock.fastForward(3_000);
+  await expect(page.locator("#p1-state")).toHaveText("中断中");
 
   // Restarting discards the recorded trials, so it asks first.
   page.once("dialog", (dialog) => void dialog.dismiss());
@@ -664,7 +664,7 @@ test("pauses when the page is hidden, also between trials", async ({ page }) => 
     document.dispatchEvent(new Event("visibilitychange"));
     return state;
   });
-  expect(stateWhenHidden).toBe("未成立を記録");
+  expect(stateWhenHidden).toContain("次の動きまで");
   await expect(page.locator("#p1-block")).toHaveAttribute("data-state", "paused");
   await setVisibility(page, "visible");
   await expect(page.locator("#p1-state")).toHaveText("中断中");
@@ -672,12 +672,14 @@ test("pauses when the page is hidden, also between trials", async ({ page }) => 
   await page.getByRole("button", { name: "再開", exact: true }).click();
   await expect(page.locator("#p1-trial-number")).toHaveText("2 / 50");
 
+  await page.getByRole("button", { name: "中断", exact: true }).click();
   const report = await downloadJson(page, () => page.getByRole("button", { name: "結果JSONを保存" }).click()) as {
     protocol: { blocks: Array<{ pauses: Array<{ reason: string; abandonedTrialId: string | null }> }> };
   };
   expect(report.protocol.blocks[0]?.pauses).toEqual([
     expect.objectContaining({ reason: "page-hidden", abandonedTrialId: "air-tap-1" }),
     expect.objectContaining({ reason: "page-hidden", abandonedTrialId: null }),
+    expect.objectContaining({ reason: "manual", abandonedTrialId: "air-tap-2" }),
   ]);
 });
 
@@ -695,11 +697,13 @@ test("pauses when the camera stops and resumes only after the camera starts agai
   await page.getByRole("button", { name: "再開", exact: true }).click();
   await expect(page.locator("#p1-trial-number")).toHaveText("1 / 50");
 
+  await page.getByRole("button", { name: "中断", exact: true }).click();
   const report = await downloadJson(page, () => page.getByRole("button", { name: "結果JSONを保存" }).click()) as {
     protocol: { blocks: Array<{ pauses: Array<{ reason: string; abandonedTrialId: string | null }> }> };
   };
   expect(report.protocol.blocks[0]?.pauses).toEqual([
     expect.objectContaining({ reason: "camera-stopped", abandonedTrialId: "air-tap-1" }),
+    expect.objectContaining({ reason: "manual", abandonedTrialId: "air-tap-1" }),
   ]);
 });
 
@@ -747,7 +751,7 @@ test("runs a trial without a count-in while the audio clock is suspended and bri
   });
   await expect(page.locator("#p1-trial-number")).toHaveText("3 / 50");
   await expect.poll(() => page.evaluate(() => (window as unknown as { __p1States: string[] }).__p1States))
-    .toContain("カウント");
+    .toContain("2");
   await expect(page.locator("#p1-block-message")).not.toContainText("カウント音なし");
 });
 
@@ -767,15 +771,12 @@ test("schedules the Bloom count-in only after the start position settles", async
     await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal} / 50`);
     await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
     await expect(page.locator("#p1-progress")).toHaveText(`${ordinal} / 50`);
-    if (ordinal === 10) await page.getByRole("button", { name: "この動きを開始" }).click();
   }
-  await expect(page.getByRole("button", { name: "この動きを開始" })).toBeEnabled();
   const blockStartedAt = await page.evaluate(() => {
     (window as unknown as { __clickTimes: number[] }).__clickTimes.length = 0;
     return performance.now();
   });
-  await page.getByRole("button", { name: "この動きを開始" }).click();
-  await expect(page.locator("#p1-state")).toHaveText(/準備OK|カウント|GO|判定中/, { timeout: 15_000 });
+  await expect(page.locator("#p1-state")).toHaveText(/準備OK|カウント|^[12]$|GO|判定中/, { timeout: 15_000 });
   const clickTimes = await page.evaluate(() => (window as unknown as { __clickTimes: number[] }).__clickTimes);
 
   expect(clickTimes).toHaveLength(3);

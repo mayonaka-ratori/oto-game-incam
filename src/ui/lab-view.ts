@@ -226,6 +226,7 @@ export class LabView {
 }
 
 function configureTesterView(root: HTMLElement): void {
+  root.classList.add("tester-view");
   const hiddenSelectors = [
     ".overlay-controls",
     ".diagnostics-panel",
@@ -234,8 +235,6 @@ function configureTesterView(root: HTMLElement): void {
     "[data-p1-outcome]",
     ".p1-counters",
     ".p1-replay-block",
-    "#p1-export-replay",
-    "#p1-replay-export-status",
   ];
   for (const selector of hiddenSelectors) {
     for (const element of root.querySelectorAll<HTMLElement>(selector)) element.hidden = true;
@@ -260,6 +259,23 @@ function configureTesterView(root: HTMLElement): void {
     exportButton.classList.remove("button--quiet");
     exportButton.classList.add("button--primary");
   }
+  // Reuse the controller's elements, but keep the tester's task and clock together.
+  const panel = requiredElement(root, ".p1-trial-card", HTMLElement);
+  const cue = document.createElement("div");
+  cue.className = "tester-cue";
+  for (const id of ["p1-gesture", "p1-state", "p1-remaining"]) {
+    cue.append(requiredElement(root, `#${id}`, HTMLElement));
+  }
+  panel.prepend(cue);
+  const actions = requiredElement(root, ".p1-trial-actions", HTMLElement);
+  for (const id of ["p1-pause", "p1-resume", "p1-false-trigger"]) {
+    actions.append(requiredElement(root, `#${id}`, HTMLElement));
+  }
+  requiredElement(root, "#p1-export-replay", HTMLElement).textContent = "詳しい診断データを保存";
+  const note = document.createElement("p");
+  note.className = "tester-save-note";
+  note.textContent = "原因を調べるため、両方を保存してください。診断データは手の位置の記録です。映像・音声は含みません。";
+  requiredElement(root, ".p1-export-block", HTMLElement).prepend(note);
 }
 
 function readOverlayLayers(inputs: readonly HTMLInputElement[]): OverlayLayers {

@@ -86,7 +86,7 @@ export interface P1BlockDefinition {
   readonly firstOrdinal: number;
   readonly lastOrdinal: number;
   readonly trialCount: number;
-  /** extended: an explicit rest screen follows this block. */
+  /** Older exports used standard/extended; new sessions advance without mandatory rest. */
   readonly restAfter: "standard" | "extended" | "none";
 }
 
@@ -633,18 +633,11 @@ function deriveBlocks(trials: readonly P1TrialDefinition[]): readonly P1BlockDef
       firstOrdinal: first.ordinal,
       lastOrdinal: previous.ordinal,
       trialCount: index - start,
-      restAfter: "standard",
+      restAfter: "none",
     });
     start = index;
   }
-  return blocks.map((block, position) => ({
-    ...block,
-    restAfter: position === blocks.length - 1
-      ? "none"
-      : block.gesture === "ribbon-swipe" || block.gesture === "lift"
-        ? "extended"
-        : "standard",
-  }));
+  return blocks;
 }
 
 function isProtocolDefinition(

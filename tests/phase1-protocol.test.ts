@@ -32,10 +32,10 @@ describe("P1 controlled protocol", () => {
     expect(P1_FIVE_GESTURE_PROTOCOL.blocks.map(({ gesture, firstOrdinal, lastOrdinal, restAfter }) => (
       { gesture, firstOrdinal, lastOrdinal, restAfter }
     ))).toEqual([
-      { gesture: "air-tap", firstOrdinal: 1, lastOrdinal: 10, restAfter: "standard" },
-      { gesture: "ribbon-swipe", firstOrdinal: 11, lastOrdinal: 20, restAfter: "extended" },
-      { gesture: "bloom", firstOrdinal: 21, lastOrdinal: 30, restAfter: "standard" },
-      { gesture: "lift", firstOrdinal: 31, lastOrdinal: 40, restAfter: "extended" },
+      { gesture: "air-tap", firstOrdinal: 1, lastOrdinal: 10, restAfter: "none" },
+      { gesture: "ribbon-swipe", firstOrdinal: 11, lastOrdinal: 20, restAfter: "none" },
+      { gesture: "bloom", firstOrdinal: 21, lastOrdinal: 30, restAfter: "none" },
+      { gesture: "lift", firstOrdinal: 31, lastOrdinal: 40, restAfter: "none" },
       { gesture: "spotlight", firstOrdinal: 41, lastOrdinal: 50, restAfter: "none" },
     ]);
     expect(P1_CONTROLLED_TRIALS.filter(({ requiresReadiness }) => requiresReadiness === true).map(({ gesture }) => gesture))
