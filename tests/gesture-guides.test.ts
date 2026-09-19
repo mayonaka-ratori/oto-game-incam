@@ -8,13 +8,21 @@ import {
   RibbonSwipeStateMachine,
 } from "../src/gestures/ribbon-swipe-state-machine";
 import { SPOTLIGHT_DEFAULTS, SpotlightStateMachine } from "../src/gestures/spotlight-state-machine";
-import { createBloomGuideGeometry } from "../src/rendering/bloom-guide";
+import {
+  BLOOM_GUIDE_BOTTOM_MARGIN,
+  BLOOM_GUIDE_START_Y,
+  BLOOM_PREPARATION_CENTER,
+  createBloomGuideGeometry,
+  isBloomPreparationPose,
+} from "../src/rendering/bloom-guide";
 import {
   AIR_TAP_APPROACH_MARGIN,
   AIR_TAP_TRIAL_CENTER,
+  GUIDE_CIRCLE_SCALE,
   GUIDE_FRAME_MAXIMUM,
   GUIDE_FRAME_MINIMUM,
   GUIDE_TARGET_MARGIN,
+  anchorGuidePaths,
   createGestureGuide,
   guideDotPosition,
   guideDotProgress,
@@ -44,6 +52,10 @@ function guideOf(definition: Omit<P1TrialDefinition, "ordinal" | "id"> & { id?: 
 
 function pointAt(path: { start: GuidePoint; end: GuidePoint }, ratio: number): GuidePoint {
   return guideDotPosition(path, ratio);
+}
+
+function distance(first: GuidePoint, second: GuidePoint): number {
+  return Math.hypot(first.x - second.x, first.y - second.y);
 }
 
 describe("guide geometry follows the judgment constants", () => {
@@ -130,6 +142,17 @@ describe("guide geometry follows the judgment constants", () => {
     }
   });
 
+  it("waits for the Bloom hands low in the judged zone, not at its middle", () => {
+    const guide = guideOf({ gesture: "bloom", requiresReadiness: true, instruction: "" });
+    const lowestAcceptedMidpointY = BLOOM_PREPARATION_CENTER.y + BLOOM_DEFAULTS.preparationCenterToleranceY;
+    expect(BLOOM_GUIDE_START_Y).toBeCloseTo(lowestAcceptedMidpointY - BLOOM_GUIDE_BOTTOM_MARGIN, 10);
+    expect(BLOOM_GUIDE_START_Y).toBeGreaterThan(BLOOM_PREPARATION_CENTER.y);
+    for (const path of guide.paths) expect(path.start.y).toBeCloseTo(BLOOM_GUIDE_START_Y, 10);
+    const [left, right] = guide.paths;
+    // Lower, but still a pose the unchanged judgment arms from.
+    expect(isBloomPreparationPose(left!.start, right!.start)).toBe(true);
+  });
+
   it("lets the dot finish in half of the movement limit or less", () => {
     expect(guideOf({ gesture: "bloom", requiresReadiness: true, instruction: "" }).travelMs * 2)
       .toBeLessThanOrEqual(BLOOM_DEFAULTS.maximumDurationMs);
@@ -137,6 +160,78 @@ describe("guide geometry follows the judgment constants", () => {
       .toBeLessThanOrEqual(LIFT_DEFAULTS.maximumDurationMs);
     expect(guideOf({ gesture: "ribbon-swipe", swipeDirection: "left-to-right", instruction: "" }).travelMs * 2)
       .toBeLessThanOrEqual(RIBBON_SWIPE_DEFAULTS.maximumDurationMs);
+  });
+});
+
+describe("the marks are large enough to aim at and do not run into each other", () => {
+  const twoHanded: Array<Omit<P1TrialDefinition, "ordinal" | "id">> = [
+    { gesture: "bloom", requiresReadiness: true, instruction: "" },
+    { gesture: "lift", requiresReadiness: true, instruction: "" },
+  ];
+
+  it("draws the circles larger than the sizes they were derived from", () => {
+    const guide = guideOf({ gesture: "bloom", requiresReadiness: true, instruction: "" });
+    expect(GUIDE_CIRCLE_SCALE).toBeGreaterThan(1);
+    expect(guide.startRadius).toBeCloseTo(0.045 * GUIDE_CIRCLE_SCALE, 10);
+    expect(guide.endRadius).toBeCloseTo(0.055 * GUIDE_CIRCLE_SCALE, 10);
+  });
+
+  it("keeps the two start circles and the two end rings apart", () => {
+    for (const definition of twoHanded) {
+      const guide = guideOf(definition);
+      const [left, right] = guide.paths;
+      expect(distance(left!.start, right!.start), definition.gesture)
+        .toBeGreaterThan(guide.startRadius * 2);
+      expect(distance(left!.end, right!.end), definition.gesture)
+        .toBeGreaterThan(guide.endRadius * 2);
+    }
+  });
+
+  it("keeps each start circle clear of its own end ring", () => {
+    for (const definition of twoHanded) {
+      const guide = guideOf(definition);
+      for (const path of guide.paths) {
+        expect(distance(path.start, path.end), definition.gesture)
+          .toBeGreaterThan(guide.startRadius + guide.endRadius);
+      }
+    }
+  });
+});
+
+describe("the guide follows the hands once the start position is confirmed", () => {
+  it("moves each path to where its hand settled and keeps its direction and length", () => {
+    const guide = guideOf({ gesture: "bloom", requiresReadiness: true, instruction: "" });
+    const anchors = [{ x: 0.33, y: 0.7 }, { x: 0.6, y: 0.62 }];
+    const anchored = anchorGuidePaths(guide, anchors);
+
+    anchored.paths.forEach((path, index) => {
+      const original = guide.paths[index]!;
+      expect(path.start).toEqual(anchors[index]);
+      expect(path.end.x - path.start.x).toBeCloseTo(original.end.x - original.start.x, 10);
+      expect(path.end.y - path.start.y).toBeCloseTo(original.end.y - original.start.y, 10);
+    });
+  });
+
+  it("leaves the guide alone when the number of settled hands does not match", () => {
+    const guide = guideOf({ gesture: "bloom", requiresReadiness: true, instruction: "" });
+    expect(anchorGuidePaths(guide, [])).toBe(guide);
+    expect(anchorGuidePaths(guide, [{ x: 0.4, y: 0.7 }])).toBe(guide);
+  });
+
+  it("asks for a movement the unchanged judgment still accepts from the settled position", () => {
+    const guide = guideOf({ gesture: "bloom", requiresReadiness: true, instruction: "" });
+    const anchored = anchorGuidePaths(guide, [{ x: 0.34, y: 0.7 }, { x: 0.62, y: 0.68 }]);
+    const machine = new BloomStateMachine();
+    const [left, right] = anchored.paths;
+    const events = runPair(
+      (ratio) => [pointAt(left!, ratio), pointAt(right!, ratio)],
+      anchored.travelMs,
+      (timeMs, points) => machine.process(trackedFrame(timeMs, [
+        trackedHand("left-hand", points[0]!.x, points[0]!.y, {}, "left"),
+        trackedHand("right-hand", points[1]!.x, points[1]!.y, {}, "right"),
+      ])).events,
+    );
+    expect(events.map(({ gestureType }) => gestureType)).toContain("bloom");
   });
 });
 

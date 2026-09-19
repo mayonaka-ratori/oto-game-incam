@@ -29,23 +29,65 @@ interface TrackState {
 }
 
 export interface HandFeaturePipelineOptions {
+  /** Lower bound of the tracking gap tolerance. The measured frame rate can only raise it. */
   readonly missingGraceMs?: number;
   readonly maximumAssignmentDistance?: number;
+}
+
+/** Floor of the tolerance, and the value used until enough intervals have been measured. */
+export const TRACKING_GAP_TOLERANCE_MINIMUM_MS = 150;
+/** Ceiling of the tolerance. A hand unseen this long is gone, however slow the device is. */
+export const TRACKING_GAP_TOLERANCE_MAXIMUM_MS = 400;
+/** A gap of up to this many frame intervals is the device being slow, not the hand leaving. */
+export const TRACKING_GAP_INTERVAL_MULTIPLIER = 2.5;
+/** How many recent intervals the median is taken over. About 1.5s at ten frames a second. */
+export const TRACKING_INTERVAL_SAMPLE_LIMIT = 15;
+/** Below this many samples the frame rate is not known yet, so the minimum is used. */
+export const TRACKING_INTERVAL_MINIMUM_SAMPLES = 5;
+/**
+ * A hidden page, a paused camera or a resumed session leaves one huge interval. It says
+ * nothing about the frame rate, so it never enters the median.
+ */
+export const TRACKING_INTERVAL_MAXIMUM_SAMPLE_MS = 1_000;
+
+/**
+ * How long a hand may stay unseen before it is treated as lost, from the recent frame intervals.
+ * At 33ms intervals (thirty frames a second) 2.5 intervals is 83ms, so the result stays at the
+ * 150ms minimum and nothing changes. At 99ms intervals it becomes about 248ms, so a single slow
+ * frame no longer looks like a lost hand. Pure function of the intervals and the floor.
+ */
+export function trackingGapToleranceMs(
+  intervalsMs: readonly number[],
+  minimumMs: number = TRACKING_GAP_TOLERANCE_MINIMUM_MS,
+): number {
+  if (intervalsMs.length < TRACKING_INTERVAL_MINIMUM_SAMPLES) return minimumMs;
+  const sorted = [...intervalsMs].sort((left, right) => left - right);
+  const middle = sorted.length / 2;
+  const median = sorted.length % 2 === 1
+    ? sorted[(sorted.length - 1) / 2]!
+    : (sorted[middle - 1]! + sorted[middle]!) / 2;
+  const measured = Math.min(TRACKING_GAP_TOLERANCE_MAXIMUM_MS, median * TRACKING_GAP_INTERVAL_MULTIPLIER);
+  return Math.max(minimumMs, measured);
 }
 
 export class HandFeaturePipeline {
   readonly #tracks = new Map<string, TrackState>();
   readonly #missingGraceMs: number;
   readonly #maximumAssignmentDistance: number;
+  /** Newest last, at most TRACKING_INTERVAL_SAMPLE_LIMIT entries. Capture times only. */
+  readonly #frameIntervalsMs: number[] = [];
+  #lastCaptureTimeMs: number | null = null;
   #nextTrackId = 1;
 
   constructor(options: HandFeaturePipelineOptions = {}) {
-    this.#missingGraceMs = options.missingGraceMs ?? 150;
+    this.#missingGraceMs = options.missingGraceMs ?? TRACKING_GAP_TOLERANCE_MINIMUM_MS;
     this.#maximumAssignmentDistance = options.maximumAssignmentDistance ?? 0.55;
   }
 
   process(frame: HandTrackingFrame): TrackedHandFrame {
-    this.#expireTracks(frame.captureTimeMs);
+    this.#recordFrameInterval(frame.captureTimeMs);
+    const toleranceMs = this.trackingGapToleranceMs;
+    this.#expireTracks(frame.captureTimeMs, toleranceMs);
     const observations = frame.hands.map(observe).filter((value): value is Observation => value !== null).slice(0, 2);
     const assignments = this.#assign(observations, frame.captureTimeMs);
     const hands = assignments.map(({ observation, track, isNew }) =>
@@ -59,12 +101,31 @@ export class HandFeaturePipeline {
       captureTimeMs: frame.captureTimeMs,
       hands,
       identityConflictCount: hands.filter((hand) => hand.identityReason === "handedness-conflict").length,
+      trackingGapToleranceMs: toleranceMs,
     };
+  }
+
+  /** The tolerance the next frame would use, for a screen that wants to record it. */
+  get trackingGapToleranceMs(): number {
+    return trackingGapToleranceMs(this.#frameIntervalsMs, this.#missingGraceMs);
   }
 
   reset(): void {
     this.#tracks.clear();
+    this.#frameIntervalsMs.length = 0;
+    this.#lastCaptureTimeMs = null;
     this.#nextTrackId = 1;
+  }
+
+  /** Capture times only: the tolerance must never depend on drawn frames or on the wall clock. */
+  #recordFrameInterval(captureTimeMs: number): void {
+    const previous = this.#lastCaptureTimeMs;
+    this.#lastCaptureTimeMs = captureTimeMs;
+    if (previous === null) return;
+    const intervalMs = captureTimeMs - previous;
+    if (intervalMs <= 0 || intervalMs > TRACKING_INTERVAL_MAXIMUM_SAMPLE_MS) return;
+    this.#frameIntervalsMs.push(intervalMs);
+    if (this.#frameIntervalsMs.length > TRACKING_INTERVAL_SAMPLE_LIMIT) this.#frameIntervalsMs.shift();
   }
 
   #assign(
@@ -143,9 +204,9 @@ export class HandFeaturePipeline {
     };
   }
 
-  #expireTracks(nowMs: number): void {
+  #expireTracks(nowMs: number, toleranceMs: number): void {
     for (const [id, track] of this.#tracks) {
-      if (nowMs - track.lastSeenMs > this.#missingGraceMs) this.#tracks.delete(id);
+      if (nowMs - track.lastSeenMs > toleranceMs) this.#tracks.delete(id);
     }
   }
 }

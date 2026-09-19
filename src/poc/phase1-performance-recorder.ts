@@ -65,6 +65,17 @@ export class Phase1PerformanceRecorder {
     }
   }
 
+  /**
+   * Records the tracking gap tolerance the judgment used for one frame, so the saved result says
+   * how long a hand could stay unseen on this device. Nothing here feeds the judgment.
+   */
+  addTrackingGapTolerance(toleranceMs: number): void {
+    this.#session?.addTrackingGapTolerance(toleranceMs);
+    for (const block of this.#blocks) {
+      if (!block.accumulator.closed) block.accumulator.addTrackingGapTolerance(toleranceMs);
+    }
+  }
+
   /** Opens a block scope once the block has started and closes it once the block has finished. */
   syncBlocks(protocol: P1RunnerSnapshot): void {
     if (this.#session === null) return;

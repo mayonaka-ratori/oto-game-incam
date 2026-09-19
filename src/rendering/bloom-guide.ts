@@ -6,6 +6,18 @@ import { BLOOM_DEFAULTS } from "../gestures/bloom-state-machine";
  */
 export const BLOOM_PREPARATION_CENTER = { x: 0.5, y: 0.5 } as const;
 
+/**
+ * How far above the lowest accepted midpoint the guide puts the waiting hands. Holding the arms
+ * at the middle of the image tires them out, and testers let them sink before GO (docs/19 の3.2).
+ * The judgment zone is unchanged; only the circle the guide draws moves down inside it.
+ */
+export const BLOOM_GUIDE_BOTTOM_MARGIN = 0.09;
+
+/** Where the guide asks the hands to wait: inside the judgment zone, near its lower edge. */
+export const BLOOM_GUIDE_START_Y = BLOOM_PREPARATION_CENTER.y
+  + BLOOM_DEFAULTS.preparationCenterToleranceY
+  - BLOOM_GUIDE_BOTTOM_MARGIN;
+
 export interface BloomGuidePoint {
   readonly x: number;
   readonly y: number;
@@ -23,6 +35,8 @@ export interface BloomGuideGeometry {
   readonly spanRange: { readonly minimum: number; readonly maximum: number };
   /** Middle of the accepted span: the distance the guide asks the player for. */
   readonly targetSpan: number;
+  /** Height of both waiting circles. Inside the zone, but low enough to rest the arms. */
+  readonly startY: number;
   readonly leftTarget: BloomGuidePoint;
   readonly rightTarget: BloomGuidePoint;
 }
@@ -44,8 +58,9 @@ export function createBloomGuideGeometry(): BloomGuideGeometry {
     },
     spanRange: { minimum, maximum },
     targetSpan,
-    leftTarget: { x: BLOOM_PREPARATION_CENTER.x - targetSpan / 2, y: BLOOM_PREPARATION_CENTER.y },
-    rightTarget: { x: BLOOM_PREPARATION_CENTER.x + targetSpan / 2, y: BLOOM_PREPARATION_CENTER.y },
+    startY: BLOOM_GUIDE_START_Y,
+    leftTarget: { x: BLOOM_PREPARATION_CENTER.x - targetSpan / 2, y: BLOOM_GUIDE_START_Y },
+    rightTarget: { x: BLOOM_PREPARATION_CENTER.x + targetSpan / 2, y: BLOOM_GUIDE_START_Y },
   };
 }
 

@@ -1,6 +1,7 @@
 import type { TrackedHandFeatures, TrackedHandFrame } from "../tracking/derived-tracking-types";
 import {
   createGestureEventId,
+  resolveTrackingGapToleranceMs,
   type GestureEvaluation,
   type GestureEvent,
   type GestureReadinessObservation,
@@ -120,6 +121,7 @@ export const LIFT_DEFAULTS: Required<LiftConfig> = {
   downwardTolerance: 0.03,
   maximumSyncWindowMs: 420,
   maximumDurationMs: 1_400,
+  /** Floor of the tracking gap tolerance; a slow device raises it through the frame. */
   maximumTrackingGapMs: 150,
   cooldownMs: 280,
 };
@@ -145,9 +147,12 @@ export class LiftStateMachine {
   #latestTrackingGap: Mutable<TrackingGapDiagnostic> | null = null;
   #rejectionReasonCodes: GestureReasonCode[] = [];
   #identitySwapCount = 0;
+  /** Tolerance of the latest judged frame, so the diagnostic reads the gap the same way. */
+  #trackingGapToleranceMs: number;
 
   constructor(config: LiftConfig = {}) {
     this.#config = { ...LIFT_DEFAULTS, ...config };
+    this.#trackingGapToleranceMs = this.#config.maximumTrackingGapMs;
     this.#readiness = new ReadinessGate({
       requiredStableMs: this.#config.readinessStableMs,
       maximumDriftDistance: this.#config.readinessMaximumDrift,
@@ -177,6 +182,8 @@ export class LiftStateMachine {
     const events: GestureEvent[] = [];
     const rejections: GestureRejection[] = [];
     this.#recordObservation(frame);
+    const toleranceMs = resolveTrackingGapToleranceMs(frame, this.#config.maximumTrackingGapMs);
+    this.#trackingGapToleranceMs = toleranceMs;
 
     if (this.#candidate === null) {
       this.#closeTrackingGap(frame);
@@ -189,7 +196,7 @@ export class LiftStateMachine {
     let left = visible.get(candidate.leftId);
     let right = visible.get(candidate.rightId);
     if (left === undefined || right === undefined) {
-      if (frame.captureTimeMs - candidate.lastTimeMs <= this.#config.maximumTrackingGapMs) {
+      if (frame.captureTimeMs - candidate.lastTimeMs <= toleranceMs) {
         if (!candidate.gap) {
           candidate.gap = true;
           this.#latestTrackingGap = {
@@ -206,7 +213,7 @@ export class LiftStateMachine {
     }
 
     if (candidate.gap) {
-      if (frame.captureTimeMs - candidate.lastTimeMs > this.#config.maximumTrackingGapMs) {
+      if (frame.captureTimeMs - candidate.lastTimeMs > toleranceMs) {
         this.#reject(candidate, frame.captureTimeMs, "tracking-lost", rejections);
         return { frame, events, rejections };
       }
@@ -326,6 +333,7 @@ export class LiftStateMachine {
     this.#latestTrackingGap = null;
     this.#rejectionReasonCodes = [];
     this.#identitySwapCount = 0;
+    this.#trackingGapToleranceMs = this.#config.maximumTrackingGapMs;
     this.#readiness.reset();
   }
 
@@ -347,7 +355,7 @@ export class LiftStateMachine {
     const reasons = [...this.#rejectionReasonCodes];
     if (latestTrackingGap !== null
       && latestTrackingGap.reacquiredAtMs === null
-      && (latestTrackingGap.durationMs ?? 0) > this.#config.maximumTrackingGapMs
+      && (latestTrackingGap.durationMs ?? 0) > this.#trackingGapToleranceMs
       && !reasons.includes("tracking-lost")) {
       reasons.push("tracking-lost");
     }

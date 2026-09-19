@@ -48,6 +48,16 @@ export interface LongTaskSummary {
   readonly longest: readonly LongTaskRecord[];
 }
 
+/**
+ * v7 addition: the tracking gap tolerance the judgment used while the scope was open, from the
+ * smallest to the largest value the tracker measured. Null when nothing was recorded, which is
+ * how every session saved before this field reads. Display and analysis only.
+ */
+export interface TrackingGapToleranceRange {
+  readonly min: number;
+  readonly max: number;
+}
+
 export interface PerformanceScopeSummary {
   readonly startedAtMs: number;
   readonly endedAtMs: number;
@@ -70,6 +80,8 @@ export interface PerformanceScopeSummary {
   readonly scheduler: SchedulerDeltaSummary | null;
   readonly longTask: LongTaskSummary;
   readonly usedJsHeapSizeAtEndBytes: number | null;
+  /** v7 addition. See TrackingGapToleranceRange. */
+  readonly trackingGapToleranceMs: TrackingGapToleranceRange | null;
 }
 
 export function emptyScopeCounters(): PerformanceScopeCounters {
@@ -97,6 +109,8 @@ export class PerformanceScopeAccumulator {
   #longTaskCount = 0;
   #longTaskTotalMs = 0;
   #longTaskMaxMs = 0;
+  #gapToleranceMinMs: number | null = null;
+  #gapToleranceMaxMs: number | null = null;
   /** At most LONG_TASK_RECORD_LIMIT entries, sorted longest first. */
   readonly #longestTasks: LongTaskRecord[] = [];
 
@@ -116,6 +130,17 @@ export class PerformanceScopeAccumulator {
     this.#frameAge.add(frame.inferenceCompletedTimeMs - frame.captureTimeMs);
     this.#callbackToWorker.add(frame.workerReceivedTimeMs - frame.callbackTimeMs);
     this.#workerWait.add(frame.inferenceStartedTimeMs - frame.workerReceivedTimeMs);
+  }
+
+  /** Records the tracking gap tolerance of one judged frame. Nothing here feeds the judgment. */
+  addTrackingGapTolerance(toleranceMs: number): void {
+    if (this.#endedAtMs !== null || !Number.isFinite(toleranceMs)) return;
+    this.#gapToleranceMinMs = this.#gapToleranceMinMs === null
+      ? toleranceMs
+      : Math.min(this.#gapToleranceMinMs, toleranceMs);
+    this.#gapToleranceMaxMs = this.#gapToleranceMaxMs === null
+      ? toleranceMs
+      : Math.max(this.#gapToleranceMaxMs, toleranceMs);
   }
 
   addLongTask(durationMs: number, record: LongTaskRecord | null = null): void {
@@ -199,6 +224,9 @@ export class PerformanceScopeAccumulator {
         }
         : { supported: false, count: null, totalMs: null, maxMs: null, longest: [] },
       usedJsHeapSizeAtEndBytes: end.usedJsHeapSizeBytes,
+      trackingGapToleranceMs: this.#gapToleranceMinMs === null || this.#gapToleranceMaxMs === null
+        ? null
+        : { min: this.#gapToleranceMinMs, max: this.#gapToleranceMaxMs },
     };
   }
 }

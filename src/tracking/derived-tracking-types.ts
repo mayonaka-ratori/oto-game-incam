@@ -32,4 +32,12 @@ export interface TrackedHandFrame {
   readonly captureTimeMs: number;
   readonly hands: readonly TrackedHandFeatures[];
   readonly identityConflictCount: number;
+  /**
+   * How long a hand may stay unseen before the judgment treats it as lost, measured by the
+   * tracker from the recent frame intervals (`HandFeaturePipeline`). A phone that reports
+   * hands ten times a second needs a longer tolerance than one that reports thirty times.
+   * Absent on synthetic frames and on frames rebuilt without the tracker, where each state
+   * machine keeps its own configured value.
+   */
+  readonly trackingGapToleranceMs?: number;
 }

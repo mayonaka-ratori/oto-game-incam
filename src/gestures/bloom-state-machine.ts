@@ -1,6 +1,7 @@
 import type { TrackedHandFeatures, TrackedHandFrame } from "../tracking/derived-tracking-types";
 import {
   createGestureEventId,
+  resolveTrackingGapToleranceMs,
   type GestureEvaluation,
   type GestureEvent,
   type GestureReadinessObservation,
@@ -127,6 +128,7 @@ export const BLOOM_DEFAULTS = {
   minimumOutwardSpeed: 0.12,
   maximumSyncWindowMs: 420,
   maximumDurationMs: 1_400,
+  /** Floor of the tracking gap tolerance; a slow device raises it through the frame. */
   maximumTrackingGapMs: 150,
   cooldownMs: 280,
   readinessStableMs: 200,
@@ -154,12 +156,15 @@ export class BloomStateMachine {
   #latestTrackingGap: MutableBloomTrackingGapDiagnostic | null = null;
   #rejectionReasonCodes: GestureReasonCode[] = [];
   #identitySwapCount = 0;
+  /** Tolerance of the latest judged frame, so the diagnostic reads the gap the same way. */
+  #trackingGapToleranceMs: number = BLOOM_DEFAULTS.maximumTrackingGapMs;
   readonly #readiness: ReadinessGate;
   readonly #armSettle: StillnessWindow;
   readonly #waitSettle: StillnessWindow;
 
   constructor(config: BloomConfig = {}) {
     this.#config = { ...BLOOM_DEFAULTS, ...config };
+    this.#trackingGapToleranceMs = this.#config.maximumTrackingGapMs;
     this.#readiness = new ReadinessGate({
       requiredStableMs: this.#config.readinessStableMs,
       maximumDriftDistance: this.#config.readinessMaximumDrift,
@@ -191,6 +196,8 @@ export class BloomStateMachine {
     const events: GestureEvent[] = [];
     const rejections: GestureRejection[] = [];
     this.#recordObservation(frame);
+    const toleranceMs = resolveTrackingGapToleranceMs(frame, this.#config.maximumTrackingGapMs);
+    this.#trackingGapToleranceMs = toleranceMs;
 
     if (this.#candidate === null) {
       this.#closeTrackingGap(frame);
@@ -204,7 +211,7 @@ export class BloomStateMachine {
     let right = visible.get(candidate.rightId);
     if (left === undefined || right === undefined) {
       const elapsed = frame.captureTimeMs - candidate.lastTimeMs;
-      if (elapsed <= this.#config.maximumTrackingGapMs) {
+      if (elapsed <= toleranceMs) {
         candidate.phase = "gap";
         if (candidate.latestGapStartedAtMs === null) {
           candidate.latestGapStartedAtMs = frame.captureTimeMs;
@@ -223,7 +230,7 @@ export class BloomStateMachine {
 
     if (candidate.phase === "gap") {
       const gapMs = frame.captureTimeMs - candidate.lastTimeMs;
-      if (gapMs > this.#config.maximumTrackingGapMs) {
+      if (gapMs > toleranceMs) {
         this.#reject(candidate, frame.captureTimeMs, "tracking-lost", rejections);
         return { frame, events, rejections };
       }
@@ -397,6 +404,7 @@ export class BloomStateMachine {
     this.#latestTrackingGap = null;
     this.#rejectionReasonCodes = [];
     this.#identitySwapCount = 0;
+    this.#trackingGapToleranceMs = this.#config.maximumTrackingGapMs;
     this.#readiness.reset();
   }
 
@@ -421,7 +429,7 @@ export class BloomStateMachine {
     const reasons = [...this.#rejectionReasonCodes];
     if (latestTrackingGap !== null
       && latestTrackingGap.reacquiredAtMs === null
-      && (latestTrackingGap.durationMs ?? 0) > this.#config.maximumTrackingGapMs
+      && (latestTrackingGap.durationMs ?? 0) > this.#trackingGapToleranceMs
       && !reasons.includes("tracking-lost")) {
       reasons.push("tracking-lost");
     }

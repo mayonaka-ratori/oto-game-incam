@@ -121,6 +121,8 @@ export class Phase1LabController {
   #cueTiming: StageCueTiming | null = null;
   #cueRafId: number | null = null;
   #cueText = "";
+  /** Where the hands settled for the attempt on screen, screen-left first. Null until confirmed. */
+  #guideAnchors: readonly { readonly x: number; readonly y: number }[] | null = null;
   #saving = false;
   #savedFileNames: readonly string[] = [];
 
@@ -177,6 +179,8 @@ export class Phase1LabController {
     this.#performance.syncBlocks(previous.protocol);
     this.#performance.addResult(frame);
     let snapshot = this.#engine.processFrame(frame);
+    const toleranceMs = snapshot.latestTrackedFrame?.trackingGapToleranceMs;
+    if (toleranceMs !== undefined) this.#performance.addTrackingGapTolerance(toleranceMs);
     if (snapshot.protocol.completed > before) {
       this.#handleTrialFinished(snapshot);
       snapshot = this.#engine.snapshot;
@@ -331,6 +335,7 @@ export class Phase1LabController {
     this.#savedFileNames = [];
     this.#goodUntilMs = Number.NEGATIVE_INFINITY;
     this.#tapStart = null;
+    this.#guideAnchors = null;
     this.#options.onGuideChange(null);
     requiredElement(this.#root, "#p1-session-id").textContent = sessionId;
     requiredElement(this.#root, "#p1-export-status").textContent = "";
@@ -426,6 +431,7 @@ export class Phase1LabController {
     const targetTimeMs = protocol.nextTrial?.requiresReadiness === true ? null : this.#scheduleTarget();
     const trial = this.#engine.beginNextTrial(targetTimeMs, preparedAtMs);
     if (trial !== null) this.#engine.recordTrialEnvironment(this.#trialEnvironment(preparedAtMs));
+    this.#guideAnchors = null;
     this.#pushGuide();
     this.#scheduleDeadline();
     this.#render();
@@ -441,7 +447,9 @@ export class Phase1LabController {
     if (active === null) {
       this.#cueTiming = null;
       const next = this.#sessionStarted || this.#tapStart !== null ? protocol.nextTrial : null;
-      this.#options.onGuideChange(next === null ? null : { trial: next, goTimeMs: null, phase: "preview" });
+      this.#options.onGuideChange(
+        next === null ? null : { trial: next, goTimeMs: null, phase: "preview", anchors: null },
+      );
       return;
     }
     const timing = protocol.activeTiming;
@@ -452,7 +460,31 @@ export class Phase1LabController {
       trial: active,
       goTimeMs: timing === null ? null : timing.targetTimeMs ?? timing.windowOpenedAtMs,
       phase: timing === null ? "readiness" : "recognition",
+      anchors: this.#guideAnchors,
     });
+  }
+
+  /**
+   * Remembers where the hands really settled, so the path and the end rings are drawn from there.
+   * The state machine measures the gesture from the same positions, which is what makes the guide
+   * and the judgment agree (docs/19 の4.3). Falls back to the palm centers of the latest tracked
+   * frame when the start-position check did not report positions.
+   */
+  #captureGuideAnchors(): void {
+    const snapshot = this.#engine.snapshot;
+    const settled = snapshot.readiness?.settledPositions ?? [];
+    const positions = settled.length > 0
+      ? settled
+      : (snapshot.latestTrackedFrame?.hands ?? []).map(({ palmCenter }) => palmCenter);
+    if (positions.length < 2) {
+      this.#guideAnchors = null;
+      return;
+    }
+    // Screen-left hand first, matching the order of the guide paths.
+    this.#guideAnchors = [...positions]
+      .sort((left, right) => left.x - right.x)
+      .slice(0, 2)
+      .map(({ x, y }) => ({ x, y }));
   }
 
   /** Orientation and video size decide how the guide maps to the camera image, so each attempt records them. */
@@ -471,11 +503,15 @@ export class Phase1LabController {
   }
 
   #startRecognition(): void {
+    // Read before the recognition window opens, while the start-position check still holds
+    // the positions the hands settled at.
+    this.#captureGuideAnchors();
     const targetTimeMs = this.#scheduleTarget();
     if (this.#engine.startRecognition(targetTimeMs)) {
       this.#scheduleDeadline();
       this.#pushGuide();
     } else {
+      this.#guideAnchors = null;
       this.#cancelCountIn();
     }
   }
@@ -541,6 +577,7 @@ export class Phase1LabController {
       this.#tapStart = null;
       this.#cueTiming = null;
       this.#goodUntilMs = Number.NEGATIVE_INFINITY;
+      this.#guideAnchors = null;
       this.#options.onGuideChange(null);
       this.#revealBlockOnRender = true;
       // No trial is running while paused, so the screen may sleep again until "再開".
@@ -553,6 +590,8 @@ export class Phase1LabController {
     this.#clearDeadlineTimer();
     this.#cancelCountIn();
     this.#cueTiming = null;
+    // The next attempt has its own start position; the guide goes back to the drawn circles.
+    this.#guideAnchors = null;
     const protocol = snapshot.protocol;
     // A trial that succeeded says so over the camera image; a timeout shows nothing and moves on.
     if (protocol.results.at(-1)?.outcome === "success") this.#goodUntilMs = performance.now() + GOOD_DISPLAY_MS;

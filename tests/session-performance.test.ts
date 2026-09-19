@@ -163,6 +163,18 @@ describe("PerformanceScopeAccumulator", () => {
     ]);
   });
 
+  it("records the range of tracking gap tolerances the judgment used", () => {
+    const accumulator = new PerformanceScopeAccumulator(0, counters(0, 0, 0));
+    expect(accumulator.summary(100, counters(0, 0, 0), false).trackingGapToleranceMs).toBeNull();
+
+    for (const toleranceMs of [150, 250, 197.5, 400]) accumulator.addTrackingGapTolerance(toleranceMs);
+    accumulator.close(500, counters(0, 0, 0));
+    accumulator.addTrackingGapTolerance(1_000);
+
+    expect(accumulator.summary(900, counters(0, 0, 0), false).trackingGapToleranceMs)
+      .toEqual({ min: 150, max: 400 });
+  });
+
   it("summarizes a still-open scope up to now and ignores later results", () => {
     const accumulator = new PerformanceScopeAccumulator(0, counters(0, 0, 0));
     accumulator.addResult(frame(1, 0, 10, 2), 0);

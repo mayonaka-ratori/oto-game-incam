@@ -91,6 +91,23 @@ export interface GestureReadinessObservation {
   readonly ready: boolean;
   readonly readyAtMs: number | null;
   readonly handIds: readonly string[];
+  /**
+   * Where the hands settled, in the same order as handIds. The judgment measures the gesture
+   * from these positions, so the on-camera guide can draw its path from them. Empty while no
+   * hands are in the start position.
+   */
+  readonly settledPositions: readonly { readonly x: number; readonly y: number }[];
+}
+
+/**
+ * How long the judgment lets a hand stay unseen on this frame: the larger of the state machine's
+ * own configured value and the tracker's measured tolerance. A frame without a measured value
+ * (a synthetic fixture, or a replay rebuilt outside the tracker) keeps the configured value, and
+ * a test that sets the config explicitly always gets at least what it asked for.
+ */
+export function resolveTrackingGapToleranceMs(frame: TrackedHandFrame, configuredMs: number): number {
+  const measured = frame.trackingGapToleranceMs;
+  return measured === undefined ? configuredMs : Math.max(configuredMs, measured);
 }
 
 export interface TrackingGapDiagnostic {

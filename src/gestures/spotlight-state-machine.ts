@@ -1,6 +1,7 @@
 import type { TrackedHandFeatures, TrackedHandFrame } from "../tracking/derived-tracking-types";
 import {
   createGestureEventId,
+  resolveTrackingGapToleranceMs,
   type GestureEvaluation,
   type GestureEvent,
   type GestureReasonCode,
@@ -85,6 +86,7 @@ export const SPOTLIGHT_DEFAULTS = {
   centerLineX: 0.5,
   minimumHandSeparation: 0.1,
   holdMs: 300,
+  /** Floor of the tracking gap tolerance; a slow device raises it through the frame. */
   maximumTrackingGapMs: 150,
   poseGraceMs: 60,
 } as const;
@@ -139,6 +141,7 @@ export class SpotlightStateMachine {
     const result = { frame, events, rejections };
     const now = frame.captureTimeMs;
     this.#recordObservation(frame);
+    const toleranceMs = resolveTrackingGapToleranceMs(frame, this.#config.maximumTrackingGapMs);
     const { pose, handIds } = this.#classify(frame.hands);
     this.#latestPose = pose;
     if (pose !== "none") this.#closeGap(now);
@@ -183,7 +186,7 @@ export class SpotlightStateMachine {
             handIds: [...hold.handIds],
           };
         }
-        if (now - hold.lastSeenMs > this.#config.maximumTrackingGapMs) {
+        if (now - hold.lastSeenMs > toleranceMs) {
           this.#pushRejection(rejections, now, hold.handIds, "tracking-lost");
           this.#hold = null;
         }
@@ -196,7 +199,7 @@ export class SpotlightStateMachine {
     if (pose === "target") {
       let hold = this.#hold;
       if (hold !== null && hold.gapStartedAtMs !== null) {
-        if (now - hold.lastSeenMs > this.#config.maximumTrackingGapMs) {
+        if (now - hold.lastSeenMs > toleranceMs) {
           this.#pushRejection(rejections, now, hold.handIds, "tracking-lost");
           hold = null;
         } else {
@@ -233,7 +236,7 @@ export class SpotlightStateMachine {
     // A visible pose other than the target ends the hold only when it lasts longer than landmark jitter.
     const hold = this.#hold;
     if (hold !== null) {
-      if (hold.gapStartedAtMs !== null && now - hold.lastSeenMs > this.#config.maximumTrackingGapMs) {
+      if (hold.gapStartedAtMs !== null && now - hold.lastSeenMs > toleranceMs) {
         this.#pushRejection(rejections, now, hold.handIds, "tracking-lost");
         this.#hold = null;
       } else {

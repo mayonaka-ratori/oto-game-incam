@@ -2,6 +2,7 @@ import { HAND_CONNECTIONS } from "../tracking/hand-connections";
 import type { P1TrialDefinition } from "../poc/phase1-protocol";
 import type { DetectedHand, HandTrackingFrame } from "../tracking/tracking-types";
 import {
+  anchorGuidePaths,
   createGestureGuide,
   guideDotPosition,
   guideDotProgress,
@@ -33,6 +34,12 @@ export interface P1GuideView {
   readonly goTimeMs: number | null;
   /** preview: shown before the attempt starts. readiness: waiting for the start pose. */
   readonly phase: "preview" | "readiness" | "recognition";
+  /**
+   * Where the hands settled once the start position was confirmed, screen-left hand first.
+   * The paths are redrawn from here so the guide and the judgment start from the same place.
+   * Null before the start position settles, and for gestures without one.
+   */
+  readonly anchors: readonly GuidePoint[] | null;
 }
 
 type Transform = NonNullable<ReturnType<typeof createVideoCoverTransform>>;
@@ -42,6 +49,17 @@ const GUIDE_REACHED_COLOR = "#62f2dc";
 const GUIDE_DOT_COLOR = "#ffffff";
 /** The dot stays visible for a moment after it lands, so a late glance still shows the target. */
 const DOT_HOLD_MS = 300;
+/**
+ * Before GO the path and the end ring are drawn faintly, so the count-in does not read as an
+ * invitation to set off early (docs/19 の3.3 と4.4). The start circle keeps its full brightness.
+ */
+const GUIDE_PENDING_ALPHA = 0.25;
+const GUIDE_PATH_ALPHA = 0.85;
+/**
+ * Until the start position is confirmed, the circle is the only thing to aim at, so it is drawn
+ * larger still. Display only: the judgment never reads a radius.
+ */
+const READINESS_START_SCALE = 1.35;
 
 export const DEFAULT_OVERLAY_LAYERS: OverlayLayers = {
   landmarks: true,
@@ -116,7 +134,11 @@ export class OverlayRenderer {
     if (sameGuide(this.#guide, guide)) return;
     if (guide === null || this.#guide?.trial !== guide.trial) this.#holdSinceMs = null;
     this.#guide = guide;
-    this.#gestureGuide = guide === null ? null : createGestureGuide(guide.trial);
+    // Anchoring happens once per guide change, not once per drawn frame.
+    const shape = guide === null ? null : createGestureGuide(guide.trial);
+    this.#gestureGuide = shape === null || guide === null || guide.anchors === null
+      ? shape
+      : anchorGuidePaths(shape, guide.anchors);
     this.#dirty = true;
   }
 
@@ -218,18 +240,25 @@ export class OverlayRenderer {
     const pointers = this.#pointerPositions(shape.pointer);
     const context = this.#context;
     const unit = transform.videoWidth * transform.scale;
+    // Before GO the way to go is only a hint; on GO it turns bright. The GO time is the one the
+    // count-in on screen uses, so the picture and the count change together.
+    const goReached = guide.goTimeMs !== null && performance.now() >= guide.goTimeMs;
+    const pathAlpha = goReached ? GUIDE_PATH_ALPHA : GUIDE_PENDING_ALPHA;
+    const endAlpha = goReached ? 1 : GUIDE_PENDING_ALPHA;
+    // Waiting for the start position: the circle is the whole instruction, so it is drawn bigger.
+    const startRadius = shape.startRadius * (guide.phase === "recognition" ? 1 : READINESS_START_SCALE);
     context.save();
     context.lineJoin = "round";
     for (const zone of shape.zones) this.#drawZone(zone, transform, pointers);
     if (shape.holdMs !== null) this.#drawHold(shape, transform, pointers);
     for (const ring of shape.rings) {
       const reached = pointers.some((point) => distance(point, ring.center) <= ring.radius);
-      this.#strokeCircle(mapPreviewLandmark(transform, ring.center), ring.radius * unit, reached, true);
+      this.#strokeCircle(mapPreviewLandmark(transform, ring.center), ring.radius * unit, reached, true, endAlpha);
     }
     for (const path of shape.paths) {
       const start = mapPreviewLandmark(transform, path.start);
       const end = mapPreviewLandmark(transform, path.end);
-      context.globalAlpha = 0.85;
+      context.globalAlpha = pathAlpha;
       context.strokeStyle = GUIDE_COLOR;
       context.lineWidth = 3;
       context.setLineDash([10, 8]);
@@ -238,10 +267,10 @@ export class OverlayRenderer {
       context.lineTo(end.x, end.y);
       context.stroke();
       this.#drawArrowHead(start.x, start.y, end.x, end.y);
-      const onStart = pointers.some((point) => distance(point, path.start) <= shape.startRadius);
+      const onStart = pointers.some((point) => distance(point, path.start) <= startRadius);
       const onEnd = pointers.some((point) => distance(point, path.end) <= shape.endRadius);
-      this.#strokeCircle(start, shape.startRadius * unit, onStart, false);
-      if (shape.rings.length === 0) this.#strokeCircle(end, shape.endRadius * unit, onEnd, true);
+      this.#strokeCircle(start, startRadius * unit, onStart, false);
+      if (shape.rings.length === 0) this.#strokeCircle(end, shape.endRadius * unit, onEnd, true, endAlpha);
     }
     const progress = guideDotProgress(performance.now(), guide.goTimeMs, shape.travelMs);
     if (guide.goTimeMs !== null && progress > 0) {
@@ -311,9 +340,10 @@ export class OverlayRenderer {
     radius: number,
     reached: boolean,
     solid: boolean,
+    alpha = 1,
   ): void {
     const context = this.#context;
-    context.globalAlpha = 1;
+    context.globalAlpha = alpha;
     context.strokeStyle = reached ? GUIDE_REACHED_COLOR : GUIDE_COLOR;
     context.fillStyle = reached ? "rgba(98, 242, 220, 0.28)" : "rgba(255, 197, 109, 0.12)";
     context.lineWidth = reached ? 4 : 3;
@@ -454,7 +484,14 @@ function sameGuide(first: P1GuideView | null, second: P1GuideView | null): boole
   if (first === null || second === null) return first === second;
   return first.trial === second.trial
     && first.goTimeMs === second.goTimeMs
-    && first.phase === second.phase;
+    && first.phase === second.phase
+    && samePoints(first.anchors, second.anchors);
+}
+
+function samePoints(first: readonly GuidePoint[] | null, second: readonly GuidePoint[] | null): boolean {
+  if (first === null || second === null) return first === second;
+  return first.length === second.length
+    && first.every((point, index) => point.x === second[index]?.x && point.y === second[index]?.y);
 }
 
 function distance(first: GuidePoint, second: GuidePoint): number {

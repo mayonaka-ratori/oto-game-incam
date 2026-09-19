@@ -58,6 +58,9 @@ export class ReadinessGate {
       ready: this.#readyAtMs !== null,
       readyAtMs: this.#readyAtMs,
       handIds: zoneHands?.map(({ trackId }) => trackId) ?? [],
+      // The anchors are where the hands last settled; once ready they stop moving, so the
+      // guide can be redrawn from the very positions the gesture will be measured against.
+      settledPositions: this.#anchors.map(({ x, y }) => ({ x, y })),
     };
   }
 

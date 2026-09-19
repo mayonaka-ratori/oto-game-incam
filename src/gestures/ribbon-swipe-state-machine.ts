@@ -1,6 +1,7 @@
 import type { TrackedHandFrame, TrackedHandFeatures } from "../tracking/derived-tracking-types";
 import {
   createGestureEventId,
+  resolveTrackingGapToleranceMs,
   type GestureEvaluation,
   type GestureEvent,
   type GestureReasonCode,
@@ -50,8 +51,19 @@ export const RIBBON_SWIPE_DEFAULTS = {
   minimumDistance: 0.28,
   maximumDurationMs: 850,
   perpendicularTolerance: 0.18,
+  /** Floor of the tracking gap tolerance; a slow device raises it through the frame. */
   maximumTrackingGapMs: 150,
 } as const;
+
+/**
+ * How far the hand may fall back along the direction before the attempt is judged as going the
+ * wrong way. One-frame velocity is not used: on a phone reporting ten hands a second it swings
+ * negative in the middle of a correct swipe (docs/19 の3.1 と4.2).
+ */
+const BACKWARD_DISTANCE = -0.02;
+/** Below this the hand has not set off yet, so the candidate stays armed. */
+const START_DISTANCE = 0.02;
+const START_SPEED = 0.08;
 
 export class RibbonSwipeStateMachine {
   readonly #config: Required<RibbonSwipeConfig>;
@@ -99,12 +111,13 @@ export class RibbonSwipeStateMachine {
     const events: GestureEvent[] = [];
     const rejections: GestureRejection[] = [];
     const visible = new Map(frame.hands.map((hand) => [hand.trackId, hand]));
+    const toleranceMs = resolveTrackingGapToleranceMs(frame, this.#config.maximumTrackingGapMs);
 
     for (const [handId, candidate] of this.#candidates) {
       const hand = visible.get(handId);
       const gapMs = frame.captureTimeMs - candidate.lastTimeMs;
       if (hand === undefined) {
-        if (gapMs > this.#config.maximumTrackingGapMs) {
+        if (gapMs > toleranceMs) {
           rejections.push(reject(frame, handId, "tracking-lost"));
           this.#candidates.delete(handId);
         } else if (candidate.state !== "gap") {
@@ -113,7 +126,7 @@ export class RibbonSwipeStateMachine {
         continue;
       }
       if (candidate.state !== "gap") continue;
-      if (gapMs > this.#config.maximumTrackingGapMs) {
+      if (gapMs > toleranceMs) {
         rejections.push(reject(frame, handId, "tracking-lost"));
         this.#candidates.delete(handId);
       } else {
@@ -160,17 +173,17 @@ export class RibbonSwipeStateMachine {
     const directionalSpeed = hand.palmVelocity.x * this.#direction[0] + hand.palmVelocity.y * this.#direction[1];
 
     if (candidate.state === "armed") {
-      if (projectionDelta < -0.02 || directionalSpeed < -0.08) {
+      if (projectionDelta < BACKWARD_DISTANCE) {
         rejections.push(reject(frame, hand.trackId, "wrong-direction"));
         this.#candidates.delete(hand.trackId);
         return;
       }
       if (Math.abs(perpendicular) > this.#config.perpendicularTolerance) {
-        if (projectionDelta > 0.02) rejections.push(reject(frame, hand.trackId, "off-axis"));
+        if (projectionDelta > START_DISTANCE) rejections.push(reject(frame, hand.trackId, "off-axis"));
         this.#candidates.delete(hand.trackId);
         return;
       }
-      if (projectionDelta <= 0.02 && directionalSpeed <= 0.08) {
+      if (projectionDelta <= START_DISTANCE && directionalSpeed <= START_SPEED) {
         candidate.lastProjection = projection;
         candidate.lastTimeMs = frame.captureTimeMs;
         candidate.startX = hand.palmCenter.x;
@@ -186,7 +199,7 @@ export class RibbonSwipeStateMachine {
       this.#candidates.delete(hand.trackId);
       return;
     }
-    if (projectionDelta < -0.02 || directionalSpeed < -0.08) {
+    if (projectionDelta < BACKWARD_DISTANCE) {
       rejections.push(reject(frame, hand.trackId, "wrong-direction"));
       this.#candidates.delete(hand.trackId);
       return;

@@ -1,17 +1,24 @@
 ---
 paths:
   - "src/**/*.ts"
+  - "src/**/*.css"
   - "build/**/*.ts"
+  - "index.html"
 ---
 
 # アプリ実装の決まり
 
-- カメラ処理はlatest-frame-only。古いフレームをキューへ溜めず、in-flightとpendingはそれぞれ1以下に保つ（`src/camera/latest-frame-scheduler.ts`）。
-- ジェスチャー判定と採点時刻は音声タイムライン（Web Audioクロック）とイベント時刻を正本にする。描画フレーム数や `setInterval` 回数を時刻の正本にしない。
-- 追跡バックエンド（`src/tracking/`、`src/worker/`）とジェスチャー判定（`src/gestures/`）を分離したまま保つ。判定側はMediaPipe固有の型に依存しない。
-- 生カメラ映像と生音声は保存・送信・永続化しない。保存するのは派生ランドマークと計測値だけ。マイク権限は要求しない。
-- tracking lossは機械側の失敗であり、プレイヤーのMISSとして扱わない。
+`AGENTS.md` の「実装と検証」に加えて守ること。
+
+- latest-frame-onlyでは、in-flightとpendingをそれぞれ1以下に保つ（`src/camera/latest-frame-scheduler.ts`）。
+- 時刻の正本はWeb Audioクロックとイベント時刻。描画フレーム数や `setInterval` 回数を時刻の正本にしない。
+- ジェスチャー判定（`src/gestures/`）はMediaPipe固有の型に依存しない。追跡バックエンドは `src/tracking/` と `src/worker/` に閉じる。
+- 生音声も保存・送信しない。マイク権限は要求しない。
 - 閾値や時間定数（150ms graceなど）は実測前の初期値。変えるときは根拠となる実機セッションを文書に残す。
-- 判定・分類ロジックは純粋関数または状態機械として書き、`tests/` の合成fixture（`tests/helpers/`）で検証できる形にする。DOM依存は `src/ui/` と `src/app/` に閉じ込める。
+- 判定・分類ロジックは純粋関数または状態機械として書き、`tests/helpers/` の合成fixtureで検証できる形にする。DOM依存は `src/ui/` と `src/app/` に閉じ込める。
 - Workerとの通信は `src/worker/tracking-worker-messages.ts` の判別共用体で型付けし、`assertNever` で網羅性を保つ。
-- 依存関係とモデルは固定バージョン。`@latest` や動的取得を追加しない。
+- `tsconfig.json` は `strict` に加えて `noUncheckedIndexedAccess` と `exactOptionalPropertyTypes` が有効。配列添字は `undefined` を扱い、optionalプロパティへ `undefined` を明示代入しない。
+- P1セッションJSONやdevice checklist JSONのschemaを変えるときは、旧versionの読込互換（移行）を残す。
+- UIの文言は日本語。e2eがボタン名や見出しの文言でセレクトしているので、文言を変えたら `e2e/` のspecも直す。
+- UIを変えたら `npm run test:e2e` を通し、対象画面を実際に表示して確認する。型検査と単体テストは応答終了時のhookが走らせる。
+- `public/mediapipe/` 配下はハッシュ固定のバイナリで、編集は権限で拒否される。不一致だとbuildが失敗する。

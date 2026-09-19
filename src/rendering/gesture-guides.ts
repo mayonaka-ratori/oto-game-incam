@@ -70,8 +70,14 @@ export const AIR_TAP_APPROACH_MARGIN = 0.09;
 /** The guide never leaves the camera image; a circle drawn at the very edge cannot be reached. */
 export const GUIDE_FRAME_MINIMUM = 0.04;
 export const GUIDE_FRAME_MAXIMUM = 0.96;
-const START_RADIUS = 0.045;
-const END_RADIUS = 0.055;
+/**
+ * Testers reported the marks as too small to aim at (docs/19 の2と4.4). The circles are drawn
+ * 1.6 times larger, and the "the hand is on the mark" colour change follows the drawn size.
+ * The judgment never reads these radii.
+ */
+export const GUIDE_CIRCLE_SCALE = 1.6;
+const START_RADIUS = 0.045 * GUIDE_CIRCLE_SCALE;
+const END_RADIUS = 0.055 * GUIDE_CIRCLE_SCALE;
 
 /**
  * Time from GO to the end ring. Every value is at most half of the movement limit of its
@@ -98,6 +104,30 @@ export const AIR_TAP_TRIAL_CENTER = {
 
 export function clampGuidePoint(point: GuidePoint): GuidePoint {
   return { x: clampToFrame(point.x), y: clampToFrame(point.y) };
+}
+
+/**
+ * Redraws every path from where the hands actually settled, keeping each path's direction and
+ * length. The judgment measures a two-hand gesture from the settled position, not from the
+ * circle the guide drew, so after the start position is confirmed the two must agree
+ * (docs/19 の4.3). Anchors are in the same order as the paths: screen-left hand first.
+ * A mismatched count leaves the guide untouched.
+ */
+export function anchorGuidePaths(guide: GestureGuide, anchors: readonly GuidePoint[]): GestureGuide {
+  if (anchors.length === 0 || anchors.length !== guide.paths.length) return guide;
+  return {
+    ...guide,
+    paths: guide.paths.map((path, index) => {
+      const anchor = anchors[index]!;
+      return {
+        start: clampGuidePoint(anchor),
+        end: clampGuidePoint({
+          x: anchor.x + (path.end.x - path.start.x),
+          y: anchor.y + (path.end.y - path.start.y),
+        }),
+      };
+    }),
+  };
 }
 
 /** The guide for one trial, or null for a gesture without an on-camera guide. */
