@@ -1,6 +1,6 @@
 # Oto Motion Technical Lab
 
-Phase 1のカメラ許可・二手追跡・音声時刻・単体ジェスチャー・計測画面である。プロジェクトの現在地と仕様の正本は[docs/README.md](./docs/README.md)、実機確認前までの実装結果は[docs/10_phase1_ai_preparation_implementation.md](./docs/10_phase1_ai_preparation_implementation.md)、5動作・50試行への改訂とコードレビュー後のAndroid 2回目の分析と現行の試験画面（映像の上のなぞる案内、残る2動作・20試行）は[docs/18_android_second_test_and_next_plan.md](./docs/18_android_second_test_and_next_plan.md)、修正の記録は[docs/13_p1_five_gesture_50_trial_revision_plan.md](./docs/13_p1_five_gesture_50_trial_revision_plan.md)の14章、構造の見直しと判定条件を変えない修正（軽量化、結果JSON schema v7、Bloomの案内）は[docs/16_structure_review_and_lightweight_fixes.md](./docs/16_structure_review_and_lightweight_fixes.md)を参照する。
+Phase 1のカメラ許可・二手追跡・音声時刻・単体ジェスチャー・計測画面である。プロジェクトの現在地と仕様の正本は[docs/README.md](./docs/README.md)、実機確認前までの実装結果は[docs/10_phase1_ai_preparation_implementation.md](./docs/10_phase1_ai_preparation_implementation.md)、5動作・50試行への改訂とコードレビュー後のAndroid 2回目の分析と現行の試験画面（映像の上のなぞる案内、残る2動作・20試行）は[docs/18_android_second_test_and_next_plan.md](./docs/18_android_second_test_and_next_plan.md)、修正の記録は[docs/13_p1_five_gesture_50_trial_revision_plan.md](./docs/13_p1_five_gesture_50_trial_revision_plan.md)の14章、構造の見直しと判定条件を変えない修正（軽量化、結果JSON schema v8、Bloomの案内）は[docs/16_structure_review_and_lightweight_fixes.md](./docs/16_structure_review_and_lightweight_fixes.md)を参照する。
 
 ## 必要環境
 
@@ -42,7 +42,7 @@ npm run test:e2e
 
 `?view=analysis`で開いた画面の下部にある「実機確認レポート」では、試験条件、カメラ経路、二手追跡、停止・復帰を「未確認／問題なし／問題あり／対象外」で管理できる。P1セッションJSONから3入力（エアタップ・リボンスワイプ・Bloom）の結果と計測端末のtechnical snapshotを取り込み、PCで主観回答や判定を記入してもスマートフォン由来の自動計測値を保持する。実機確認JSONは保存・読み戻しでき、旧schema 1.0／2.0／2.1／2.2／2.3は読み込み時に2.4へ移行する。2.3からは取り込んだP1結果の版と試験手順IDを、2.4からは端末情報と処理経路の指定（`?frameSource=`／`?pending=`）も記録する。JSONにカメラ映像や音声は含めない。
 
-「単体ジェスチャー制御試験」では、Web Audioクロックを有効にし、正本の手順を進める。既定は残る2動作（ribbon-swipe、Bloom）の20試行で、`?protocol=five`で5動作・50試行、`?protocol=regression`で回帰確認の9試行になる。Bloom／Liftは両手が開始位置に安定してからカウントを始める。動作の切り替わりは画面のタップで進み（必須休憩はない）、途中で中断・再開できる。派生ランドマーク、gesture eventTime、成功・拒否理由、手動分類、技術指標をP1セッションJSONとして保存できる。合成入力やPCブラウザだけではP1合格にせず、対象実機の結果を必ず記録する。
+「単体ジェスチャー制御試験」では、Web Audioクロックを有効にし、正本の手順を進める。既定は縦向きの3動作（ribbon-swipe、Lift、ななめリフト）の30試行で、`?protocol=remaining-two`でribbon-swipeとBloomの20試行、`?protocol=five`で5動作・50試行、`?protocol=regression`で回帰確認の9試行になる。`?mode=speedcheck`は、設定を変えながら処理の速さを自動で測る速度チェックを開く。Bloom／Liftは両手が開始位置に安定してからカウントを始める。動作の切り替わりは画面のタップで進み（必須休憩はない）、途中で中断・再開できる。派生ランドマーク、gesture eventTime、成功・拒否理由、手動分類、技術指標をP1セッションJSONとして保存できる。合成入力やPCブラウザだけではP1合格にせず、対象実機の結果を必ず記録する。
 
 実機から確認する場合は、有効なHTTPSでproduction buildを配信する。LAN内の平文HTTPはスマートフォンのカメラAPIでsecure contextとして扱われないため、実機試験には使用しない。
 

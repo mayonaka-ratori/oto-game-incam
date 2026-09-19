@@ -1,14 +1,14 @@
 # プロジェクト資料ガイド
 
-- 更新日: 2026-09-19
+- 更新日: 2026-09-20
 - 現在のプロダクトフェーズ: **Phase 1 — Tracking & Latency Lab**
 - 現在の技術ステージ: **Technical Stage T0 — Measurement Lab**
 - 現在のステップ: **1.1 — TypeScript / Viteの最小Webアプリ、カメラ許可、計測画面を作る**
-- 実装先行状況: **残る2動作・20試行と、映像の上のなぞる案内を実装済み（[18](./18_android_second_test_and_next_plan.md)の8章、結果JSONはschema v7）。Android 3回目（Pixel 10 Pro XL、縦向き）はribbon-swipe 8/10、Bloom 9/10で8/10以上を満たしたが、正しい動作が1回目で成立しない試行が多く、処理速度は毎秒9.8回のままだった（[19](./19_android_third_test_and_recognition_fixes.md)）。原因だった追跡の途切れの許容（150ms固定）をフレーム間隔に合わせ、ribbon-swipeの逆方向判定とBloomの案内の位置も直した。実機では未確認**
-- テスター画面: **カメラ映像の1か所だけを見ればよい画面。映像の中に短い指示、なぞる案内、カウント、成功表示を出す。開始は「はじめる」の1ボタン、保存は「結果を保存」の1操作で2ファイル。画面の正本は[04](./04_mvp_uiux_direction.md)の3.1、実装の記録は[18](./18_android_second_test_and_next_plan.md)の5.1と8章。分析用の詳細画面は`?view=analysis`で開く**
-- 次の作業: **修正後のbuildを公開し、Androidで既定の20回試行と`?protocol=regression`の9回を行う（[19](./19_android_third_test_and_recognition_fixes.md)の5章）。その後、URLの指定を1つずつ変えた20回試行で処理速度を切り分け（[18](./18_android_second_test_and_next_plan.md)の5.5と6章）、最も速かった設定でiPhoneでも20回試行を行う**
+- 実装先行状況: **Android 4回目（縦向き、[20](./20_android_fourth_test_and_portrait_direction.md)）で、追跡の途切れの修正は実機でも効いたが、Bloomは5/10で縦向きの映像の横幅に収まらないことが分かった。これを受けて、ななめリフト、30回の新しい手順（結果JSONはschema v8）、ribbon-swipeの逆方向判定の修正、自動の速度チェックを実装した（[20](./20_android_fourth_test_and_portrait_direction.md)の6章）。処理速度は毎秒約9回のままで、実装は実機では未確認**
+- テスター画面: **カメラ映像の1か所だけを見ればよい画面。映像の中に短い指示、なぞる案内、カウント、成功表示を出す。開始は「はじめる」の1ボタン、動作の切り替わりは画面のタップ、保存は「結果を保存」の1操作で2ファイル。画面の正本は[04](./04_mvp_uiux_direction.md)の3.1。分析用の画面は`?view=analysis`、速度チェックは`?mode=speedcheck`で開く**
+- 次の作業: **実装後のbuildを公開し、Androidで速度チェック（`?mode=speedcheck`、約2分）と、既定の30回試行（ribbon-swipe、Lift、ななめリフト）を縦向きで行う（[20](./20_android_fourth_test_and_portrait_direction.md)の5章）。その結果からAndroidの既定の設定を決め、iPhoneでも同じ30回試行を行う**
 - 旧clap分析の扱い: **[`12_p1_session_analysis_20260913144422125.md`](./12_p1_session_analysis_20260913144422125.md)の実機分析は履歴として保持する。旧clapと新Bloomを同じ第三入力の合否へ混ぜない**
-- 次の判断: **air-tap、Lift、Spotlightは両端末で8/10以上を満たし、2026-09-19のユーザー判断でP1の成立確認を終えた（[18](./18_android_second_test_and_next_plan.md)の3章）。タイミングと、複数動作を同時に判定したときの意図しない反応は未確認で、Interaction POCへ持ち越す。Bloomは、なぞる案内の画面のAndroid 3回目で9/10になった（[19](./19_android_third_test_and_recognition_fixes.md)）。[18](./18_android_second_test_and_next_plan.md)の5.6の案Aの判定は、iPhoneの20回試行を待って行う。両端末で8/10に届かない場合は、MVPの第三入力をLiftへ替える案を[03](./03_mvp_definition_and_roadmap.md)へ起こす。判定の物差しを変える修正（[16](./16_structure_review_and_lightweight_fixes.md)の2.2）は、Interaction POCへ入る前に扱う**
+- 次の判断: **2026-09-20のユーザー判断で、端末は縦向きを基本にし、横に開くBloomをやめて縦の動き（Lift）と斜めの動き（ななめリフト）を入れることにした（[20](./20_android_fourth_test_and_portrait_direction.md)の3章、正本は[03](./03_mvp_definition_and_roadmap.md)の3章と4章）。MVPの3つ目の入力は、両端末の実測を見てLiftとななめリフトから選ぶ。air-tap、Lift、Spotlightの成立確認は横向きで終えているが（[18](./18_android_second_test_and_next_plan.md)の3章）、縦向きでは未実測。タイミングと、複数動作の同時判定は、Interaction POCへ持ち越す**
 
 Codexで作業を継続する場合、リポジトリ直下の [`AGENTS.md`](../AGENTS.md) が自動引き継ぎの入口となる。Claude Codeでは [`CLAUDE.md`](../CLAUDE.md) が入口で、そこから `AGENTS.md` を取り込む。どちらも本書を読み、現在地と依頼に関係する正本だけを確認して作業を始める。
 
@@ -32,7 +32,8 @@ Codexで作業を継続する場合、リポジトリ直下の [`AGENTS.md`](../
 |---|---|---|
 | [17 Android実測と1画面の試験画面](./17_android_test_and_single_screen.md) | Android結果、1画面表示、自動進行、診断保存 | 履歴。Android 1回目の実測と、1画面表示（自動進行）の実装記録。画面は18で置き換えた |
 | [18 Android 2回目の実測と次の修正計画](./18_android_second_test_and_next_plan.md) | Android 2回目の分析（処理速度、ribbon-swipe、Bloom）、成立確認を終えた3動作の記録、試験画面・保存・試行対象・処理速度・判定の修正計画 | **現行の作業計画と実装記録**。段階1と段階2のURL指定を実装済み、実機は未確認 |
-| [19 Android 3回目の実測と認識の途切れの修正](./19_android_third_test_and_recognition_fixes.md) | Android 3回目の分析（診断リプレイで特定した追跡の途切れ、腕の疲れ）、追跡の途切れの許容・ribbon-swipeの逆方向判定・案内の修正と、実機リプレイでの再評価 | **現行の実測記録と実装記録**。実機は未確認 |
+| [19 Android 3回目の実測と認識の途切れの修正](./19_android_third_test_and_recognition_fixes.md) | Android 3回目の分析（診断リプレイで特定した追跡の途切れ、腕の疲れ）、追跡の途切れの許容・ribbon-swipeの逆方向判定・案内の修正と、実機リプレイでの再評価 | 履歴。修正は4回目の実測で確認した（20） |
+| [20 Android 4回目の実測と縦向き基本への転換](./20_android_fourth_test_and_portrait_direction.md) | Android 4回目の分析（Bloomが縦向きに収まらない、ribbon-swipeの時間切れ）、縦向き基本とBloomをやめる判断、ななめリフト・新しい手順・速度チェックの計画 | **現行の実測記録と実装記録**。実機は未確認 |
 | [07 Step 1.1 実装プラン](./07_step_1_1_implementation_plan.md) | 最小Webアプリ、カメラ許可、計測画面の初回実装 | 履歴。実装完了 |
 | [08 追跡パイプライン実装プラン](./08_phase1_tracking_pipeline_implementation_plan.md) | HandTrackingProvider、latest-frame-only Worker、二手カーソル | 履歴。自動検証完了 |
 | [09 MediaPipe資産記録](./09_mediapipe_assets.md) | モデルとWASMの出典、ハッシュ、ライセンス参照 | 現行。資産を変えたら更新 |

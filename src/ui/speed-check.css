@@ -1,0 +1,166 @@
+/* The automatic speed check screen (`?mode=speedcheck`). It is deliberately separate from
+ * styles.css: the tester screen and the analysis screen keep exactly the layout they had.
+ * Colours come from the variables styles.css defines on :root. */
+
+.speed-shell {
+  display: flex;
+  width: min(560px, 100%);
+  min-height: 100vh;
+  min-height: 100svh;
+  flex-direction: column;
+  padding:
+    max(16px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+  margin: 0 auto;
+  gap: 16px;
+}
+
+.speed-section {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.speed-section[hidden] {
+  display: none;
+}
+
+.speed-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.25rem;
+  line-height: 1.4;
+}
+
+.speed-lead {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.speed-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.speed-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.speed-button {
+  min-height: 56px;
+  padding: 14px 20px;
+  border: 1px solid var(--cyan);
+  border-radius: 14px;
+  background: var(--cyan-dim);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.speed-button:disabled {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: default;
+}
+
+.speed-button--quiet {
+  min-height: 44px;
+  border-color: var(--line-strong);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+/* The camera image keeps its own shape: contain never crops what the tester sees. */
+.speed-preview {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: var(--speed-video-aspect, 4 / 3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #000;
+}
+
+.speed-preview video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: scaleX(-1);
+}
+
+.speed-status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.speed-hands {
+  margin: 0;
+  color: var(--warning);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.speed-hands[data-hands="two"] {
+  color: var(--cyan);
+}
+
+.speed-progress {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.speed-remaining {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.speed-fastest {
+  margin: 0;
+  color: var(--cyan);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.speed-filename {
+  overflow-wrap: anywhere;
+  margin: 8px 0 0;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+}
+
+.speed-warning {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.speed-spacer {
+  flex: 1 1 auto;
+}
+
+.speed-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}

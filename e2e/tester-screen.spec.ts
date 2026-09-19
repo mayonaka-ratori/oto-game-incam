@@ -58,7 +58,7 @@ const viewports = [
 
 for (const viewport of viewports) {
   test(`the camera, the guide and the controls fit ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     await page.setViewportSize(viewport);
     await page.addInitScript(() => Object.defineProperty(window, "AudioContext", { value: undefined }));
     await beginTest(page);
@@ -69,7 +69,7 @@ for (const viewport of viewports) {
     await page.screenshot({ path: testInfo.outputPath("before-start.png") });
 
     await tapStage(page);
-    await expect(page.locator("#p1-trial-number")).toHaveText("1 / 20");
+    await expect(page.locator("#p1-trial-number")).toHaveText("1 / 30");
     await expect(page.locator("#stage-tap")).toBeHidden();
     // During a trial nothing but the camera image and three small buttons is on screen.
     await fitsOnScreen(page, ["#preview-shell", "#stage-instruction"]);
@@ -87,20 +87,26 @@ for (const viewport of viewports) {
     await page.waitForTimeout(450);
     await page.getByRole("button", { name: "再開", exact: true }).click();
 
-    // Run the whole 20-trial protocol: ten ribbon-swipe trials, a tap, ten Bloom trials.
-    for (let ordinal = 1; ordinal <= 20; ordinal += 1) {
-      await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal} / 20`);
-      if (ordinal === 11) await expect(page.locator("#stage-instruction")).toHaveText("丸印から輪まで 両手を開く");
+    // Run the whole 30-trial protocol: ten ribbon-swipe, a tap, ten Lift, a tap, ten ななめリフト.
+    const nextInstruction = new Map<number, string>([
+      [10, "丸印から輪まで 両手を上げる"],
+      [20, "丸印から輪まで 両手を右上へ"],
+    ]);
+    for (let ordinal = 1; ordinal <= 30; ordinal += 1) {
+      await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal} / 30`);
+      const shown = nextInstruction.get(ordinal - 1);
+      if (shown !== undefined) await expect(page.locator("#stage-instruction")).toHaveText(shown);
       await page.locator("#p1-skip").click();
-      await expect(page.locator("#p1-progress")).toHaveText(`${ordinal} / 20`);
-      if (ordinal === 10) {
-        await expect(page.locator("#stage-instruction")).toHaveText("丸印から輪まで 両手を開く");
+      await expect(page.locator("#p1-progress")).toHaveText(`${ordinal} / 30`);
+      const upcoming = nextInstruction.get(ordinal);
+      if (upcoming !== undefined) {
+        await expect(page.locator("#stage-instruction")).toHaveText(upcoming);
         await clickable(page, ["#p1-pause"]);
         await tapStage(page);
       }
     }
 
-    await expect(page.locator("#p1-block-title")).toHaveText("20回すべて記録しました");
+    await expect(page.locator("#p1-block-title")).toHaveText("30回すべて記録しました");
     await clickable(page, ["#p1-export", "#p1-start-session"]);
     await expect(page.locator("#p1-skip")).toBeHidden();
     await page.screenshot({ path: testInfo.outputPath("complete.png") });
@@ -113,7 +119,7 @@ test("one press of 結果を保存 writes both files and names them", async ({ p
   await page.addInitScript(() => Object.defineProperty(window, "AudioContext", { value: undefined }));
   await beginTest(page);
   await tapStage(page);
-  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 20");
+  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 30");
   await page.getByRole("button", { name: "中断", exact: true }).click();
   await expect(page.locator("#p1-block")).toHaveAttribute("data-state", "paused");
 
@@ -127,8 +133,8 @@ test("one press of 結果を保存 writes both files and names them", async ({ p
     schemaVersion: number;
     protocol: { id: string; total: number };
   };
-  expect(report.schemaVersion).toBe(7);
-  expect(report.protocol).toMatchObject({ id: "p1-remaining-two-20", total: 20 });
+  expect(report.schemaVersion).toBe(8);
+  expect(report.protocol).toMatchObject({ id: "p1-portrait-three-30", total: 30 });
   const diagnostic = JSON.parse(await readFile((await replay.path())!, "utf8")) as { schemaVersion: number };
   expect(diagnostic.schemaVersion).toBe(3);
 
@@ -171,7 +177,7 @@ test("the five-gesture protocol still runs, one tap per movement", async ({ page
     schemaVersion: number;
     protocol: { id: string; results: unknown[] };
   };
-  expect(report.schemaVersion).toBe(7);
+  expect(report.schemaVersion).toBe(8);
   expect(report.protocol.id).toBe("p1-five-gesture-50");
   expect(report.protocol.results).toHaveLength(50);
 });

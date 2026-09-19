@@ -1,10 +1,23 @@
-import type { GestureEvent, RibbonSwipeDirection, SpotlightVariant } from "../gestures/gesture-types";
+import type {
+  DiagonalLiftVariant,
+  GestureEvent,
+  RibbonSwipeDirection,
+  SpotlightVariant,
+} from "../gestures/gesture-types";
 import type { ClapTrialDiagnostic } from "../gestures/clap-burst-state-machine";
 import type { BloomTrialDiagnostic } from "../gestures/bloom-state-machine";
+import type { DiagonalLiftTrialDiagnostic } from "../gestures/diagonal-lift-state-machine";
 import type { LiftTrialDiagnostic } from "../gestures/lift-state-machine";
 import type { SpotlightTrialDiagnostic } from "../gestures/spotlight-state-machine";
 
-export type P1Gesture = "air-tap" | "ribbon-swipe" | "bloom" | "lift" | "spotlight" | "clap";
+export type P1Gesture =
+  | "air-tap"
+  | "ribbon-swipe"
+  | "bloom"
+  | "lift"
+  | "spotlight"
+  | "diagonal-lift"
+  | "clap";
 
 export const P1_TRIAL_TIMEOUT_MS = 10_000;
 /** Upper limit for settling into the start position of a readiness-gated trial. */
@@ -12,11 +25,17 @@ export const P1_READINESS_TIMEOUT_MS = 10_000;
 export const P1_EARLY_WINDOW_MS = 500;
 export const P1_TRIALS_PER_GESTURE = 10;
 export const P1_FIVE_GESTURE_PROTOCOL_ID = "p1-five-gesture-50";
-/** Routine protocol after 2026-09-19: only the two gestures that have not passed yet. */
+/** Routine protocol from 2026-09-19 to 2026-09-20: only the two gestures that had not passed. */
 export const P1_REMAINING_TWO_PROTOCOL_ID = "p1-remaining-two-20";
+/**
+ * Routine protocol after 2026-09-20. The phone is held upright, where Bloom has no room to open
+ * sideways, so the vertical Lift and the new ななめリフト take its place next to ribbon-swipe.
+ */
+export const P1_PORTRAIT_THREE_PROTOCOL_ID = "p1-portrait-three-30";
 /** Short regression run for the three gestures whose confirmation is already complete. */
 export const P1_REGRESSION_THREE_PROTOCOL_ID = "p1-regression-three-9";
 export const P1_REMAINING_TWO_GESTURES: readonly P1Gesture[] = ["ribbon-swipe", "bloom"];
+export const P1_PORTRAIT_THREE_GESTURES: readonly P1Gesture[] = ["ribbon-swipe", "lift", "diagonal-lift"];
 export const P1_REGRESSION_GESTURES: readonly P1Gesture[] = ["air-tap", "lift", "spotlight"];
 export const P1_REGRESSION_TRIALS_PER_GESTURE = 3;
 /**
@@ -34,9 +53,9 @@ const RIBBON_SWIPE_DIRECTIONS: readonly RibbonSwipeDirection[] = [
 /** Current MVP inputs. Their 8/10 results feed the P1-Controlled starting criterion. */
 export const P1_CORE_GESTURES: readonly P1Gesture[] = ["air-tap", "ribbon-swipe", "bloom"];
 /** Experimental candidates measured to choose the Interaction POC vocabulary. */
-export const P1_CANDIDATE_GESTURES: readonly P1Gesture[] = ["lift", "spotlight"];
+export const P1_CANDIDATE_GESTURES: readonly P1Gesture[] = ["lift", "spotlight", "diagonal-lift"];
 /** Initial stability requirement before the count-in. Measured values may change it in a later session. */
-export const P1_READINESS_STABLE_MS = { bloom: 200, lift: 180 } as const;
+export const P1_READINESS_STABLE_MS = { bloom: 200, lift: 180, "diagonal-lift": 180 } as const;
 
 export type P1Outcome =
   | "success"
@@ -93,6 +112,7 @@ export interface P1TrialDefinition {
   readonly airTapSide?: "left" | "right";
   readonly swipeDirection?: RibbonSwipeDirection;
   readonly spotlightVariant?: SpotlightVariant;
+  readonly diagonalLiftVariant?: DiagonalLiftVariant;
   /** The count-in starts only after both hands settle in the start position. */
   readonly requiresReadiness?: boolean;
   readonly clapMode?: "contact" | "near-clap";
@@ -141,6 +161,7 @@ export interface P1TrialExtras {
   readonly clapDiagnostic?: ClapTrialDiagnostic;
   readonly bloomDiagnostic?: BloomTrialDiagnostic;
   readonly liftDiagnostic?: LiftTrialDiagnostic;
+  readonly diagonalLiftDiagnostic?: DiagonalLiftTrialDiagnostic;
   readonly spotlightDiagnostic?: SpotlightTrialDiagnostic;
 }
 
@@ -168,6 +189,7 @@ export interface P1TrialResult {
   readonly clapDiagnostic?: ClapTrialDiagnostic;
   readonly bloomDiagnostic?: BloomTrialDiagnostic;
   readonly liftDiagnostic?: LiftTrialDiagnostic;
+  readonly diagonalLiftDiagnostic?: DiagonalLiftTrialDiagnostic;
   readonly spotlightDiagnostic?: SpotlightTrialDiagnostic;
 }
 
@@ -218,10 +240,16 @@ export const P1_FIVE_GESTURE_PROTOCOL: P1ProtocolDefinition = createP1ProtocolDe
   P1_FIVE_GESTURE_PROTOCOL_ID,
 );
 
-/** Default since 2026-09-19: ribbon-swipe and Bloom, the two gestures still short of 8/10. */
+/** Default from 2026-09-19 to 2026-09-20: ribbon-swipe and Bloom, the two gestures short of 8/10. */
 export const P1_REMAINING_TWO_PROTOCOL: P1ProtocolDefinition = createP1ProtocolDefinition(
   buildRemainingTwoTrials(),
   P1_REMAINING_TWO_PROTOCOL_ID,
+);
+
+/** Default since 2026-09-20: ribbon-swipe, Lift and ななめリフト, ten trials each in three blocks. */
+export const P1_PORTRAIT_THREE_PROTOCOL: P1ProtocolDefinition = createP1ProtocolDefinition(
+  buildPortraitThreeTrials(),
+  P1_PORTRAIT_THREE_PROTOCOL_ID,
 );
 
 /** Re-checks air-tap, Lift and Spotlight after a change to timing constants or coordinates. */
@@ -232,12 +260,13 @@ export const P1_REGRESSION_THREE_PROTOCOL: P1ProtocolDefinition = createP1Protoc
 
 export const P1_CONTROLLED_TRIALS: readonly P1TrialDefinition[] = P1_FIVE_GESTURE_PROTOCOL.trials;
 
-export type P1ProtocolSelector = "remaining-two" | "five" | "regression";
+export type P1ProtocolSelector = "portrait-three" | "remaining-two" | "five" | "regression";
 
 /** Default when the query string names no protocol, or names one that does not exist. */
-export const DEFAULT_P1_PROTOCOL_SELECTOR: P1ProtocolSelector = "remaining-two";
+export const DEFAULT_P1_PROTOCOL_SELECTOR: P1ProtocolSelector = "portrait-three";
 
 const P1_PROTOCOLS_BY_SELECTOR: Readonly<Record<P1ProtocolSelector, P1ProtocolDefinition>> = {
+  "portrait-three": P1_PORTRAIT_THREE_PROTOCOL,
   "remaining-two": P1_REMAINING_TWO_PROTOCOL,
   five: P1_FIVE_GESTURE_PROTOCOL,
   regression: P1_REGRESSION_THREE_PROTOCOL,
@@ -517,6 +546,9 @@ export class Phase1ControlledRunner {
       ...(extras.clapDiagnostic === undefined ? {} : { clapDiagnostic: cloneClapDiagnostic(extras.clapDiagnostic) }),
       ...(extras.bloomDiagnostic === undefined ? {} : { bloomDiagnostic: cloneBloomDiagnostic(extras.bloomDiagnostic) }),
       ...(extras.liftDiagnostic === undefined ? {} : { liftDiagnostic: extras.liftDiagnostic }),
+      ...(extras.diagonalLiftDiagnostic === undefined
+        ? {}
+        : { diagonalLiftDiagnostic: extras.diagonalLiftDiagnostic }),
       ...(extras.spotlightDiagnostic === undefined ? {} : { spotlightDiagnostic: extras.spotlightDiagnostic }),
     });
     this.#activeTrial = null;
@@ -562,6 +594,9 @@ export function createP1ProtocolDefinition(
 export function eventMatchesTrial(event: GestureEvent, trial: P1TrialDefinition): boolean {
   if (trial.gesture === "bloom") return event.gestureType === "bloom";
   if (trial.gesture === "lift") return event.gestureType === "lift";
+  if (trial.gesture === "diagonal-lift") {
+    return event.gestureType === "diagonal-lift" && event.quality.diagonalLiftVariant === trial.diagonalLiftVariant;
+  }
   if (trial.gesture === "spotlight") {
     return event.gestureType === "spotlight" && event.quality.spotlightVariant === trial.spotlightVariant;
   }
@@ -587,6 +622,11 @@ export function swipeDirectionLabel(direction: RibbonSwipeDirection): string {
 
 export function spotlightVariantLabel(variant: SpotlightVariant): string {
   return variant === "left-up-right-down" ? "左手を上・右手を下" : "右手を上・左手を下";
+}
+
+/** Named as the player sees it on the mirrored preview. */
+export function diagonalLiftVariantLabel(variant: DiagonalLiftVariant): string {
+  return variant === "up-right" ? "右上へ" : "左上へ";
 }
 
 type P1TrialTemplate = Omit<P1TrialDefinition, "ordinal">;
@@ -631,6 +671,20 @@ function liftTrials(count: number): readonly P1TrialTemplate[] {
   }));
 }
 
+/** Alternates the two diagonals, starting with the top right, so ten trials are five of each. */
+function diagonalLiftTrials(count: number): readonly P1TrialTemplate[] {
+  return Array.from({ length: count }, (_, index) => {
+    const variant: DiagonalLiftVariant = index % 2 === 0 ? "up-right" : "up-left";
+    return {
+      id: `diagonal-lift-${index + 1}`,
+      gesture: "diagonal-lift" as const,
+      diagonalLiftVariant: variant,
+      requiresReadiness: true,
+      instruction: `両手を下側の左右に離して構えて止め、GOで両手をそろえて${diagonalLiftVariantLabel(variant)}動かす`,
+    };
+  });
+}
+
 function spotlightTrials(
   count: number,
   firstVariant: SpotlightVariant = "left-up-right-down",
@@ -671,6 +725,18 @@ function buildRemainingTwoTrials(): readonly P1TrialDefinition[] {
 }
 
 /**
+ * The upright-phone routine: the same ten ribbon-swipe trials as every other procedure, the
+ * unchanged Lift, and ななめリフト alternating between the two diagonals.
+ */
+function buildPortraitThreeTrials(): readonly P1TrialDefinition[] {
+  return numberTrials([
+    ribbonSwipeTrials(P1_TRIALS_PER_GESTURE),
+    liftTrials(P1_TRIALS_PER_GESTURE),
+    diagonalLiftTrials(P1_TRIALS_PER_GESTURE),
+  ]);
+}
+
+/**
  * Three trials cannot split a side evenly, so air-tap starts on the left and spotlight starts on
  * the right. Across the six two-sided trials each leading side appears three times.
  */
@@ -694,7 +760,7 @@ function buildLegacyClapTrials(): readonly P1TrialDefinition[] {
   }));
 }
 
-/** Trial ids and ordinals identify results and blocks, and only Bloom and Lift have a readiness check. */
+/** Trial ids and ordinals identify results and blocks, and only Bloom, Lift and ななめリフト wait for readiness. */
 function validateTrials(trials: readonly P1TrialDefinition[]): void {
   const ids = new Set<string>();
   const ordinals = new Set<number>();
@@ -758,6 +824,7 @@ function recognitionTiming(
 function readinessStableMs(gesture: P1Gesture): number {
   if (gesture === "bloom") return P1_READINESS_STABLE_MS.bloom;
   if (gesture === "lift") return P1_READINESS_STABLE_MS.lift;
+  if (gesture === "diagonal-lift") return P1_READINESS_STABLE_MS["diagonal-lift"];
   return 0;
 }
 

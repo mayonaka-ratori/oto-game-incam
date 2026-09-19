@@ -225,12 +225,16 @@ describe("ribbon-swipe wrong-direction uses the travelled distance only", () => 
     expect(result.events).toHaveLength(1);
   });
 
-  it("still rejects a hand that falls back more than 0.02", () => {
+  // Since 2026-09-20 the fall-back is measured from the furthest point reached, so a 0.03 dip
+  // is no longer a rejection; only a retreat past the tolerance is.
+  it("still rejects a hand that falls back past the peak tolerance", () => {
     const machine = new RibbonSwipeStateMachine({ direction: "left-to-right" });
     machine.process(trackedFrame(0, [trackedHand("a", 0.3, 0.5)]));
     machine.process(trackedFrame(100, [trackedHand("a", 0.48, 0.5, { x: 1 })]));
-    const rejected = machine.process(trackedFrame(200, [trackedHand("a", 0.45, 0.5, { x: 1 })]));
+    const dip = machine.process(trackedFrame(200, [trackedHand("a", 0.45, 0.5, { x: 1 })]));
+    const rejected = machine.process(trackedFrame(300, [trackedHand("a", 0.41, 0.5, { x: -1 })]));
 
+    expect(dip.rejections).toHaveLength(0);
     expect(rejected.rejections).toEqual([expect.objectContaining({ reasonCodes: ["wrong-direction"] })]);
   });
 });

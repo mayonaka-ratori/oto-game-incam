@@ -125,7 +125,7 @@ describe("P1 session comparison for the five-gesture protocol (schema v5)", () =
     const session = parseP1SessionForComparison(JSON.stringify(document), "five-a.json");
 
     expect(document).toMatchObject({
-      schemaVersion: 7,
+      schemaVersion: 8,
       gestureVocabulary: {
         thirdGesture: "bloom",
         gestures: ["air-tap", "ribbon-swipe", "bloom", "lift", "spotlight"],
@@ -134,7 +134,7 @@ describe("P1 session comparison for the five-gesture protocol (schema v5)", () =
       protocol: { id: "p1-five-gesture-50", trialsPerGesture: 10, total: 50 },
     });
     expect(session).toMatchObject({
-      schemaVersion: 7,
+      schemaVersion: 8,
       protocolId: "p1-five-gesture-50",
       completed: 50,
       total: 50,

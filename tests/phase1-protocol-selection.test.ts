@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_P1_PROTOCOL_SELECTOR,
   P1_FIVE_GESTURE_PROTOCOL,
+  P1_PORTRAIT_THREE_PROTOCOL,
   P1_REGRESSION_THREE_PROTOCOL,
   P1_REMAINING_TWO_PROTOCOL,
   Phase1ControlledRunner,
@@ -9,27 +10,71 @@ import {
   resolveP1ProtocolSelector,
 } from "../src/poc/phase1-protocol";
 
-// The three procedures a tester can run from the URL, and what each one is supposed to contain.
+// The four procedures a tester can run from the URL, and what each one is supposed to contain.
 // Their trial definitions are reused from the five-gesture protocol, so a ribbon-swipe result of
-// the 20-trial run can be read against the same trial of the 50-trial run.
+// the 30-trial run can be read against the same trial of the 50-trial run.
 
 describe("P1 protocol selection from the query string", () => {
-  it("defaults to the remaining two gestures", () => {
-    expect(DEFAULT_P1_PROTOCOL_SELECTOR).toBe("remaining-two");
+  it("defaults to the upright-phone three gestures", () => {
+    expect(DEFAULT_P1_PROTOCOL_SELECTOR).toBe("portrait-three");
     for (const search of ["", "?", "?view=analysis", "?protocol=", "?protocol=unknown", "?protocol=FIVEX"]) {
-      expect(resolveP1Protocol(search).id, search).toBe("p1-remaining-two-20");
+      expect(resolveP1Protocol(search).id, search).toBe("p1-portrait-three-30");
     }
   });
 
-  it("selects the five-gesture and regression procedures by name, ignoring case and spaces", () => {
+  it("selects the earlier procedures by name, ignoring case and spaces", () => {
     expect(resolveP1Protocol("?protocol=five")).toBe(P1_FIVE_GESTURE_PROTOCOL);
     expect(resolveP1Protocol("?protocol=Five")).toBe(P1_FIVE_GESTURE_PROTOCOL);
+    expect(resolveP1Protocol("?protocol=remaining-two")).toBe(P1_REMAINING_TWO_PROTOCOL);
     expect(resolveP1Protocol("?protocol=regression")).toBe(P1_REGRESSION_THREE_PROTOCOL);
     expect(resolveP1Protocol("?view=analysis&protocol=%20regression%20")).toBe(P1_REGRESSION_THREE_PROTOCOL);
     expect(resolveP1ProtocolSelector("?protocol=five")).toBe("five");
+    expect(resolveP1ProtocolSelector("?protocol=remaining-two")).toBe("remaining-two");
   });
 
-  it("runs ribbon-swipe 10 times and Bloom 10 times in two blocks by default", () => {
+  it("runs ribbon-swipe, Lift and ななめリフト ten times each in three blocks", () => {
+    expect(P1_PORTRAIT_THREE_PROTOCOL).toMatchObject({
+      id: "p1-portrait-three-30",
+      trialsPerGesture: 10,
+      gestures: ["ribbon-swipe", "lift", "diagonal-lift"],
+    });
+    expect(P1_PORTRAIT_THREE_PROTOCOL.trials).toHaveLength(30);
+    expect(P1_PORTRAIT_THREE_PROTOCOL.blocks.map(({ gesture, firstOrdinal, lastOrdinal }) => (
+      { gesture, firstOrdinal, lastOrdinal }
+    ))).toEqual([
+      { gesture: "ribbon-swipe", firstOrdinal: 1, lastOrdinal: 10 },
+      { gesture: "lift", firstOrdinal: 11, lastOrdinal: 20 },
+      { gesture: "diagonal-lift", firstOrdinal: 21, lastOrdinal: 30 },
+    ]);
+    // The two diagonals alternate, five each, and every ななめリフト waits for the start position.
+    const diagonals = P1_PORTRAIT_THREE_PROTOCOL.trials.filter(({ gesture }) => gesture === "diagonal-lift");
+    expect(diagonals.map(({ diagonalLiftVariant }) => diagonalLiftVariant)).toEqual([
+      "up-right", "up-left", "up-right", "up-left", "up-right",
+      "up-left", "up-right", "up-left", "up-right", "up-left",
+    ]);
+    expect(diagonals.every(({ requiresReadiness }) => requiresReadiness === true)).toBe(true);
+    expect(diagonals.map(({ id }) => id)).toEqual(
+      Array.from({ length: 10 }, (_, index) => `diagonal-lift-${index + 1}`),
+    );
+  });
+
+  it("keeps the ribbon-swipe and Lift definitions of the five-gesture run", () => {
+    const withoutOrdinal = (trial: { ordinal: number }): unknown => {
+      const copy: Record<string, unknown> = { ...trial };
+      delete copy.ordinal;
+      return copy;
+    };
+    for (const gesture of ["ribbon-swipe", "lift"] as const) {
+      expect(
+        P1_PORTRAIT_THREE_PROTOCOL.trials.filter((trial) => trial.gesture === gesture).map(withoutOrdinal),
+        gesture,
+      ).toEqual(
+        P1_FIVE_GESTURE_PROTOCOL.trials.filter((trial) => trial.gesture === gesture).map(withoutOrdinal),
+      );
+    }
+  });
+
+  it("runs ribbon-swipe 10 times and Bloom 10 times in two blocks with ?protocol=remaining-two", () => {
     expect(P1_REMAINING_TWO_PROTOCOL).toMatchObject({
       id: "p1-remaining-two-20",
       trialsPerGesture: 10,

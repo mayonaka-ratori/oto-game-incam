@@ -15,6 +15,8 @@ interface ActiveCandidate {
   startX: number;
   startY: number;
   lastProjection: number;
+  /** Furthest the hand has travelled along the direction in this attempt. */
+  maximumProjection: number;
   lastTimeMs: number;
   centerCrossTimeMs: number | null;
 }
@@ -26,6 +28,7 @@ interface GapCandidate {
   startX: number;
   startY: number;
   lastProjection: number;
+  maximumProjection: number;
   lastTimeMs: number;
   centerCrossTimeMs: number | null;
 }
@@ -37,6 +40,7 @@ export interface RibbonSwipeConfig {
   readonly minimumDistance?: number;
   readonly maximumDurationMs?: number;
   readonly perpendicularTolerance?: number;
+  readonly maximumBackwardFromPeak?: number;
   readonly maximumTrackingGapMs?: number;
 }
 
@@ -49,18 +53,27 @@ export const RIBBON_SWIPE_CENTER = { x: 0.5, y: 0.5 } as const;
 
 export const RIBBON_SWIPE_DEFAULTS = {
   minimumDistance: 0.28,
+  /**
+   * How long one traversal may take. 1400 (the Bloom and Lift limit) was tried on the recorded
+   * Android replays on 2026-09-20 and did not raise the number of successes (8/10 → 7/10 and
+   * 9/10 → 8/10), so the value stays at 850.
+   */
   maximumDurationMs: 850,
   perpendicularTolerance: 0.18,
+  /**
+   * How far a hand that has already set off may fall back from the furthest point it reached
+   * before the attempt is judged as going the wrong way. Measured from that peak instead of
+   * between two frames, so the judgment does not depend on the frame interval.
+   *
+   * Reason: on the Android session `p1-20260919162710819` all 16 `wrong-direction` records were
+   * a 0.021–0.057 sway of a hand that had not crossed the middle yet, at 90–300ms frame spacing.
+   * Initial value, not measured (2026-09-20).
+   */
+  maximumBackwardFromPeak: 0.06,
   /** Floor of the tracking gap tolerance; a slow device raises it through the frame. */
   maximumTrackingGapMs: 150,
 } as const;
 
-/**
- * How far the hand may fall back along the direction before the attempt is judged as going the
- * wrong way. One-frame velocity is not used: on a phone reporting ten hands a second it swings
- * negative in the middle of a correct swipe (docs/19 の3.1 と4.2).
- */
-const BACKWARD_DISTANCE = -0.02;
 /** Below this the hand has not set off yet, so the candidate stays armed. */
 const START_DISTANCE = 0.02;
 const START_SPEED = 0.08;
@@ -76,6 +89,7 @@ export class RibbonSwipeStateMachine {
       minimumDistance: config.minimumDistance ?? RIBBON_SWIPE_DEFAULTS.minimumDistance,
       maximumDurationMs: config.maximumDurationMs ?? RIBBON_SWIPE_DEFAULTS.maximumDurationMs,
       perpendicularTolerance: config.perpendicularTolerance ?? RIBBON_SWIPE_DEFAULTS.perpendicularTolerance,
+      maximumBackwardFromPeak: config.maximumBackwardFromPeak ?? RIBBON_SWIPE_DEFAULTS.maximumBackwardFromPeak,
       maximumTrackingGapMs: config.maximumTrackingGapMs ?? RIBBON_SWIPE_DEFAULTS.maximumTrackingGapMs,
     };
     this.#direction = directionVector(config.direction);
@@ -97,6 +111,7 @@ export class RibbonSwipeStateMachine {
           startX: hand.palmCenter.x,
           startY: hand.palmCenter.y,
           lastProjection: projection,
+          maximumProjection: projection,
           lastTimeMs: frame.captureTimeMs,
           centerCrossTimeMs: null,
         });
@@ -161,6 +176,7 @@ export class RibbonSwipeStateMachine {
           startX: hand.palmCenter.x,
           startY: hand.palmCenter.y,
           lastProjection: projection,
+          maximumProjection: projection,
           lastTimeMs: frame.captureTimeMs,
           centerCrossTimeMs: null,
         });
@@ -173,18 +189,17 @@ export class RibbonSwipeStateMachine {
     const directionalSpeed = hand.palmVelocity.x * this.#direction[0] + hand.palmVelocity.y * this.#direction[1];
 
     if (candidate.state === "armed") {
-      if (projectionDelta < BACKWARD_DISTANCE) {
-        rejections.push(reject(frame, hand.trackId, "wrong-direction"));
-        this.#candidates.delete(hand.trackId);
-        return;
-      }
       if (Math.abs(perpendicular) > this.#config.perpendicularTolerance) {
         if (projectionDelta > START_DISTANCE) rejections.push(reject(frame, hand.trackId, "off-axis"));
         this.#candidates.delete(hand.trackId);
         return;
       }
       if (projectionDelta <= START_DISTANCE && directionalSpeed <= START_SPEED) {
+        // Moving backwards lands here too: a hand that has not set off yet is waiting, not going
+        // the wrong way, so the attempt is kept and the start simply follows the hand
+        // (docs/19 の3.1: every recorded `wrong-direction` was a sway before the hand set off).
         candidate.lastProjection = projection;
+        candidate.maximumProjection = projection;
         candidate.lastTimeMs = frame.captureTimeMs;
         candidate.startX = hand.palmCenter.x;
         candidate.startY = hand.palmCenter.y;
@@ -192,6 +207,7 @@ export class RibbonSwipeStateMachine {
       }
       candidate.state = "traversing";
       candidate.startTimeMs = frame.captureTimeMs;
+      candidate.maximumProjection = Math.max(candidate.maximumProjection, candidate.lastProjection);
     }
 
     if (Math.abs(perpendicular) > this.#config.perpendicularTolerance) {
@@ -199,7 +215,8 @@ export class RibbonSwipeStateMachine {
       this.#candidates.delete(hand.trackId);
       return;
     }
-    if (projectionDelta < BACKWARD_DISTANCE) {
+    candidate.maximumProjection = Math.max(candidate.maximumProjection, projection);
+    if (candidate.maximumProjection - projection > this.#config.maximumBackwardFromPeak) {
       rejections.push(reject(frame, hand.trackId, "wrong-direction"));
       this.#candidates.delete(hand.trackId);
       return;

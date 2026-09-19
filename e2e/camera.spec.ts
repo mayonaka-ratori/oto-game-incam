@@ -214,9 +214,9 @@ test("shows only the tester workflow on the standard URL", async ({ page }) => {
   await expect(page.getByRole("button", { name: "診断データだけをもう一度保存" })).toBeHidden();
   await expect(page.getByRole("button", { name: "カメラを停止" })).toBeHidden();
   await expect(page.getByRole("button", { name: "テストを開始" })).toBeHidden();
-  // The default protocol is the two gestures that have not passed yet: ten trials each.
-  await expect(page.locator("#p1-block-label")).toHaveText("ブロック 1 / 2");
-  await expect(page.locator("#p1-progress")).toHaveText("0 / 20");
+  // The default procedure is the upright-phone one: ribbon-swipe, Lift and ななめリフト, ten trials each.
+  await expect(page.locator("#p1-block-label")).toHaveText("ブロック 1 / 3");
+  await expect(page.locator("#p1-progress")).toHaveText("0 / 30");
   await expect(page.getByRole("button", { name: "この動きを開始" })).toBeHidden();
   await expect(page.getByRole("heading", { name: "実機確認レポート" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "P1セッション比較" })).toHaveCount(0);
@@ -306,7 +306,7 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
     trialEnvironments: Array<{ viewportWidth: number; orientation: string }>;
   };
   expect(report.schema).toBe("oto-motion-p1-controlled");
-  expect(report.schemaVersion).toBe(7);
+  expect(report.schemaVersion).toBe(8);
   expect(report.measurementNotes).toEqual({
     technicalSummaryScope: "recent-window",
     technicalSummaryWindowSamples: 180,
@@ -382,7 +382,7 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
     viewport: "844 × 390",
   });
   expect(finalReport.technicalSource.mode).toBe("p1-import");
-  expect(finalReport.technicalSource).toMatchObject({ p1SchemaVersion: 7, p1ProtocolId: "p1-five-gesture-50" });
+  expect(finalReport.technicalSource).toMatchObject({ p1SchemaVersion: 8, p1ProtocolId: "p1-five-gesture-50" });
 
   // A legacy clap session never leaves the earlier Bloom value in place.
   await expect(page.locator('[name="bloomSuccess"]')).toHaveValue("0");
@@ -464,7 +464,7 @@ test("times out and advances all 50 trials in five blocks without double-finishi
     summary: { byGesture: Record<string, { readinessTimeout: number; recognitionTimeout: number }> };
     performance: { blocks: Array<{ blockIndex: number; gesture: string; open: boolean }> } | null;
   };
-  expect(report.schemaVersion).toBe(7);
+  expect(report.schemaVersion).toBe(8);
   expect(report.protocol).toMatchObject({ id: "p1-five-gesture-50", total: 50 });
   expect(report.protocol.results).toHaveLength(50);
   expect(report.protocol.results.every(({ outcome, resolution }) => (
@@ -499,12 +499,12 @@ test("pauses inside a block and repeats the abandoned attempt after resume", asy
   await page.getByRole("button", { name: "中断", exact: true }).click();
   await expect(page.locator("#p1-state")).toHaveText("中断中");
   await expect(page.locator("#p1-block")).toHaveAttribute("data-state", "paused");
-  await expect(page.locator("#p1-progress")).toHaveText("0 / 20");
+  await expect(page.locator("#p1-progress")).toHaveText("0 / 30");
   await expect(page.locator("#p1-remaining")).toHaveText("—");
   await page.getByRole("button", { name: "再開", exact: true }).click();
-  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 20");
+  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 30");
   await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
-  await expect(page.locator("#p1-progress")).toHaveText("1 / 20");
+  await expect(page.locator("#p1-progress")).toHaveText("1 / 30");
 
   await page.getByRole("button", { name: "中断", exact: true }).click();
   const downloadPromise = page.waitForEvent("download");
@@ -532,7 +532,8 @@ test("waits for two-hand readiness before the Bloom count-in", async ({ page }) 
   await page.addInitScript(() => {
     Object.defineProperty(window, "AudioContext", { value: undefined });
   });
-  await openAndStartTest(page, "?tracking=mock");
+  // Bloom is no longer in the default procedure, so this check asks for the 20-trial one.
+  await openAndStartTest(page, "?tracking=mock&protocol=remaining-two", 20);
   for (let ordinal = 1; ordinal <= 10; ordinal += 1) {
     await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal} / 20`);
     await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
@@ -601,11 +602,11 @@ test("waits for a tap at a movement change and asks before a restart", async ({ 
   await page.setViewportSize({ width: 844, height: 390 });
   await openAndStartTest(page);
   for (let ordinal = 1; ordinal <= 9; ordinal += 1) {
-    await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal} / 20`);
+    await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal} / 30`);
     await page.locator("#p1-skip").dispatchEvent("click");
-    await expect(page.locator("#p1-progress")).toHaveText(`${ordinal} / 20`);
+    await expect(page.locator("#p1-progress")).toHaveText(`${ordinal} / 30`);
   }
-  await expect(page.locator("#p1-trial-number")).toHaveText("10 / 20");
+  await expect(page.locator("#p1-trial-number")).toHaveText("10 / 30");
   await page.locator("#p1-skip").dispatchEvent("click");
   // The next movement is shown and waits: nothing advances on its own here.
   await expect(page.locator("#stage-tap")).toBeVisible();
@@ -629,10 +630,10 @@ test("waits for a tap at a movement change and asks before a restart", async ({ 
   // Restarting discards the recorded trials, so it asks first.
   page.once("dialog", (dialog) => void dialog.dismiss());
   await page.getByRole("button", { name: "テストを最初からやり直す" }).click();
-  await expect(page.locator("#p1-progress")).toHaveText("10 / 20");
+  await expect(page.locator("#p1-progress")).toHaveText("10 / 30");
   page.once("dialog", (dialog) => void dialog.accept());
   await page.getByRole("button", { name: "テストを最初からやり直す" }).click();
-  await expect(page.locator("#p1-progress")).toHaveText("0 / 20");
+  await expect(page.locator("#p1-progress")).toHaveText("0 / 30");
 });
 
 test("pauses when the page is hidden, also between trials", async ({ page }) => {
@@ -643,7 +644,7 @@ test("pauses when the page is hidden, also between trials", async ({ page }) => 
   await expect(page.locator("#p1-block")).toHaveAttribute("data-state", "paused");
   await setVisibility(page, "visible");
   await page.getByRole("button", { name: "再開", exact: true }).click();
-  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 20");
+  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 30");
   // Hidden while the result is shown between trials: the next trial must not start on return.
   // Skipping and hiding run in one task, so on a busy machine the 1-second result hold cannot
   // run out in between and start the next trial first.
@@ -662,7 +663,7 @@ test("pauses when the page is hidden, also between trials", async ({ page }) => 
   await expect(page.locator("#p1-state")).toHaveText("中断中");
   await expect(page.locator("#p1-trial-number")).toHaveText("—");
   await page.getByRole("button", { name: "再開", exact: true }).click();
-  await expect(page.locator("#p1-trial-number")).toHaveText("2 / 20");
+  await expect(page.locator("#p1-trial-number")).toHaveText("2 / 30");
 
   await page.getByRole("button", { name: "中断", exact: true }).click();
   const report = await downloadJson(page, () => page.getByRole("button", { name: "結果を保存" }).click()) as {
@@ -726,7 +727,7 @@ test("runs a trial without a count-in while the audio clock is suspended and bri
   // A suspended audio clock stands still; a GO computed from it after a while would lie in the past.
   await page.waitForTimeout(2_000);
   await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
-  await expect(page.locator("#p1-trial-number")).toHaveText("2 / 20");
+  await expect(page.locator("#p1-trial-number")).toHaveText("2 / 30");
   await expect(page.locator("#p1-remaining")).toHaveText(/^(10|9)秒$/);
   await expect(page.locator("#p1-block-message")).toContainText("カウント音なし");
 
@@ -745,7 +746,7 @@ test("runs a trial without a count-in while the audio clock is suspended and bri
       .observe(label, { childList: true, characterData: true, subtree: true });
     document.querySelector<HTMLButtonElement>("#p1-skip")?.click();
   });
-  await expect(page.locator("#p1-trial-number")).toHaveText("3 / 20");
+  await expect(page.locator("#p1-trial-number")).toHaveText("3 / 30");
   await expect.poll(() => page.evaluate(() => (window as unknown as { __p1States: string[] }).__p1States))
     .toContain("2");
   await expect(page.locator("#p1-block-message")).not.toContainText("カウント音なし");
@@ -762,7 +763,8 @@ test("schedules the Bloom count-in only after the start position settles", async
       return originalStart.call(this, when);
     };
   });
-  await openAndStartTest(page, "?tracking=mock");
+  // Bloom is no longer in the default procedure, so this check asks for the 20-trial one.
+  await openAndStartTest(page, "?tracking=mock&protocol=remaining-two", 20);
   for (let ordinal = 1; ordinal <= 10; ordinal += 1) {
     await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal} / 20`);
     await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
@@ -839,7 +841,7 @@ test("compares five-gesture sessions and counts a session saved twice once", asy
   await expect(rows.first().locator("td").nth(7)).toHaveText("8/10");
   await expect(rows.first().locator("td").nth(8)).toHaveText("8/10");
   await expect(page.locator("#p1-comparison-findings")).toContainText("読込済み");
-  await expect(page.locator("#p1-comparison-findings")).toContainText("Lift／Spotlightは候補動作");
+  await expect(page.locator("#p1-comparison-findings")).toContainText("Lift／Spotlight／ななめリフトは候補動作");
 });
 
 async function disableAudio(page: Page): Promise<void> {
@@ -858,12 +860,17 @@ async function tapStage(page: Page): Promise<void> {
   await page.locator("#preview-shell").click({ force: true, position: { x: 12, y: 12 } });
 }
 
-async function openAndStartTest(page: Page, query = "?tracking=mock&trackingScenario=none"): Promise<void> {
+/** `total` follows the procedure the query asks for: 30 by default, 20 with ?protocol=remaining-two. */
+async function openAndStartTest(
+  page: Page,
+  query = "?tracking=mock&trackingScenario=none",
+  total = 30,
+): Promise<void> {
   await page.goto(`/${query}`);
   await page.getByRole("button", { name: "はじめる" }).click();
   await expect(page.locator("#tracking-init")).toHaveText("準備完了");
   await tapStage(page);
-  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 20");
+  await expect(page.locator("#p1-trial-number")).toHaveText(`1 / ${total}`);
 }
 
 async function setVisibility(page: Page, state: "hidden" | "visible"): Promise<void> {

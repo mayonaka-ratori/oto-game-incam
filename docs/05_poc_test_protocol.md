@@ -1,8 +1,8 @@
 # 空間ジェスチャー音楽ゲーム POCテスト手順
 
-- 更新日: 2026-09-19
+- 更新日: 2026-09-20
 - 文書種別: Phase 1 / Phase 2の実施手順・記録・合否定義
-- ステータス: v0.8（追跡の途切れの許容をフレーム間隔に合わせ、ribbon-swipeの逆方向判定を後退距離だけにした。Bloomの案内の始点を下げた。根拠は19。v0.7: 定例の試行を残る2動作・20回へ絞り、試験手順をURLで選べるようにした。結果JSONをschema v7へ上げ、端末情報と処理経路の指定を記録項目へ追加。動作の切り替わりを画面のタップで進める。判定の閾値と合否は変えていない。v0.6: schema v6で性能値と向きを追加）
+- ステータス: v0.9（縦向きを基本にし、定例の試行をribbon-swipe、Lift、ななめリフトの30回へ替えた。ななめリフトを候補動作へ追加。ribbon-swipeの逆方向判定を最大到達点からの戻り量にした。結果JSONはschema v8。速度チェックを追加。根拠は20。v0.8: 追跡の途切れの許容をフレーム間隔に合わせ、ribbon-swipeの逆方向判定を後退距離だけにした。Bloomの案内の始点を下げた。根拠は19。v0.7: 定例の試行を残る2動作・20回へ絞り、試験手順をURLで選べるようにした。結果JSONをschema v7へ上げ、端末情報と処理経路の指定を記録項目へ追加。動作の切り替わりを画面のタップで進める。判定の閾値と合否は変えていない。v0.6: schema v6で性能値と向きを追加）
 - 正本範囲: POCテストの条件、分類、記録、ゲート判定
 
 ## 1. 目的
@@ -81,15 +81,16 @@
 
 ## 5. Phase 1 — 制御試験
 
-2026-09-19以降の定例の試行は、成立確認が残っているribbon-swipeとBloomの各10回、合計20回とする（手順ID `p1-remaining-two-20`）。air-tap、Lift、Spotlightは両端末で8/10以上を満たし、成立確認を終えた（[18](./18_android_second_test_and_next_plan.md)の3章）。試験手順はURLで選ぶ。
+2026-09-20以降の定例の試行は、端末を縦向きに置き、ribbon-swipe、Lift、ななめリフトを各10回、合計30回とする（手順ID `p1-portrait-three-30`）。縦向きの映像は横幅が狭く、左右に開くBloomが収まらないため、3つ目の入力の候補をLiftとななめリフトへ替えた（[20](./20_android_fourth_test_and_portrait_direction.md)、正本は[03](./03_mvp_definition_and_roadmap.md)の3章と4章）。2026-09-19には、成立確認が残っているribbon-swipeとBloomの20回（手順ID `p1-remaining-two-20`）を定例にしていた。air-tap、Lift、Spotlightは両端末で8/10以上を満たし、成立確認を終えた（[18](./18_android_second_test_and_next_plan.md)の3章）。試験手順はURLで選ぶ。
 
 | URLの指定 | 手順ID | 内容 |
 |---|---|---|
-| なし（既定） | `p1-remaining-two-20` | ribbon-swipe 10回、Bloom 10回。試行の定義と順序は5動作版の同じ動作と同一 |
+| なし（既定） | `p1-portrait-three-30` | ribbon-swipe 10回、Lift 10回、ななめリフト 10回（右上と左上を交互に5回ずつ）。ribbon-swipeとLiftの試行の定義は5動作版と同一 |
+| `?protocol=remaining-two` | `p1-remaining-two-20` | ribbon-swipe 10回、Bloom 10回。2026-09-19の定例。Bloomを横向きで確かめるときに使う |
 | `?protocol=five` | `p1-five-gesture-50` | 下表の5動作・50試行 |
 | `?protocol=regression` | `p1-regression-three-9` | air-tap、Lift、Spotlightを各3回。判定の時間定数または座標の扱いを変えた後の回帰確認に使う。目安は3回中3回 |
 
-手順IDが違う結果は同じ表へ混ぜない。20回版と回帰確認版は、3入力がそろわないため単独ではP1-Controlledの合否候補にしない。
+手順IDが違う結果は同じ表へ混ぜない。30回版、20回版、回帰確認版は、3入力がそろわないため単独ではP1-Controlledの合否候補にしない。
 
 2026-09-14以降のPhase 1は、5動作を10回ずつ行う5ブロック・合計50試行とする。改訂の計画と根拠は[13_p1_five_gesture_50_trial_revision_plan.md](./13_p1_five_gesture_50_trial_revision_plan.md)に記録している。左右・方向の偏りを避けるため、全テスターで次の順序を使う。順序効果が疑われた場合だけ、別セッションで候補動作の順序を反転する。
 
@@ -126,7 +127,8 @@
 - 左下→右上、右下→左上を各2回。
 - 案内では、片手の開始位置の丸印、帯に沿う道筋、終点の輪を示す。
 - 指定方向、中心通過、成立時刻を別々に記録する。
-- 逆方向（`wrong-direction`）は、進行方向へ0.02を超えて後退したときだけ出す。1フレーム差分の速度は使わない（2026-09-19、根拠は[19](./19_android_third_test_and_recognition_fixes.md)の3.1と4.2）。
+- 逆方向（`wrong-direction`）は、動き出した後に、その候補で到達した最大の位置から進行方向へ0.06を超えて戻ったときだけ出す（0.06は実測前の初期値）。動き出す前の構えの間は、後退しても拒否せず、始点を今の位置へ付け直す。1フレーム差分の速度と後退量は使わない。Android 4回目の16件がすべて、動き出す前の構えの位置での0.021〜0.057の揺れだったためである（2026-09-20、[20](./20_android_fourth_test_and_portrait_direction.md)の6章。2026-09-19の経緯は[19](./19_android_third_test_and_recognition_fixes.md)の4.2）。
+- 成立までの制限時間は850msとする。2026-09-20に1400msを実機の診断リプレイで試したが、成立が増えなかったので変えていない（[20](./20_android_fourth_test_and_portrait_direction.md)の6章）。
 - 追跡の途切れの許容は「150msと、直近15区間のフレーム間隔の中央値の2.5倍の、大きいほう」で、上限は400msとする。毎秒30回前後の端末では150msのまま、毎秒約10回の端末では約250msになる（2026-09-19、根拠は[19](./19_android_third_test_and_recognition_fixes.md)の3.1）。Bloom、Lift、Spotlightと、追跡側のtrackの保持にも同じ値を使う。使った値の最小と最大は結果JSONの`performance`の`trackingGapToleranceMs`に残る。
 
 ### 5.3 Bloom 10回
@@ -161,6 +163,16 @@
 - 先に上がった手が必要な上昇量（0.18）の付近で揺れても、上昇量に達した時刻は最初に達した時刻のままにする。必要な上昇量より0.03を超えて下がった場合だけ到達を取り消す。
 - 0.18、420ms、0.14、1.4秒、開始ゾーンの範囲、0.05、0.02、約0.25秒、0.03は実測前の初期値である。
 
+### 5.4.1 ななめリフト 10回（候補動作）
+
+- 動作ID `diagonal-lift`。両手を画面下側の左右の開始ゾーン（Liftと同じ）へ置き、`GO`の後、両手を平行に斜め上へ動かす。向きは、プレイヤーが見る鏡像の画面で右上（`up-right`）と左上（`up-left`）の2種類で、交互に5回ずつ行う。
+- 向きの単位ベクトルは右上(0.6, -0.8)、左上(-0.6, -0.8)とする。両手それぞれ、開始位置から向きへの移動が0.18以上で、横方向の移動が0.06以上あれば成立とする。向きと直交する方向へ0.12を超えてずれた場合と、逆向きへ0.025を超えて動いた場合は`diagonal-lift-wrong-direction`とする。
+- 準備完了待ち（約180ms）、同期幅（420ms）、動作時間の上限（1.4秒）、追跡の途切れの許容、待機と再アームの扱いはLiftと同じである。状態機械はLiftと共通で、Liftは向きが真上の場合にあたる。Liftの判定は変えていない。
+- 拒否理由は`diagonal-lift-not-ready`、`diagonal-lift-wrong-direction`、`diagonal-lift-distance-insufficient`、`diagonal-lift-sync-expired`とする。診断はLiftと同じ形で`diagonalLiftDiagnostic`へ保存する。
+- 案内の始点は、端に寄る側の手が画面を出ないよう内側へ寄せる（右上へは x 0.22と0.66、左上へは x 0.34と0.78、高さはLiftと同じy 0.775）。
+- 向きのベクトル、0.18、0.06、0.12、0.025は実測前の初期値である（2026-09-20、[20](./20_android_fourth_test_and_portrait_direction.md)）。
+- 現在のLiftは、斜めの動き（上へ0.19、横へ0.14）も成立と判定する。P1は1試行につき判定器を1つしか動かさないので結果には影響しないが、LiftとななめリフトをInteraction POCで同時に判定する前に、区別の方法を決める。
+
 ### 5.5 Spotlight 10回（候補動作）
 
 - 画面に指定の対角配置を表示し、`GO`の後に片手を上側ゾーン、反対の手を下側ゾーンへ移動して約300ms止める。
@@ -182,7 +194,7 @@
 - 結果が1回以上ある状態で「テストを最初からやり直す」を押した場合は、結果を消してよいか確認する。
 - 結果JSONには、ブロックごとの開始・終了時刻、前のブロックからの休憩時間、中断の開始・再開時刻と理由、やり直した試行IDを残す。試行結果には何回目の試み（`attempt`）かを残す。
 
-旧clapを含むschema v2／v3の結果JSONと、3入力・30試行のschema v4の結果JSONは引き続き読み込める。現行の標準JSONはschema v7で、実行した手順のID（既定は`protocol.id = "p1-remaining-two-20"`）、`protocol.trialsPerGesture = 10`、`gestureVocabulary.gestures`（実行した動作。既定の`p1-remaining-two-20`ではribbon-swipeとBloomの2つ）を明示する。旧clap、v4のBloom、v5以降の5動作は語彙とprotocol IDで区別し、同じ第三入力や同じ試験条件の結果へ混ぜない。schema v6とv7はv5へ記録項目を足した版で、判定条件と合否の計算はv5と同じである。2026-09-19の画面改訂から必須休憩をなくしたことは、ブロックのrestAfterとセッションのメモで区別する。v5とv6のファイルは、足した項目を「記録なし」または当時の既定値として読み込み、同じ手順IDの結果として比較できる。
+旧clapを含むschema v2／v3の結果JSONと、3入力・30試行のschema v4の結果JSONは引き続き読み込める。現行の標準JSONはschema v8で、実行した手順のID（既定は`protocol.id = "p1-portrait-three-30"`）、`protocol.trialsPerGesture = 10`、`gestureVocabulary.gestures`（実行した動作。既定の`p1-portrait-three-30`ではribbon-swipe、Lift、ななめリフトの3つ）を明示する。旧clap、v4のBloom、v5以降の5動作は語彙とprotocol IDで区別し、同じ第三入力や同じ試験条件の結果へ混ぜない。schema v6、v7、v8はv5へ記録項目と動作を足した版で（v8はななめリフトの試行の向き`diagonalLiftVariant`と診断`diagonalLiftDiagnostic`を追加）、判定条件と合否の計算はv5と同じである。2026-09-19の画面改訂から必須休憩をなくしたことは、ブロックのrestAfterとセッションのメモで区別する。v5とv6のファイルは、足した項目を「記録なし」または当時の既定値として読み込み、同じ手順IDの結果として比較できる。
 
 ### 5.7 Phase 1の記録
 

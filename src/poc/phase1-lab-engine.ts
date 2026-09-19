@@ -1,6 +1,7 @@
 import { AirTapStateMachine } from "../gestures/air-tap-state-machine";
 import { BloomStateMachine } from "../gestures/bloom-state-machine";
 import { ClapBurstStateMachine } from "../gestures/clap-burst-state-machine";
+import { DiagonalLiftStateMachine } from "../gestures/diagonal-lift-state-machine";
 import type { GestureEvaluation, GestureEvent, GestureReadinessObservation } from "../gestures/gesture-types";
 import { LiftStateMachine } from "../gestures/lift-state-machine";
 import { RibbonSwipeStateMachine } from "../gestures/ribbon-swipe-state-machine";
@@ -43,6 +44,7 @@ type TrialMachine =
   | BloomStateMachine
   | RibbonSwipeStateMachine
   | LiftStateMachine
+  | DiagonalLiftStateMachine
   | SpotlightStateMachine
   | ClapBurstStateMachine;
 
@@ -486,7 +488,9 @@ function readinessTimeoutReasons(trial: P1TrialDefinition, stats: P1ReadinessDia
     : stats.inZoneFrameCount === 0
       ? "readiness-outside-zone"
       : "readiness-not-still";
-  return trial.gesture === "lift" ? [cause, "lift-not-ready"] : [cause];
+  if (trial.gesture === "lift") return [cause, "lift-not-ready"];
+  if (trial.gesture === "diagonal-lift") return [cause, "diagonal-lift-not-ready"];
+  return [cause];
 }
 
 function createMachine(trial: P1TrialDefinition): TrialMachine {
@@ -502,6 +506,11 @@ function createMachine(trial: P1TrialDefinition): TrialMachine {
       return new BloomStateMachine({ readinessStableMs: P1_READINESS_STABLE_MS.bloom });
     case "lift":
       return new LiftStateMachine({ readinessStableMs: P1_READINESS_STABLE_MS.lift });
+    case "diagonal-lift":
+      return new DiagonalLiftStateMachine({
+        variant: trial.diagonalLiftVariant ?? "up-right",
+        readinessStableMs: P1_READINESS_STABLE_MS["diagonal-lift"],
+      });
     case "spotlight":
       return new SpotlightStateMachine({ variant: trial.spotlightVariant ?? "left-up-right-down" });
     case "clap":
@@ -511,16 +520,25 @@ function createMachine(trial: P1TrialDefinition): TrialMachine {
   }
 }
 
-function hasReadinessGate(machine: TrialMachine): machine is BloomStateMachine | LiftStateMachine {
-  return machine instanceof BloomStateMachine || machine instanceof LiftStateMachine;
+function hasReadinessGate(
+  machine: TrialMachine,
+): machine is BloomStateMachine | LiftStateMachine | DiagonalLiftStateMachine {
+  return machine instanceof BloomStateMachine
+    || machine instanceof LiftStateMachine
+    || machine instanceof DiagonalLiftStateMachine;
 }
 
 function preparesBeforeWindow(
   machine: TrialMachine,
-): machine is RibbonSwipeStateMachine | BloomStateMachine | LiftStateMachine | SpotlightStateMachine {
+): machine is RibbonSwipeStateMachine
+  | BloomStateMachine
+  | LiftStateMachine
+  | DiagonalLiftStateMachine
+  | SpotlightStateMachine {
   return machine instanceof RibbonSwipeStateMachine
     || machine instanceof BloomStateMachine
     || machine instanceof LiftStateMachine
+    || machine instanceof DiagonalLiftStateMachine
     || machine instanceof SpotlightStateMachine;
 }
 
@@ -535,6 +553,11 @@ function machineDiagnostics(
   }
   if (machine instanceof BloomStateMachine) {
     return { bloomDiagnostic: finishedAtMs === undefined ? machine.diagnostic : machine.diagnosticAt(finishedAtMs) };
+  }
+  if (machine instanceof DiagonalLiftStateMachine) {
+    return {
+      diagonalLiftDiagnostic: finishedAtMs === undefined ? machine.diagnostic : machine.diagnosticAt(finishedAtMs),
+    };
   }
   if (machine instanceof LiftStateMachine) {
     return { liftDiagnostic: finishedAtMs === undefined ? machine.diagnostic : machine.diagnosticAt(finishedAtMs) };

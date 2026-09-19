@@ -158,7 +158,7 @@ describe("P1 records of schema v6", () => {
     engine.processFrame(trackingFrame(2, 100, [syntheticHand(0, "left", 0.7, 0.5)]));
     const document = engine.createDocument(TECHNICAL_SUMMARY, TECHNICAL_SNAPSHOT);
 
-    expect(document.schemaVersion).toBe(7);
+    expect(document.schemaVersion).toBe(8);
     expect(document.replay).toMatchObject({ available: true, frameCount: 2, trialWindowCount: 1 });
     expect(document.replay.frameCount).toBe(engine.createDiagnosticReplay().frames.length);
     expect(document.measurementNotes).toEqual({

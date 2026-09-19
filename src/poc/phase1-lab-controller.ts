@@ -8,6 +8,7 @@ import { Phase1LabEngine, type Phase1LabSnapshot } from "./phase1-lab-engine";
 import {
   P1_READINESS_TIMEOUT_MS,
   P1_TRIAL_TIMEOUT_MS,
+  diagonalLiftVariantLabel,
   resolveP1Protocol,
   spotlightVariantLabel,
   type P1BlockRecord,
@@ -699,7 +700,9 @@ export class Phase1LabController {
         ? { direction: trial.swipeDirection }
         : trial?.spotlightVariant !== undefined
           ? { spotlightVariant: trial.spotlightVariant }
-          : {},
+          : trial?.diagonalLiftVariant !== undefined
+            ? { diagonalLiftVariant: trial.diagonalLiftVariant }
+            : {},
       trackingQuality: "observed",
       reasonCodes: ["manual-observation"],
     };
@@ -1173,7 +1176,7 @@ function instructionLabel(sessionStarted: boolean, snapshot: Phase1LabSnapshot):
     if (snapshot.readiness !== null && snapshot.readiness.visibleHands < 2) {
       return "両手が映るのを待っています。両手をカメラに向けてください";
     }
-    return active.gesture === "lift"
+    return active.gesture === "lift" || active.gesture === "diagonal-lift"
       ? "両手を画面の下側、左右の枠に構えて止めてください。そろうと合図が始まります"
       : "両手を離して左右の丸印に合わせて止めてください。そろうと合図が始まります";
   }
@@ -1229,6 +1232,10 @@ function reasonLabel(reason: string): string {
     "lift-not-upward": "両手を真上へ上げる動きになっていません",
     "lift-distance-insufficient": "上げる高さが足りません",
     "lift-sync-expired": "両手の上がるタイミングが離れすぎています",
+    "diagonal-lift-not-ready": "両手が下側の開始位置にありません",
+    "diagonal-lift-wrong-direction": "指定した斜めの向きから外れました",
+    "diagonal-lift-distance-insufficient": "斜めに動かす距離が足りません",
+    "diagonal-lift-sync-expired": "両手の動くタイミングが離れすぎています",
     "spotlight-wrong-zone": "両手が上と下に分かれていません",
     "spotlight-pose-not-held": "形を約0.3秒止める前に手が動きました",
     "spotlight-wrong-side": "上下の左右が逆です",
@@ -1252,6 +1259,7 @@ function gestureLabel(gesture: string | null | undefined): string {
     bloom: "Bloom",
     lift: "Lift",
     spotlight: "Spotlight",
+    "diagonal-lift": "ななめリフト",
     clap: "旧クラップ",
   }[gesture ?? ""] ?? "—";
 }
@@ -1282,9 +1290,11 @@ function renderMotionSample(root: ParentNode, trial: P1TrialDefinition | null): 
       ? trial.swipeDirection ?? "left-to-right"
       : trial.gesture === "spotlight"
         ? trial.spotlightVariant ?? "left-up-right-down"
-        : trial.gesture === "lift"
-          ? "raise"
-          : "open-up";
+        : trial.gesture === "diagonal-lift"
+          ? trial.diagonalLiftVariant ?? "up-right"
+          : trial.gesture === "lift"
+            ? "raise"
+            : "open-up";
   const caption = motionSampleCaption(trial);
   setData(sample, "gesture", trial.gesture);
   setData(sample, "variant", variant);
@@ -1305,6 +1315,10 @@ function motionSampleCaption(trial: P1TrialDefinition): string {
     }[trial.swipeDirection ?? "left-to-right"];
   }
   if (trial.gesture === "lift") return "両手を下側にそろえて構え、GOで平行に真上へ上げる";
+  if (trial.gesture === "diagonal-lift") {
+    const variant = trial.diagonalLiftVariant ?? "up-right";
+    return `両手を下側の左右に離して構え、GOで平行に${diagonalLiftVariantLabel(variant)}動かす`;
+  }
   if (trial.gesture === "spotlight") {
     return `GOで${spotlightVariantLabel(trial.spotlightVariant ?? "left-up-right-down")}の位置へ動かし、約0.3秒止める`;
   }

@@ -1020,6 +1020,7 @@ const template = `
                 <th>第三入力</th>
                 <th>Lift</th>
                 <th>Spotlight</th>
+                <th>ななめリフト</th>
                 <th>追跡出力</th>
                 <th>フレームの古さ</th>
                 <th>両手検出率</th>

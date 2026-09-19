@@ -5,6 +5,8 @@ const PRIORITY: Readonly<Record<GestureEvent["gestureType"], number>> = {
   lift: 4,
   spotlight: 4,
   bloom: 4,
+  // Two-hand gestures share the highest priority; ななめリフト is one of them.
+  "diagonal-lift": 4,
   burst: 3,
   "ribbon-swipe": 2,
   "air-tap": 1,

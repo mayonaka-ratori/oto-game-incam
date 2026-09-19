@@ -3,7 +3,7 @@ import { AirTapStateMachine } from "../src/gestures/air-tap-state-machine";
 import { BloomStateMachine } from "../src/gestures/bloom-state-machine";
 import { ClapBurstStateMachine } from "../src/gestures/clap-burst-state-machine";
 import { GestureArbiter } from "../src/gestures/gesture-arbiter";
-import { RibbonSwipeStateMachine } from "../src/gestures/ribbon-swipe-state-machine";
+import { RIBBON_SWIPE_DEFAULTS, RibbonSwipeStateMachine } from "../src/gestures/ribbon-swipe-state-machine";
 import type { GestureEvent } from "../src/gestures/gesture-types";
 import { trackedFrame, trackedHand } from "./helpers/gesture-fixtures";
 
@@ -104,14 +104,54 @@ describe("RibbonSwipeStateMachine", () => {
     expect(result.events).toHaveLength(1);
   });
 
-  it("records wrong-direction only when moving away from an armed start", () => {
+  // wrong-direction after 2026-09-20: a hand that has not set off is never judged, and a hand
+  // that has is measured from the furthest point it reached, not between two frames.
+  it("lets an armed hand sway without judging it, and still accepts the swipe that follows", () => {
     const machine = new RibbonSwipeStateMachine({ direction: "left-to-right" });
     machine.process(trackedFrame(0, [trackedHand("a", 0.3, 0.5)]));
-    const rejected = machine.process(trackedFrame(100, [trackedHand("a", 0.2, 0.5, { x: -1 })]));
-    const followUp = machine.process(trackedFrame(200, []));
+    const swaying = [
+      machine.process(trackedFrame(100, [trackedHand("a", 0.25, 0.5, { x: -0.5 })])),
+      machine.process(trackedFrame(200, [trackedHand("a", 0.28, 0.5, { x: 0.3 })])),
+      machine.process(trackedFrame(300, [trackedHand("a", 0.25, 0.5, { x: -0.3 })])),
+    ];
+    machine.process(trackedFrame(400, [trackedHand("a", 0.45, 0.5, { x: 2 })]));
+    const result = machine.process(trackedFrame(500, [trackedHand("a", 0.7, 0.5, { x: 2 })]));
 
+    expect(swaying.flatMap(({ rejections }) => rejections)).toEqual([]);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]?.quality.direction).toBe("left-to-right");
+  });
+
+  it("accepts a swipe that falls back for one frame and then carries on", () => {
+    const machine = new RibbonSwipeStateMachine({ direction: "left-to-right" });
+    machine.process(trackedFrame(0, [trackedHand("a", 0.3, 0.5)]));
+    machine.process(trackedFrame(100, [trackedHand("a", 0.45, 0.5, { x: 1.5 })]));
+    const dip = machine.process(trackedFrame(200, [trackedHand("a", 0.42, 0.5, { x: -0.3 })]));
+    const result = machine.process(trackedFrame(300, [trackedHand("a", 0.7, 0.5, { x: 2 })]));
+
+    expect(dip.rejections).toEqual([]);
+    expect(result.events).toHaveLength(1);
+  });
+
+  it("records wrong-direction when a started swipe falls back past the peak tolerance", () => {
+    const machine = new RibbonSwipeStateMachine({ direction: "left-to-right" });
+    machine.process(trackedFrame(0, [trackedHand("a", 0.3, 0.5)]));
+    machine.process(trackedFrame(100, [trackedHand("a", 0.45, 0.5, { x: 1.5 })]));
+    const rejected = machine.process(trackedFrame(200, [trackedHand("a", 0.37, 0.5, { x: -0.8 })]));
+    const followUp = machine.process(trackedFrame(300, []));
+
+    expect(RIBBON_SWIPE_DEFAULTS.maximumBackwardFromPeak).toBe(0.06);
     expect(rejected.rejections).toEqual([expect.objectContaining({ reasonCodes: ["wrong-direction"] })]);
     expect(followUp.rejections).toHaveLength(0);
+  });
+
+  it("never fires for a swipe run from the end back to the start", () => {
+    const machine = new RibbonSwipeStateMachine({ direction: "left-to-right" });
+    const frames = [0.7, 0.6, 0.5, 0.4, 0.3].map((x, index) => (
+      machine.process(trackedFrame(index * 100, [trackedHand("a", x, 0.5, { x: -1.5 })]))
+    ));
+
+    expect(frames.flatMap(({ events }) => events)).toEqual([]);
   });
 
   it("starts the 850ms timeout when traversal begins", () => {
@@ -121,6 +161,7 @@ describe("RibbonSwipeStateMachine", () => {
     machine.process(trackedFrame(1_600, [trackedHand("a", 0.4, 0.5, { x: 1 })]));
     const rejected = machine.process(trackedFrame(2_451, [trackedHand("a", 0.45, 0.5)]));
 
+    expect(RIBBON_SWIPE_DEFAULTS.maximumDurationMs).toBe(850);
     expect(rejected.rejections).toEqual([expect.objectContaining({ reasonCodes: ["candidate-timeout"] })]);
   });
 });

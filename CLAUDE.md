@@ -23,9 +23,9 @@
 
 - `src/camera/` カメラ取得、latest-frame-onlyスケジューラ、取得経路のURL指定
 - `src/worker/` MediaPipeを動かす専用Workerと、合成fixtureのmock Worker
-- `src/tracking/` 安定trackIdと派生特徴量、`src/gestures/` ジェスチャー状態機械と調停
+- `src/tracking/` 安定trackIdと派生特徴量、`src/gestures/` ジェスチャー状態機械と調停（Liftとななめリフトは `parallel-lift-state-machine.ts` を共有）
 - `src/time/` Web Audioクロック、拍タイムライン、メトロノーム
-- `src/experiments/` 追跡の実験profile（解像度・fps・GPU/CPUの組。既定は `gpu-640x480-30`）
+- `src/experiments/` 追跡の実験profile（解像度・fps・GPU/CPUの組。既定は `gpu-640x480-30`）と、速度チェックで測る設定の並び（`speed-check-plan.ts`）
 - `src/metrics/` 計測値、統計、セッション全体とブロック別の性能集計、端末情報の自動収集
 - `src/poc/` P1-Controlled制御試験。`phase1-protocol.ts` が試験手順（選択・試行数・時間切れ・準備完了）の正本、`phase1-session.ts` が結果JSONのschemaと旧versionの移行
 - `src/testing/` 実機確認レポート（device checklist）とP1セッション比較

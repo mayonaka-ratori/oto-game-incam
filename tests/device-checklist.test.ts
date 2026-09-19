@@ -122,7 +122,7 @@ describe("P1 result import for the device check", () => {
     const withoutVocabulary = p1Document(5);
     delete withoutVocabulary.gestureVocabulary;
 
-    expect(() => readP1SessionForChecklist(p1Document(8))).toThrow(/schema version/);
+    expect(() => readP1SessionForChecklist(p1Document(9))).toThrow(/schema version/);
     expect(() => readP1SessionForChecklist(withoutVocabulary)).toThrow(/第三入力/);
   });
 

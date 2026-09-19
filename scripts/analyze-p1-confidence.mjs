@@ -34,6 +34,11 @@ const FACTORS = {
     { key: "upwardDistance", bound: "min", threshold: 0.18 },
     { key: "syncSpreadMs", bound: "max", threshold: 420 },
   ],
+  // ななめリフト (2026-09-20). `upwardDistance` is the travel along the diagonal.
+  "diagonal-lift": [
+    { key: "upwardDistance", bound: "min", threshold: 0.18 },
+    { key: "syncSpreadMs", bound: "max", threshold: 420 },
+  ],
   spotlight: [{ key: "holdDurationMs", bound: "min", threshold: 300 }],
   "air-tap": [],
 };
@@ -80,8 +85,11 @@ function margin(factor, value, comfortableGoodness) {
   return clamp01(good / comfortableGoodness);
 }
 
+/** Longest name first, so "diagonal-lift-3" is not read as the Lift trial "lift-3". */
+const GESTURE_IDS = Object.keys(FACTORS).sort((a, b) => b.length - a.length);
+
 function gestureOfTrialId(trialId) {
-  return Object.keys(FACTORS).find((gesture) => trialId.startsWith(`${gesture}-`)) ?? "unknown";
+  return GESTURE_IDS.find((gesture) => trialId.startsWith(`${gesture}-`)) ?? "unknown";
 }
 
 function collectRejections(document) {
@@ -212,6 +220,11 @@ function analyze(path) {
   ];
   const successIds = new Set((document.protocol?.results ?? []).flatMap((result) => (result.event?.id ? [result.event.id] : [])));
   const events = (document.gestureEvents ?? []).filter((event) => successIds.size === 0 || successIds.has(event.id));
+  // A movement this helper does not know about is skipped instead of stopping the run.
+  const unknown = [...new Set(events.map((event) => event.gestureType))].filter((gesture) => !(gesture in FACTORS));
+  if (unknown.length > 0) {
+    lines.push(`- このツールが知らない動作は対象外として飛ばしました: ${unknown.join("、")}`, "");
+  }
   for (const gesture of Object.keys(FACTORS)) {
     analyzeEvents(gesture, events.filter((event) => event.gestureType === gesture), lines);
   }

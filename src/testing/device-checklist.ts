@@ -373,7 +373,7 @@ export class DeviceChecklistController {
           imported.bloom === null ? "Bloom" : null,
         ].filter((label): label is string => label !== null);
         const candidateNote = imported.schemaVersion >= 5
-          ? "候補動作のLift／SpotlightはP1セッション比較で確認してください。"
+          ? "候補動作のLift／Spotlight／ななめリフトはP1セッション比較で確認してください。"
           : "";
         this.#status.textContent = imported.thirdGesture !== "bloom"
           ? "旧P1セッションからair-tap／ribbon-swipeを取り込み、Bloom行を空にしました。旧clap結果は比較画面でBloomと分けて扱います。"
@@ -555,7 +555,7 @@ function controlledRowStatus(form: HTMLFormElement, label: string, prefix: strin
 }
 
 export interface P1ChecklistImport {
-  readonly schemaVersion: 2 | 3 | 4 | 5 | 6 | 7;
+  readonly schemaVersion: 2 | 3 | 4 | 5 | 6 | 7 | 8;
   readonly protocolId: string | null;
   /** The gestures the imported procedure actually ran, so a skipped row stays empty. */
   readonly ranGestures: readonly string[];
@@ -575,7 +575,7 @@ export function readP1SessionForChecklist(value: unknown): P1ChecklistImport {
   if (!isRecord(value) || value.schema !== "oto-motion-p1-controlled" || !isRecord(value.summary)) {
     throw new TypeError("P1-ControlledセッションJSONではありません。");
   }
-  const accepted = [2, 3, 4, 5, 6, 7] as const;
+  const accepted = [2, 3, 4, 5, 6, 7, 8] as const;
   const schemaVersion = accepted.find((version) => version === value.schemaVersion);
   if (schemaVersion === undefined) {
     throw new TypeError("対応していないP1 schema versionです。");

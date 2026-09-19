@@ -1,14 +1,22 @@
 import {
   P1_FIVE_GESTURE_PROTOCOL_ID,
+  P1_PORTRAIT_THREE_PROTOCOL_ID,
   P1_REGRESSION_THREE_PROTOCOL_ID,
   P1_REGRESSION_TRIALS_PER_GESTURE,
   P1_REMAINING_TWO_PROTOCOL_ID,
   P1_TRIALS_PER_GESTURE,
 } from "../poc/phase1-protocol";
 
-type P1ComparisonGesture = "air-tap" | "ribbon-swipe" | "clap" | "bloom" | "lift" | "spotlight";
+type P1ComparisonGesture =
+  | "air-tap"
+  | "ribbon-swipe"
+  | "clap"
+  | "bloom"
+  | "lift"
+  | "spotlight"
+  | "diagonal-lift";
 type P1ThirdGesture = "clap" | "bloom";
-type P1SchemaVersion = 2 | 3 | 4 | 5 | 6 | 7;
+type P1SchemaVersion = 2 | 3 | 4 | 5 | 6 | 7 | 8;
 type FindingSeverity = "error" | "warning" | "info";
 
 export interface P1ComparisonFinding {
@@ -111,6 +119,7 @@ const ALL_GESTURES: readonly P1ComparisonGesture[] = [
   "bloom",
   "lift",
   "spotlight",
+  "diagonal-lift",
 ];
 
 const BASE_GESTURES: readonly P1ComparisonGesture[] = [
@@ -118,7 +127,7 @@ const BASE_GESTURES: readonly P1ComparisonGesture[] = [
   "ribbon-swipe",
 ];
 
-const CANDIDATE_GESTURES: readonly P1ComparisonGesture[] = ["lift", "spotlight"];
+const CANDIDATE_GESTURES: readonly P1ComparisonGesture[] = ["lift", "spotlight", "diagonal-lift"];
 const TRIALS_PER_GESTURE = P1_TRIALS_PER_GESTURE;
 /** Protocol IDs of sessions saved before schema v5 recorded one. */
 export const P1_LEGACY_PROTOCOL_IDS: Readonly<Record<P1ThirdGesture, string>> = {
@@ -179,6 +188,18 @@ const REMAINING_TWO_EXPECTATION: P1ProtocolExpectation = {
   spotlightVariants: null,
 };
 
+const PORTRAIT_THREE_EXPECTATION: P1ProtocolExpectation = {
+  id: P1_PORTRAIT_THREE_PROTOCOL_ID,
+  label: "縦向き3動作・30試行",
+  gestures: ["ribbon-swipe", "lift", "diagonal-lift"],
+  trialsPerGesture: TRIALS_PER_GESTURE,
+  blockCount: 3,
+  successThreshold: 8,
+  criterionGestures: null,
+  criterionNote: "この試験手順は端末を縦向きに持ち、リボンスワイプ・Lift・ななめリフトだけを行います。3入力（エアタップ・リボンスワイプ・Bloom）がそろわないため、成立率は表示しますが、この結果だけでは合否候補にしません。エアタップとBloomの成立確認は5動作・50試行の結果を参照してください。",
+  spotlightVariants: null,
+};
+
 const REGRESSION_EXPECTATION: P1ProtocolExpectation = {
   id: P1_REGRESSION_THREE_PROTOCOL_ID,
   label: "回帰確認3動作・9試行",
@@ -195,6 +216,7 @@ const REGRESSION_EXPECTATION: P1ProtocolExpectation = {
 const PROTOCOL_EXPECTATIONS: readonly P1ProtocolExpectation[] = [
   FIVE_GESTURE_EXPECTATION,
   REMAINING_TWO_EXPECTATION,
+  PORTRAIT_THREE_EXPECTATION,
   REGRESSION_EXPECTATION,
 ];
 
@@ -577,7 +599,7 @@ export function compareP1Sessions(
     findings.push(finding(
       "candidate-gestures",
       "info",
-      "Lift／Spotlightは候補動作です。8/10以上でもP1合否の条件には含めず、Interaction POCへ持ち込む動作を選ぶ材料として比べます。",
+      "Lift／Spotlight／ななめリフトは候補動作です。8/10以上でもP1合否の条件には含めず、Interaction POCへ持ち込む動作を選ぶ材料として比べます。",
     ));
   }
 
@@ -661,9 +683,9 @@ export class P1SessionComparisonController {
   }
 }
 
-/** Accepted versions. v2–v6 keep reading as before; only v7 carries the new technicalSnapshot items. */
+/** Accepted versions. v2–v7 keep reading as before; only v8 may name ななめリフト. */
 function parseSchemaVersion(value: unknown): P1SchemaVersion {
-  const accepted: readonly P1SchemaVersion[] = [2, 3, 4, 5, 6, 7];
+  const accepted: readonly P1SchemaVersion[] = [2, 3, 4, 5, 6, 7, 8];
   const match = accepted.find((version) => version === value);
   if (match === undefined) throw new TypeError("対応していないP1 schema versionです。");
   return match;
@@ -904,7 +926,7 @@ function chooseNextAction(
     return "旧clapと新Bloomのセッションを分け、同じ第三入力どうしで比較する";
   }
   if (findings.some(({ code }) => code === "mixed-protocols")) {
-    return "試験手順ごとに分け、同じ試験手順のセッションどうしで比較する（3入力・30試行、5動作・50試行、残る2動作・20試行、回帰確認）";
+    return "試験手順ごとに分け、同じ試験手順のセッションどうしで比較する（3入力・30試行、5動作・50試行、残る2動作・20試行、縦向き3動作・30試行、回帰確認）";
   }
   if (findings.some(({ code }) => code === "mixed-frame-sources" || code === "mixed-pending-policies")) {
     return "フレームの取り方と待機枠の扱いを1項目だけ変えたセッションどうしで、処理速度を比べる";
@@ -982,6 +1004,7 @@ function renderSessionRow(session: P1ComparisonSession): HTMLTableRowElement {
     `${gestureLabel(session.thirdGesture)} ${score(session.thirdGesture)}`,
     candidate("lift"),
     candidate("spotlight"),
+    candidate("diagonal-lift"),
     metric(session.trackingHz, "Hz"),
     metric(session.frameAgeP95Ms, "ms"),
     percent(session.twoHandCoverage),
@@ -1020,6 +1043,7 @@ function gestureLabel(gesture: P1ComparisonGesture): string {
     bloom: "Bloom",
     lift: "Lift",
     spotlight: "Spotlight",
+    "diagonal-lift": "ななめリフト",
   }[gesture];
 }
 

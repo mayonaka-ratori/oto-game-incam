@@ -6,6 +6,7 @@ export type GestureType =
   | "bloom"
   | "lift"
   | "spotlight"
+  | "diagonal-lift"
   | "clap"
   | "burst";
 
@@ -33,6 +34,11 @@ export type GestureReasonCode =
   | "lift-not-upward"
   | "lift-distance-insufficient"
   | "lift-sync-expired"
+  | "diagonal-lift-raised"
+  | "diagonal-lift-not-ready"
+  | "diagonal-lift-wrong-direction"
+  | "diagonal-lift-distance-insufficient"
+  | "diagonal-lift-sync-expired"
   | "spotlight-wrong-zone"
   | "spotlight-pose-not-held"
   | "spotlight-wrong-side"
@@ -44,17 +50,25 @@ export type GestureReasonCode =
 /** Player-facing hand placement. The preview is mirrored, so the player's left hand is on the screen's left. */
 export type SpotlightVariant = "left-up-right-down" | "right-up-left-down";
 
+/**
+ * Which diagonal ななめリフト asks for, named as the player sees it on the mirrored preview:
+ * "up-right" means both hands travel towards the top right of the screen.
+ */
+export type DiagonalLiftVariant = "up-right" | "up-left";
+
 export interface GestureQuality {
   readonly speed?: number;
   readonly pathDistance?: number;
   readonly perpendicularError?: number;
   readonly minimumHandDistance?: number;
   readonly outwardDistance?: number;
+  /** Lift: how far up. ななめリフト: how far along the diagonal it was asked to travel. */
   readonly upwardDistance?: number;
   readonly syncSpreadMs?: number;
   readonly preparationSpan?: number;
   readonly holdDurationMs?: number;
   readonly spotlightVariant?: SpotlightVariant;
+  readonly diagonalLiftVariant?: DiagonalLiftVariant;
   readonly direction?: RibbonSwipeDirection;
   readonly clapKind?: "contact-like" | "near-clap" | "occlusion-predicted";
 }

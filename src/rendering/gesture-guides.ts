@@ -1,5 +1,10 @@
 import { AIR_TAP_DEFAULTS } from "../gestures/air-tap-state-machine";
 import { BLOOM_DEFAULTS } from "../gestures/bloom-state-machine";
+import {
+  DIAGONAL_LIFT_DEFAULTS,
+  DIAGONAL_LIFT_DIRECTIONS,
+} from "../gestures/diagonal-lift-state-machine";
+import type { DiagonalLiftVariant } from "../gestures/gesture-types";
 import { LIFT_DEFAULTS } from "../gestures/lift-state-machine";
 import {
   RIBBON_SWIPE_CENTER,
@@ -88,9 +93,23 @@ export const GUIDE_TRAVEL_MS = {
   "ribbon-swipe": 400,
   bloom: 600,
   lift: 600,
+  "diagonal-lift": 600,
   spotlight: 400,
   clap: 400,
 } as const satisfies Record<P1Gesture, number>;
+
+/**
+ * Where ななめリフト asks the hands to wait, on the same line as the Lift circles. The pair is
+ * shifted against the travel, so the hand that ends up nearest the side of the frame still has
+ * room: moving up and to the right starts further left, and the other way round. Both points
+ * stay inside the unchanged Lift start zones.
+ *
+ * Initial values, not measured (2026-09-20).
+ */
+export const DIAGONAL_LIFT_GUIDE_START_X = {
+  "up-right": { left: 0.22, right: 0.66 },
+  "up-left": { left: 0.34, right: 0.78 },
+} as const satisfies Record<DiagonalLiftVariant, { readonly left: number; readonly right: number }>;
 
 /**
  * The air-tap ring centers the engine gives the state machine
@@ -141,6 +160,8 @@ export function createGestureGuide(trial: P1TrialDefinition): GestureGuide | nul
       return bloomGuide();
     case "lift":
       return liftGuide();
+    case "diagonal-lift":
+      return diagonalLiftGuide(trial.diagonalLiftVariant ?? "up-right");
     case "spotlight":
       return spotlightGuide(trial);
     case "clap":
@@ -176,6 +197,10 @@ export function guideInstruction(trial: P1TrialDefinition): string {
       return "丸印から輪まで 両手を開く";
     case "lift":
       return "丸印から輪まで 両手を上げる";
+    case "diagonal-lift":
+      return trial.diagonalLiftVariant === "up-left"
+        ? "丸印から輪まで 両手を左上へ"
+        : "丸印から輪まで 両手を右上へ";
     case "spotlight":
       return trial.spotlightVariant === "right-up-left-down"
         ? "右手を上・左手を下で 止める"
@@ -187,7 +212,7 @@ export function guideInstruction(trial: P1TrialDefinition): string {
 
 /** What to do before the count-in starts, for the gestures that wait for a start pose. */
 export function guideReadinessHint(gesture: P1Gesture): string {
-  return gesture === "lift"
+  return gesture === "lift" || gesture === "diagonal-lift"
     ? "下の丸印に 両手を合わせて止める"
     : "丸印に 両手を合わせて止める";
 }
@@ -292,6 +317,32 @@ function liftGuide(): GestureGuide {
     ],
     rings: [],
     travelMs: GUIDE_TRAVEL_MS.lift,
+    holdMs: null,
+    startRadius: START_RADIUS,
+    endRadius: END_RADIUS,
+  };
+}
+
+/**
+ * ななめリフト: the same lower start line as Lift, but shifted sideways so neither hand runs
+ * into the edge, and a path that follows the judged diagonal one margin past its threshold.
+ */
+function diagonalLiftGuide(variant: DiagonalLiftVariant): GestureGuide {
+  const startY = (DIAGONAL_LIFT_DEFAULTS.startZoneMinY + DIAGONAL_LIFT_DEFAULTS.startZoneMaxY) / 2;
+  const direction = DIAGONAL_LIFT_DIRECTIONS[variant];
+  const reach = DIAGONAL_LIFT_DEFAULTS.minimumUpwardDistance + GUIDE_TARGET_MARGIN;
+  const startX = DIAGONAL_LIFT_GUIDE_START_X[variant];
+  const paths = [startX.left, startX.right].map((x) => ({
+    start: clampGuidePoint({ x, y: startY }),
+    end: clampGuidePoint({ x: x + direction[0] * reach, y: startY + direction[1] * reach }),
+  }));
+  return {
+    gesture: "diagonal-lift",
+    pointer: "palm",
+    paths,
+    zones: [],
+    rings: [],
+    travelMs: GUIDE_TRAVEL_MS["diagonal-lift"],
     holdMs: null,
     startRadius: START_RADIUS,
     endRadius: END_RADIUS,

@@ -6,7 +6,12 @@ export type TrackingExperimentProfileId =
   | "gpu-640x480-30"
   | "gpu-960x540-30"
   | "gpu-1280x720-30"
-  | "cpu-640x480-30";
+  | "cpu-640x480-30"
+  /**
+   * Only the automatic speed check (`?mode=speedcheck`) uses this one, so it is deliberately not in
+   * TRACKING_EXPERIMENT_PROFILES: the analysis screen's profile list stays exactly as it was.
+   */
+  | "gpu-320x240-30";
 
 export interface TrackingExperimentProfile {
   readonly id: TrackingExperimentProfileId;

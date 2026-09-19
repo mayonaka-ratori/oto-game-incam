@@ -27,10 +27,15 @@ import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapsh
  * technicalSnapshot gains device (what the browser says about the phone), frameSourceOverride,
  * pendingPolicy and droppedFrames, and performance…longTask gains the three longest tasks.
  *
- * v6 and earlier stay readable in the comparison and device-check screens; their new items read as
- * null, and their protocol is treated as the procedure their id names.
+ * v8: the vocabulary gained ななめリフト (`diagonal-lift`), so protocol.gestures, the trial
+ * definitions (`trial.diagonalLiftVariant`), the summary and the new per-trial
+ * `diagonalLiftDiagnostic` may name it. The default procedure is `p1-portrait-three-30`
+ * (ribbon-swipe, Lift, ななめリフト), and a reader must not assume Bloom was run.
+ *
+ * v7 and earlier stay readable in the comparison and device-check screens; their new items read
+ * as null, and their protocol is treated as the procedure their id names.
  */
-export const P1_SESSION_SCHEMA_VERSION = 7 as const;
+export const P1_SESSION_SCHEMA_VERSION = 8 as const;
 
 export interface Phase1TechnicalSummary {
   readonly inferenceP50Ms: number | null;
@@ -128,7 +133,11 @@ export interface Phase1SessionDocument {
   readonly schemaVersion: typeof P1_SESSION_SCHEMA_VERSION;
   readonly createdAtIso: string;
   readonly gestureVocabulary: {
-    /** "clap" only for documents rebuilt from the legacy clap trials. */
+    /**
+     * "clap" only for documents rebuilt from the legacy clap trials. A procedure that runs no
+     * Bloom trials at all still records "bloom" here, for the older readers; what was really
+     * run is in `gestures`.
+     */
     readonly thirdGesture: "bloom" | "clap";
     readonly gestures: readonly P1Gesture[];
     readonly candidateGestures: readonly P1Gesture[];

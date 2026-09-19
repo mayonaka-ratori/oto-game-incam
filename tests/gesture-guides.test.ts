@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AIR_TAP_DEFAULTS, AirTapStateMachine } from "../src/gestures/air-tap-state-machine";
 import { BLOOM_DEFAULTS, BloomStateMachine } from "../src/gestures/bloom-state-machine";
+import { DIAGONAL_LIFT_DEFAULTS } from "../src/gestures/diagonal-lift-state-machine";
 import { LIFT_DEFAULTS, LiftStateMachine } from "../src/gestures/lift-state-machine";
 import {
   RIBBON_SWIPE_CENTER,
@@ -124,6 +125,8 @@ describe("guide geometry follows the judgment constants", () => {
       { gesture: "ribbon-swipe", swipeDirection: "lower-right-to-upper-left", instruction: "" },
       { gesture: "bloom", requiresReadiness: true, instruction: "" },
       { gesture: "lift", requiresReadiness: true, instruction: "" },
+      { gesture: "diagonal-lift", diagonalLiftVariant: "up-right", requiresReadiness: true, instruction: "" },
+      { gesture: "diagonal-lift", diagonalLiftVariant: "up-left", requiresReadiness: true, instruction: "" },
       { gesture: "spotlight", spotlightVariant: "left-up-right-down", instruction: "" },
       { gesture: "spotlight", spotlightVariant: "right-up-left-down", instruction: "" },
     ];
@@ -160,6 +163,12 @@ describe("guide geometry follows the judgment constants", () => {
       .toBeLessThanOrEqual(LIFT_DEFAULTS.maximumDurationMs);
     expect(guideOf({ gesture: "ribbon-swipe", swipeDirection: "left-to-right", instruction: "" }).travelMs * 2)
       .toBeLessThanOrEqual(RIBBON_SWIPE_DEFAULTS.maximumDurationMs);
+    expect(guideOf({
+      gesture: "diagonal-lift",
+      diagonalLiftVariant: "up-right",
+      requiresReadiness: true,
+      instruction: "",
+    }).travelMs * 2).toBeLessThanOrEqual(DIAGONAL_LIFT_DEFAULTS.maximumDurationMs);
   });
 });
 
@@ -167,6 +176,8 @@ describe("the marks are large enough to aim at and do not run into each other", 
   const twoHanded: Array<Omit<P1TrialDefinition, "ordinal" | "id">> = [
     { gesture: "bloom", requiresReadiness: true, instruction: "" },
     { gesture: "lift", requiresReadiness: true, instruction: "" },
+    { gesture: "diagonal-lift", diagonalLiftVariant: "up-right", requiresReadiness: true, instruction: "" },
+    { gesture: "diagonal-lift", diagonalLiftVariant: "up-left", requiresReadiness: true, instruction: "" },
   ];
 
   it("draws the circles larger than the sizes they were derived from", () => {

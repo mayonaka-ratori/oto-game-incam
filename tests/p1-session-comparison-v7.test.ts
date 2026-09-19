@@ -3,6 +3,7 @@ import type { GestureEvent } from "../src/gestures/gesture-types";
 import type { DeviceTechnicalSnapshot } from "../src/metrics/device-technical-snapshot";
 import {
   P1_FIVE_GESTURE_PROTOCOL,
+  P1_PORTRAIT_THREE_PROTOCOL,
   P1_REGRESSION_THREE_PROTOCOL,
   P1_REMAINING_TWO_PROTOCOL,
   Phase1ControlledRunner,
@@ -21,6 +22,7 @@ import {
 
 // Schema v7: the app no longer always runs the five-gesture, 50-trial procedure, and the result
 // JSON records what the phone is and how the frames reached the Worker.
+// Schema v8 adds ななめリフト and the upright-phone procedure `p1-portrait-three-30`.
 
 const TECHNICAL_SNAPSHOT: DeviceTechnicalSnapshot = {
   appBuildId: "build-v7",
@@ -124,7 +126,9 @@ function matchingEvent(trial: P1TrialDefinition, eventTimeMs: number): GestureEv
       ? { direction: trial.swipeDirection }
       : trial.spotlightVariant !== undefined
         ? { spotlightVariant: trial.spotlightVariant }
-        : {},
+        : trial.diagonalLiftVariant !== undefined
+          ? { diagonalLiftVariant: trial.diagonalLiftVariant }
+          : {},
     trackingQuality: "observed",
     reasonCodes: [],
   };
@@ -142,15 +146,66 @@ describe("P1 session comparison of the schema v7 procedures", () => {
     const regression = sessionDocument("regression", P1_REGRESSION_THREE_PROTOCOL);
 
     expect(remaining).toMatchObject({
-      schemaVersion: 7,
+      schemaVersion: 8,
       gestureVocabulary: { gestures: ["ribbon-swipe", "bloom"], candidateGestures: [] },
       protocol: { id: "p1-remaining-two-20", trialsPerGesture: 10, total: 20 },
     });
     expect(regression).toMatchObject({
-      schemaVersion: 7,
+      schemaVersion: 8,
       gestureVocabulary: { gestures: ["air-tap", "lift", "spotlight"], candidateGestures: ["lift", "spotlight"] },
       protocol: { id: "p1-regression-three-9", trialsPerGesture: 3, total: 9 },
     });
+  });
+
+  it("accepts the upright-phone 30-trial session and shows ななめリフト, never alone as a pass candidate", () => {
+    const document = sessionDocument("portrait", P1_PORTRAIT_THREE_PROTOCOL, {
+      successFor: (gesture) => (gesture === "diagonal-lift" ? 7 : 10),
+    });
+    const session = parse(document);
+
+    expect(document).toMatchObject({
+      schemaVersion: 8,
+      gestureVocabulary: {
+        gestures: ["ribbon-swipe", "lift", "diagonal-lift"],
+        candidateGestures: ["lift", "diagonal-lift"],
+      },
+      protocol: { id: "p1-portrait-three-30", trialsPerGesture: 10, total: 30 },
+    });
+    expect(session).toMatchObject({
+      protocolId: "p1-portrait-three-30",
+      protocolLabel: "縦向き3動作・30試行",
+      trialsPerGesture: 10,
+      successThreshold: 8,
+      sessionGestures: ["ribbon-swipe", "lift", "diagonal-lift"],
+      candidateGestures: ["lift", "diagonal-lift"],
+      completed: 30,
+      total: 30,
+      dataComplete: true,
+      controlledCriterionCandidate: false,
+    });
+    expect(session.gestures["diagonal-lift"].success).toBe(7);
+    // Bloom was never run here, so it must not read as 0/10.
+    expect(session.gestures.bloom.completed).toBe(0);
+    const reason = session.findings.find(({ code }) => code === "protocol-not-criterion");
+    expect(reason).toMatchObject({ severity: "info" });
+    expect(reason?.message).toContain("3入力");
+    // A candidate short of 8/10 is information, not an error.
+    expect(codes(session.findings)).toContain("diagonal-lift-candidate-under-8");
+    expect(session.findings.filter(({ severity }) => severity !== "info")).toEqual([]);
+    expect(codes(compareP1Sessions([session]).findings)).toContain("candidate-gestures");
+  });
+
+  it("fills only ribbon-swipe when the device checklist imports an upright-phone session", () => {
+    const imported = readP1SessionForChecklist(sessionDocument("portrait", P1_PORTRAIT_THREE_PROTOCOL));
+
+    expect(imported).toMatchObject({
+      schemaVersion: 8,
+      protocolId: "p1-portrait-three-30",
+      ranGestures: ["ribbon-swipe", "lift", "diagonal-lift"],
+      airTap: null,
+      bloom: null,
+    });
+    expect(imported.ribbonSwipe).toMatchObject({ success: 10 });
   });
 
   it("accepts a 20-trial session and shows its two rates, but never alone as a pass candidate", () => {
@@ -248,7 +303,7 @@ describe("P1 session comparison of the schema v7 procedures", () => {
     const imported = readP1SessionForChecklist(sessionDocument("remaining", P1_REMAINING_TWO_PROTOCOL));
 
     expect(imported).toMatchObject({
-      schemaVersion: 7,
+      schemaVersion: 8,
       protocolId: "p1-remaining-two-20",
       ranGestures: ["ribbon-swipe", "bloom"],
       airTap: null,

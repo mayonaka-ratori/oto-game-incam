@@ -47,16 +47,23 @@ export class TrackingWorkerClient {
     this.#pipeline = pipeline;
   }
 
+  /**
+   * `pipelineOverride` lets the automatic speed check walk the capture paths and pending policies
+   * in one page load. Leaving it out keeps the options the constructor was given, which is what
+   * the normal screen does: there they come from the query string and never change.
+   */
   async start(
     track: MediaStreamTrack,
     video: HTMLVideoElement,
     profile: TrackingExperimentProfile,
+    pipelineOverride?: FramePipelineOptions,
   ): Promise<void> {
     this.stop();
     this.#running = true;
     this.#metrics.markInitializing();
     this.#emit();
 
+    const pipeline = pipelineOverride ?? this.#pipeline;
     const worker = createWorkerEndpoint();
     this.#worker = worker;
     worker.addEventListener("message", this.#handleMessage);
@@ -69,7 +76,7 @@ export class TrackingWorkerClient {
         timestamp: frame.timestamp,
       };
       worker.postMessage(message, [frame.image]);
-    }, this.#pipeline.pendingPolicy);
+    }, pipeline.pendingPolicy);
 
     const ready = new Promise<void>((resolve, reject) => {
       this.#resolveReady = resolve;
@@ -94,7 +101,7 @@ export class TrackingWorkerClient {
         this.#metrics.markError(`frame-source: ${detail}`);
         this.#emit();
       },
-      this.#pipeline.frameSourceOverride,
+      pipeline.frameSourceOverride,
     );
     this.#metrics.setFrameSource(this.#source.kind);
     this.#source.start();
