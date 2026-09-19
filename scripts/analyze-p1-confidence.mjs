@@ -88,12 +88,13 @@ function collectRejections(document) {
   if (Array.isArray(document.trialDiagnostics)) {
     return document.trialDiagnostics
       .filter((record) => record.kind === "rejection")
-      .map((record) => ({
+      // schema v6 folds consecutive identical records into one with `count`; unfold it so counts match v5.
+      .flatMap((record) => Array.from({ length: Math.max(1, record.count ?? 1) }, () => ({
         gesture: gestureOfTrialId(record.trialId),
         trialId: record.trialId,
         timeMs: record.timeMs,
         reasons: record.reasonCodes,
-      }));
+      })));
   }
   // schema v2 kept rejections at the top level without a trial id.
   return (document.rejections ?? []).map((record) => ({

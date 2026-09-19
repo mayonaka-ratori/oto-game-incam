@@ -133,6 +133,31 @@ describe("landmark replay", () => {
     expect(recorder.snapshot().frames.map(({ frameId }) => frameId)).toEqual([2]);
   });
 
+  it("reports counts without building the replay document", () => {
+    const recorder = new LandmarkReplayRecorder(session);
+    beginTrialWindow(recorder);
+    recorder.addFrame(trackingFrame(1, 100, [syntheticHand(0, "left", 0.3)]));
+    recorder.addFrame(trackingFrame(2, 200, [syntheticHand(0, "left", 0.4)]));
+    const document = recorder.snapshot();
+
+    expect(recorder.counts()).toEqual({
+      frameCount: document.frames.length,
+      trialWindowCount: document.trialWindows.length,
+    });
+  });
+
+  it("does not keep the caller's frame, and hands out independent copies", () => {
+    const recorder = new LandmarkReplayRecorder(session);
+    beginTrialWindow(recorder);
+    const input = trackingFrame(1, 100, [syntheticHand(0, "left", 0.3)]);
+    recorder.addFrame(input);
+    mutateFirstX(input, 99);
+    mutateFirstX(recorder.snapshot(), -1);
+
+    expect(recorder.snapshot().frames[0]!.hands[0]!.landmarks2D[0]!.x).not.toBe(99);
+    expect(recorder.snapshot().frames[0]!.hands[0]!.landmarks2D[0]!.x).not.toBe(-1);
+  });
+
   it("rejects non-monotonic and malformed input", () => {
     const recorder = new LandmarkReplayRecorder(session);
     recorder.addFrame(trackingFrame(1, 100, []));
@@ -140,6 +165,16 @@ describe("landmark replay", () => {
     expect(() => parseLandmarkReplay("{}")) .toThrow(TypeError);
   });
 });
+
+/** Writes through the readonly landmark types on purpose, to prove the recorder does not share them. */
+function mutateFirstX(
+  value: { readonly hands?: unknown; readonly frames?: unknown },
+  x: number,
+): void {
+  const frames = (value as { frames?: unknown[] }).frames;
+  const hands = (frames?.[0] ?? value) as { hands: { landmarks2D: { x: number }[] }[] };
+  hands.hands[0]!.landmarks2D[0]!.x = x;
+}
 
 function beginTrialWindow(recorder: LandmarkReplayRecorder): void {
   recorder.beginTrial({

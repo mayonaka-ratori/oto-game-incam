@@ -40,7 +40,37 @@ describe("TrackingMetricsCollector", () => {
       state: "ready",
     });
   });
+
+  it("recomputes the windowed quantiles at most every 250ms and never delays the latest frame", () => {
+    let now = 0;
+    const collector = new TrackingMetricsCollector({ now: () => now, statisticsIntervalMs: 250 });
+    collector.markReady({ delegate: "GPU", fallbackReason: null, packageId: "test", modelId: "test" }, 4);
+    collector.addResult(inferenceFrame(1, 0, 20));
+
+    expect(collector.snapshot.inferenceP50).toBe(20);
+
+    now = 100;
+    collector.addResult(inferenceFrame(2, 100, 200));
+
+    // Still inside the cache window: the heavy sort is skipped.
+    expect(collector.snapshot.inferenceP50).toBe(20);
+    // What the gesture pipeline reads every frame is never cached.
+    expect(collector.snapshot.latestFrame?.frameId).toBe(2);
+    expect(collector.snapshot.handCount).toBe(1);
+
+    now = 400;
+    expect(collector.snapshot.inferenceP50).toBe(110);
+    expect(collector.snapshot.inferenceMax).toBe(200);
+  });
 });
+
+function inferenceFrame(frameId: number, captureTimeMs: number, inferenceMs: number): HandTrackingFrame {
+  return {
+    ...frame(frameId, ["left"], captureTimeMs),
+    inferenceStartedTimeMs: captureTimeMs + 25,
+    inferenceCompletedTimeMs: captureTimeMs + 25 + inferenceMs,
+  };
+}
 
 function frame(
   frameId: number,

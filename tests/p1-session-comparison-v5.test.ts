@@ -83,7 +83,7 @@ function sessionDocument(
     runner.snapshot,
     [],
     [],
-    new LandmarkReplayRecorder(session).snapshot(),
+    new LandmarkReplayRecorder(session).counts(),
     {
       inferenceP50Ms: 20,
       inferenceP95Ms: 40,
@@ -121,7 +121,7 @@ describe("P1 session comparison for the five-gesture protocol (schema v5)", () =
     const session = parseP1SessionForComparison(JSON.stringify(document), "five-a.json");
 
     expect(document).toMatchObject({
-      schemaVersion: 5,
+      schemaVersion: 6,
       gestureVocabulary: {
         thirdGesture: "bloom",
         gestures: ["air-tap", "ribbon-swipe", "bloom", "lift", "spotlight"],
@@ -130,7 +130,7 @@ describe("P1 session comparison for the five-gesture protocol (schema v5)", () =
       protocol: { id: "p1-five-gesture-50", trialsPerGesture: 10, total: 50 },
     });
     expect(session).toMatchObject({
-      schemaVersion: 5,
+      schemaVersion: 6,
       protocolId: "p1-five-gesture-50",
       completed: 50,
       total: 50,
@@ -173,7 +173,56 @@ describe("P1 session comparison for the five-gesture protocol (schema v5)", () =
     expect(result.nextAction).toContain("5動作・50試行");
   });
 
-  it("marks a v5 export without the candidate vocabulary or protocol id as incomplete", () => {
+  it("reads whole-session performance from schema v6 and leaves it unrecorded for v5", () => {
+    const withPerformance = sessionDocument("six-a", P1_CONTROLLED_TRIALS, () => 8);
+    withPerformance.performance = {
+      histogramBucketMs: 1,
+      longTaskSupported: true,
+      session: {
+        trackingHz: 24,
+        inferenceP50Ms: 18,
+        inferenceP95Ms: 42,
+        inferenceMaxMs: 130,
+        frameAgeP50Ms: 70,
+        frameAgeP95Ms: 110,
+        cameraFps: 29,
+        twoHandCoverage: 0.9,
+        durationMs: 600_000,
+        longTask: { supported: true, count: 12, totalMs: 900, maxMs: 180 },
+      },
+      blocks: [{ blockIndex: 1 }, { blockIndex: 2 }, { blockIndex: 3 }, { blockIndex: 4 }, { blockIndex: 5 }],
+    };
+    const six = parseP1SessionForComparison(JSON.stringify(withPerformance), "six-a.json");
+
+    expect(six.sessionWide).toMatchObject({
+      trackingHz: 24,
+      inferenceP95Ms: 42,
+      frameAgeP95Ms: 110,
+      cameraFps: 29,
+      blockCount: 5,
+      longTaskCount: 12,
+      longTaskTotalMs: 900,
+    });
+    // The whole-session block is a record only: the recent-window values still decide the criterion.
+    expect(six.trackingHz).toBe(25);
+    expect(six.controlledCriterionCandidate).toBe(true);
+
+    // The same session saved by the earlier build: the new items read as 記録なし.
+    const asVersion5 = sessionDocument("five-e", P1_CONTROLLED_TRIALS, () => 8);
+    asVersion5.schemaVersion = 5;
+    delete asVersion5.performance;
+    delete asVersion5.environment;
+    delete asVersion5.trialEnvironments;
+    delete asVersion5.measurementNotes;
+    const five = parseP1SessionForComparison(JSON.stringify(asVersion5), "five-e.json");
+
+    expect(five.schemaVersion).toBe(5);
+    expect(five.sessionWide).toBeNull();
+    expect(five.dataComplete).toBe(true);
+    expect(five.controlledCriterionCandidate).toBe(true);
+  });
+
+  it("marks a v6 export without the candidate vocabulary or protocol id as incomplete", () => {
     const document = sessionDocument("five-d", P1_CONTROLLED_TRIALS, () => 8);
     document.gestureVocabulary = { thirdGesture: "bloom", gestures: ["air-tap", "ribbon-swipe", "bloom", "lift"] };
     (document.protocol as Record<string, unknown>).id = "";

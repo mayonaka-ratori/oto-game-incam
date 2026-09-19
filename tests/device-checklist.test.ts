@@ -69,7 +69,7 @@ describe("P1 result import for the device check", () => {
       createdAtIso: "2026-09-14T00:00:00.000Z",
       ...(schemaVersion >= 4 ? { gestureVocabulary: { thirdGesture: "bloom" } } : {}),
       session: { sessionId: `session-v${schemaVersion}` },
-      protocol: { id: schemaVersion === 5 ? "p1-five-gesture-50" : "p1-custom" },
+      protocol: { id: schemaVersion >= 5 ? "p1-five-gesture-50" : "p1-custom" },
       summary: {
         byGesture: {
           "air-tap": gestureSummary(9),
@@ -93,6 +93,18 @@ describe("P1 result import for the device check", () => {
     });
   });
 
+  it("reads a schema v6 session the same way, and keeps v5 readable", () => {
+    expect(readP1SessionForChecklist(p1Document(6))).toMatchObject({
+      schemaVersion: 6,
+      protocolId: "p1-five-gesture-50",
+      thirdGesture: "bloom",
+      airTap: { success: 9 },
+      bloom: { success: 7 },
+      sessionId: "session-v6",
+    });
+    expect(readP1SessionForChecklist(p1Document(5))).toMatchObject({ schemaVersion: 5, thirdGesture: "bloom" });
+  });
+
   it("leaves the Bloom row empty for a legacy clap session and names its procedure", () => {
     expect(readP1SessionForChecklist(p1Document(3))).toMatchObject({
       schemaVersion: 3,
@@ -106,7 +118,7 @@ describe("P1 result import for the device check", () => {
     const withoutVocabulary = p1Document(5);
     delete withoutVocabulary.gestureVocabulary;
 
-    expect(() => readP1SessionForChecklist(p1Document(6))).toThrow(/schema version/);
+    expect(() => readP1SessionForChecklist(p1Document(7))).toThrow(/schema version/);
     expect(() => readP1SessionForChecklist(withoutVocabulary)).toThrow(/第三入力/);
   });
 

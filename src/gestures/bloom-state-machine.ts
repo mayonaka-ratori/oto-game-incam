@@ -113,7 +113,11 @@ interface MutableBloomTrackingGapDiagnostic extends BloomTrackingGapDiagnostic {
   durationMs: number | null;
 }
 
-const DEFAULTS = {
+/**
+ * Judgment constants. Exported read-only so the on-camera guide and the motion sample can be
+ * drawn from the same preparation values. Changing a value changes the judgment.
+ */
+export const BLOOM_DEFAULTS = {
   minimumPreparationSpan: 0.1,
   maximumPreparationSpan: 0.42,
   preparationCenterToleranceX: 0.22,
@@ -155,7 +159,7 @@ export class BloomStateMachine {
   readonly #waitSettle: StillnessWindow;
 
   constructor(config: BloomConfig = {}) {
-    this.#config = { ...DEFAULTS, ...config };
+    this.#config = { ...BLOOM_DEFAULTS, ...config };
     this.#readiness = new ReadinessGate({
       requiredStableMs: this.#config.readinessStableMs,
       maximumDriftDistance: this.#config.readinessMaximumDrift,

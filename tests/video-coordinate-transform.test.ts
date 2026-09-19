@@ -22,4 +22,29 @@ describe("video cover coordinate transform", () => {
   it("rejects dimensions that are not ready", () => {
     expect(createVideoCoverTransform(0, 480, 400, 300, true)).toBeNull();
   });
+
+  // The preview frame follows the camera image (--video-aspect), so cover crops nothing and
+  // a guide drawn at the edge of the frame stays on screen in portrait as well as landscape.
+  for (const [videoWidth, videoHeight, viewportWidth, viewportHeight] of [
+    [640, 480, 400, 300],
+    [480, 640, 300, 400],
+  ] as const) {
+    it(`shows the whole ${videoWidth}×${videoHeight} image in a matching frame`, () => {
+      const transform = createVideoCoverTransform(
+        videoWidth,
+        videoHeight,
+        viewportWidth,
+        viewportHeight,
+        true,
+      )!;
+      expect(transform.offsetX).toBeCloseTo(0, 6);
+      expect(transform.offsetY).toBeCloseTo(0, 6);
+      const topLeft = mapPreviewLandmark(transform, { x: 0, y: 0 });
+      const bottomRight = mapPreviewLandmark(transform, { x: 1, y: 1 });
+      expect(topLeft.x).toBeCloseTo(0, 6);
+      expect(topLeft.y).toBeCloseTo(0, 6);
+      expect(bottomRight.x).toBeCloseTo(viewportWidth, 6);
+      expect(bottomRight.y).toBeCloseTo(viewportHeight, 6);
+    });
+  }
 });

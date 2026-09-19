@@ -1,8 +1,8 @@
 # 空間ジェスチャー音楽ゲーム 技術戦略・実装計画
 
-- 更新日: 2026-09-15
+- 更新日: 2026-09-19
 - 文書種別: 技術選定 / アーキテクチャ / 検証計画
-- ステータス: v0.4（P1を5動作・50試行へ拡張。Bloomの準備完了後の合図、Lift／Spotlight候補、schema v5を追加）
+- ステータス: v0.4（P1を5動作・50試行へ拡張。Bloomの準備完了後の合図、Lift／Spotlight候補、schema v5を追加。2026-09-19: セッション比較の記述をschema v5以降へ直した。記録項目の正本は05の5.7）
 - 対象: PC内蔵・外付けWebカメラ、スマートフォンのインカメ
 
 長期的なゲーム内容は`01_game_design_policy.md`、現行POC / MVPの範囲は`03_mvp_definition_and_roadmap.md`、POCゲートの実施は`05_poc_test_protocol.md`、MVP採点は`06_mvp_chart_scoring_spec.md`を正本とする。本書の技術選定と実装順序はそれらを検証するために従属する。読む順序と現在地は`docs/README.md`を参照する。
@@ -650,7 +650,7 @@ R1は競技モードが製品方針として承認された場合だけ使用す
 
 複数端末から返されたP1結果JSONは、手作業で表へ転記する前に次を自動検証する。
 
-- schema、試験手順ごとの試行数（3入力版は30試行、5動作版は50試行）、各動作10試行、outcome合計、summaryとtrial resultsの一致、重複trial、privacy宣言。schema v5はprotocol ID（`p1-five-gesture-50`）と5動作の語彙を検証し、3入力版と同じ条件へまとめない
+- schema、試験手順ごとの試行数（3入力版は30試行、5動作版は50試行）、各動作10試行、outcome合計、summaryとtrial resultsの一致、重複trial、privacy宣言。schema v5以降はprotocol ID（`p1-five-gesture-50`）と5動作の語彙を検証し、3入力版と同じ条件へまとめない
 - app build ID、実験profile ID、要求設定と実設定、provider／model
 - success、player miss、machine miss、tracking loss、unclassified、拒否理由
 - tracking Hz、推論p95、frame age p95、二手coverage、queue状態

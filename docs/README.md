@@ -1,14 +1,14 @@
 # プロジェクト資料ガイド
 
-- 更新日: 2026-09-18
+- 更新日: 2026-09-19
 - 現在のプロダクトフェーズ: **Phase 1 — Tracking & Latency Lab**
 - 現在の技術ステージ: **Technical Stage T0 — Measurement Lab**
 - 現在のステップ: **1.1 — TypeScript / Viteの最小Webアプリ、カメラ許可、計測画面を作る**
-- 実装先行状況: **[13_p1_five_gesture_50_trial_revision_plan.md](./13_p1_five_gesture_50_trial_revision_plan.md)に沿って、Technical Labを5動作・50試行へ改訂した。iPhone Safariの1回目の実測は完了し、air-tap、ribbon-swipe、Lift、Spotlightは各10/10、Bloomは6/10、誤反応は0件だった。詳細は[14_p1_session_analysis_20260916063846360.md](./14_p1_session_analysis_20260916063846360.md)に記録した。Android Chromeは未実施**
+- 実装先行状況: **[13_p1_five_gesture_50_trial_revision_plan.md](./13_p1_five_gesture_50_trial_revision_plan.md)に沿って、Technical Labを5動作・50試行へ改訂した。iPhone Safariの1回目の実測は完了し、air-tap、ribbon-swipe、Lift、Spotlightは各10/10、Bloomは6/10、誤反応は0件だった。詳細は[14_p1_session_analysis_20260916063846360.md](./14_p1_session_analysis_20260916063846360.md)に記録した。Android Chromeは未実施。2026-09-19に構造を見直し、判定条件を変えない修正（画面側の処理の削減、セッション全体とブロック別の性能記録、試行ごとの向きと映像の実寸の記録、画面を消さない仕組み、Bloomの案内、映像枠の縦横比）を実装した。結果JSONはschema v6になった。詳細は[16_structure_review_and_lightweight_fixes.md](./16_structure_review_and_lightweight_fixes.md)に記録した。この修正は実機では未確認**
 - テスター画面: **標準URLはカメラ、テスト音、動作見本、5ブロック・50試行、ブロック間の休憩と開始、「反応しなかったので次へ」、中断と再開、結果JSON保存、誤反応の記録へ限定する。重ね表示設定、詳細計測、手動分類、リプレイ、記入式レポート、複数セッション比較は表示せず、開発者が必要な場合だけ`?view=analysis`で全機能を開く**
-- 次の作業: **Android Chromeで、iPhoneと同じbuild・profile・閾値の5動作・50試行を実測する。比較が終わるまでは閾値を変えない。iPhoneの試行時の向き、疲労、分かりにくかった動作を補足し、可能なら診断リプレイでBloom 1〜4を確認する**
+- 次の作業: **Android Chromeで、iPhoneと同じprofile・閾値の5動作・50試行を実測する。buildは[16](./16_structure_review_and_lightweight_fixes.md)の修正で変わったため、端末間を同じbuildで比べるにはiPhoneも現行buildで測り直す。両端末は同じ向きで実施し、結果JSONの`trialEnvironments`で確かめる。Bloomは案内を直したので、[14](./14_p1_session_analysis_20260916063846360.md)の6/10と単純比較しない。比較が終わるまでは閾値を変えない。iPhoneの試行時の向き、疲労、分かりにくかった動作を補足し、可能なら診断リプレイでBloom 1〜4を確認する**
 - 旧clap分析の扱い: **[`12_p1_session_analysis_20260913144422125.md`](./12_p1_session_analysis_20260913144422125.md)の実機分析は履歴として保持する。旧clapと新Bloomを同じ第三入力の合否へ混ぜない**
-- 次の判断: **両端末の実測後、各動作の成立率、誤反応、タイミング、疲労、分かりやすさを比較し、Interaction POCへ持ち込む3〜4動作を選ぶ。iPhoneではLiftが最も安定し、Spotlightも成立した。Bloomは6/10のため、準備範囲、見本、追跡切れのどれを直すかを診断後に一つへ絞る。追跡喪失はプレイヤーMISSへ分類しない**
+- 次の判断: **両端末の実測後、各動作の成立率、誤反応、タイミング、疲労、分かりやすさを比較し、Interaction POCへ持ち込む3〜4動作を選ぶ。iPhoneではLiftが最も安定し、Spotlightも成立した。Bloomは6/10だった。見本とカメラ上の案内は[16](./16_structure_review_and_lightweight_fixes.md)の3.4で直したので、次の実測でBloomが8/10に届かない場合は、準備範囲と追跡切れのどちらを直すかを診断後に一つへ絞る。追跡喪失はプレイヤーMISSへ分類しない。判定の座標が映像の縦横比と向きに左右される問題など、判定の物差しを変える修正（[16](./16_structure_review_and_lightweight_fixes.md)の2.2）は、両端末の実測後、Interaction POCへ入る前に扱う**
 
 Codexで作業を継続する場合、リポジトリ直下の [`AGENTS.md`](../AGENTS.md) が自動引き継ぎの入口となる。Claude Codeでは [`CLAUDE.md`](../CLAUDE.md) が入口で、そこから `AGENTS.md` を取り込む。どちらも本書を読み、現在地と依頼に関係する正本だけを確認して作業を始める。
 
@@ -28,7 +28,7 @@ Codexで作業を継続する場合、リポジトリ直下の [`AGENTS.md`](../
 
 `07`以降は作業計画と実装記録である。仕様や合否が食い違う場合は、これらではなく「文書の正本」表の文書を優先する。新しい作業計画や分析は次の番号で追加し、済んだ文書のステータス行を「履歴」へ更新する。
 
-| 文書 | 内容 | 状態（2026-09-18時点） |
+| 文書 | 内容 | 状態（2026-09-19時点） |
 |---|---|---|
 | [07 Step 1.1 実装プラン](./07_step_1_1_implementation_plan.md) | 最小Webアプリ、カメラ許可、計測画面の初回実装 | 履歴。実装完了 |
 | [08 追跡パイプライン実装プラン](./08_phase1_tracking_pipeline_implementation_plan.md) | HandTrackingProvider、latest-frame-only Worker、二手カーソル | 履歴。自動検証完了 |
@@ -38,7 +38,8 @@ Codexで作業を継続する場合、リポジトリ直下の [`AGENTS.md`](../
 | [12 実機セッション分析 20260913144422125](./12_p1_session_analysis_20260913144422125.md) | iPhone Safariの旧clap実機セッションの分析 | 履歴。旧clapの結果を現行Bloomの合否へ混ぜない |
 | [13 5動作・50試行 改訂計画](./13_p1_five_gesture_50_trial_revision_plan.md) | Bloom 10/10成立後の改訂計画と、14章の実装記録・コードレビュー後の修正 | **現行の作業計画**。iPhone実測済み、Android実測待ち |
 | [14 実機セッション分析 20260916063846360](./14_p1_session_analysis_20260916063846360.md) | iPhone Safariの5動作・50試行の分析 | **現行の実測記録**。Bloom 6/10、他4動作10/10。Phase 1は保留 |
-| [15 確信度3段階フィードバック・自由記述仕分け 実装計画](./15_confidence_tier_feedback_and_comment_classification_plan.md) | typesafe.aiの調査から採用した2件（成立の余裕で演出を3段階にする、テスターの自由記述を外部AIで仕分ける）の計画と、採用しなかった候補の記録 | 計画。Android実測後にPhase 2の一部として着手。P1の合否判定と結果JSON（schema v5）は変えず、実機確認レポートには同意欄を足す |
+| [15 確信度3段階フィードバック・自由記述仕分け 実装計画](./15_confidence_tier_feedback_and_comment_classification_plan.md) | typesafe.aiの調査から採用した2件（成立の余裕で演出を3段階にする、テスターの自由記述を外部AIで仕分ける）の計画と、採用しなかった候補の記録 | 計画。Android実測後にPhase 2の一部として着手。P1の合否判定と結果JSON（schema v6）は変えず、実機確認レポートには同意欄を足す |
+| [16 構造の見直しと判定に触れない修正](./16_structure_review_and_lightweight_fixes.md) | 構造レビューの結論、判定側で確認した未修正の問題、判定条件を変えずに入れた修正（軽量化、schema v6の記録、Screen Wake Lock、Bloomの案内、映像枠） | **現行の実装記録**。自動検証済み、実機は未確認 |
 
 試験手順の正本は[POCテスト手順](./05_poc_test_protocol.md)の5章であり、`13`は5動作すべてのMVP採用を確定するものではない。
 

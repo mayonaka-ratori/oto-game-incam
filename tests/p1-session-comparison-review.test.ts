@@ -97,7 +97,7 @@ function sessionDocument(
     runner.snapshot,
     [],
     [],
-    new LandmarkReplayRecorder(session).snapshot(),
+    new LandmarkReplayRecorder(session).counts(),
     {
       inferenceP50Ms: 20,
       inferenceP95Ms: 40,
@@ -108,7 +108,7 @@ function sessionDocument(
       idConflictCount: 0,
     },
     { ...TECHNICAL_SNAPSHOT, ...options.technical },
-    new Date("2026-09-14T01:00:00.000Z"),
+    { now: new Date("2026-09-14T01:00:00.000Z") },
   );
   return JSON.parse(JSON.stringify(document)) as Record<string, unknown>;
 }

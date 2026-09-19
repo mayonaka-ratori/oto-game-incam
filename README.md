@@ -1,6 +1,6 @@
 # Oto Motion Technical Lab
 
-Phase 1のカメラ許可・二手追跡・音声時刻・単体ジェスチャー・計測画面である。プロジェクトの現在地と仕様の正本は[docs/README.md](./docs/README.md)、実機確認前までの実装結果は[docs/10_phase1_ai_preparation_implementation.md](./docs/10_phase1_ai_preparation_implementation.md)、5動作・50試行への改訂とコードレビュー後の修正の記録は[docs/13_p1_five_gesture_50_trial_revision_plan.md](./docs/13_p1_five_gesture_50_trial_revision_plan.md)の14章を参照する。
+Phase 1のカメラ許可・二手追跡・音声時刻・単体ジェスチャー・計測画面である。プロジェクトの現在地と仕様の正本は[docs/README.md](./docs/README.md)、実機確認前までの実装結果は[docs/10_phase1_ai_preparation_implementation.md](./docs/10_phase1_ai_preparation_implementation.md)、5動作・50試行への改訂とコードレビュー後の修正の記録は[docs/13_p1_five_gesture_50_trial_revision_plan.md](./docs/13_p1_five_gesture_50_trial_revision_plan.md)の14章、構造の見直しと判定条件を変えない修正（軽量化、結果JSON schema v6、Bloomの案内）は[docs/16_structure_review_and_lightweight_fixes.md](./docs/16_structure_review_and_lightweight_fixes.md)を参照する。
 
 ## 必要環境
 
@@ -38,7 +38,7 @@ npm run test:e2e
 
 合成二手fixtureでオーバーレイだけを確認する場合は`/?tracking=mock`を使用できる。通常URLでは固定したMediaPipe実装を専用Worker内で実行する。
 
-スマートフォン横向きでは、4:3のカメラ画角とP1-Controlled操作を最初の1画面へ並べる計測作業モードになる。全telemetryはバックグラウンドで記録する。Live diagnosticsは、開発者が`?view=analysis`で開いた場合だけ表示する。
+スマートフォン横向きでは、カメラ映像の縦横比に合わせた映像枠とP1-Controlled操作を最初の1画面へ並べる計測作業モードになる。全telemetryはバックグラウンドで記録する。Live diagnosticsは、開発者が`?view=analysis`で開いた場合だけ表示する。
 
 `?view=analysis`で開いた画面の下部にある「実機確認レポート」では、試験条件、カメラ経路、二手追跡、停止・復帰を「未確認／問題なし／問題あり／対象外」で管理できる。P1セッションJSONから3入力（エアタップ・リボンスワイプ・Bloom）の結果と計測端末のtechnical snapshotを取り込み、PCで主観回答や判定を記入してもスマートフォン由来の自動計測値を保持する。実機確認JSONは保存・読み戻しでき、旧schema 1.0／2.0／2.1／2.2は読み込み時に2.3へ移行する。2.3では、取り込んだP1結果の版と試験手順IDも記録する。JSONにカメラ映像や音声は含めない。
 

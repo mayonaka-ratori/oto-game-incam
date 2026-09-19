@@ -36,10 +36,38 @@ export interface LabViewOptions {
   readonly showAnalysisPanels?: boolean;
 }
 
+/**
+ * Diagnostic numbers are read, not acted on, so they are rewritten a few times a second
+ * instead of on every tracking frame. Buttons, the state card, and the tracking banner
+ * are not throttled.
+ */
+const DIAGNOSTIC_REWRITE_INTERVAL_MS = 250;
+
+/** Looks each id up once and writes only changed text, so a render costs no repeated DOM search. */
+class TextWriter {
+  readonly #root: HTMLElement;
+  readonly #elements = new Map<string, HTMLElement>();
+
+  constructor(root: HTMLElement) {
+    this.#root = root;
+  }
+
+  element(id: string): HTMLElement {
+    const cached = this.#elements.get(id);
+    if (cached !== undefined) return cached;
+    const element = requiredElement(this.#root, `#${id}`, HTMLElement);
+    this.#elements.set(id, element);
+    return element;
+  }
+
+  set(id: string, value: string): void {
+    setText(this.element(id), value);
+  }
+}
+
 export class LabView {
   readonly video: HTMLVideoElement;
   readonly overlay: HTMLCanvasElement;
-  readonly #root: HTMLElement;
   readonly #startButton: HTMLButtonElement;
   readonly #stopButton: HTMLButtonElement;
   readonly #previewButton: HTMLButtonElement;
@@ -56,9 +84,16 @@ export class LabView {
   readonly #trackingState: HTMLElement;
   readonly #experimentProfileSelect: HTMLSelectElement;
   readonly #overlayInputs: readonly HTMLInputElement[];
+  readonly #text: TextWriter;
+  #session: CameraSession | null = null;
+  #sessionSettings: MediaTrackSettings | null = null;
+  #profileId: TrackingExperimentProfileId | null = null;
+  #stateKind: LabState["kind"] | null = null;
+  #diagnosticsWrittenAtMs = Number.NEGATIVE_INFINITY;
+  #videoAspect = "";
 
   constructor(root: HTMLElement, callbacks: LabViewCallbacks, options: LabViewOptions = {}) {
-    this.#root = root;
+    this.#text = new TextWriter(root);
     root.innerHTML = template;
     if (options.showAnalysisPanels !== true) {
       root.querySelector(".test-checklist-panel")?.remove();
@@ -102,52 +137,91 @@ export class LabView {
     for (const input of this.#overlayInputs) {
       input.addEventListener("change", () => callbacks.onOverlayLayersChange(readOverlayLayers(this.#overlayInputs)));
     }
+    // The camera can hand over a portrait or landscape image; the frame follows it immediately.
+    for (const event of ["loadedmetadata", "resize"] as const) {
+      this.video.addEventListener(event, () => this.#applyVideoAspect());
+    }
   }
 
   render(model: LabViewModel): void {
+    // Every layout-forcing read happens before the first write of this render.
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const portrait = viewportHeight > viewportWidth;
+    const nowMs = performance.now();
+
     const active = model.state.kind === "active";
     const requesting = model.state.kind === "requesting";
     const blocked = model.state.kind === "unsupported";
 
-    this.#stateCard.dataset.state = model.state.kind;
-    this.#stateBadge.textContent = stateLabel(model.state.kind);
-    this.#stateTitle.textContent = model.state.title;
-    this.#stateMessage.textContent = model.state.message;
-    this.#technicalDetail.textContent = model.state.technicalDetail;
-    this.#technicalDetail.hidden = model.state.technicalDetail.length === 0;
+    setData(this.#stateCard, "state", model.state.kind);
+    setText(this.#stateBadge, stateLabel(model.state.kind));
+    setText(this.#stateTitle, model.state.title);
+    setText(this.#stateMessage, model.state.message);
+    setText(this.#technicalDetail, model.state.technicalDetail);
+    setHidden(this.#technicalDetail, model.state.technicalDetail.length === 0);
 
-    this.#startButton.hidden = active;
-    this.#startButton.disabled = blocked || requesting || model.state.kind === "checking";
-    this.#startButton.textContent = requesting ? "許可を待っています…" : startButtonLabel(model.state.kind);
-    this.#stopButton.hidden = !active;
-    this.#previewButton.hidden = !active;
-    this.#previewButton.setAttribute("aria-pressed", String(model.previewVisible));
-    this.#previewButton.textContent = model.previewVisible ? "プレビューを隠す" : "プレビューを表示";
-    this.#experimentProfileSelect.value = model.experimentProfile.id;
-    this.#experimentProfileSelect.disabled = active || requesting;
-    setText(this.#root, "experiment-profile-purpose", model.experimentProfile.purpose);
+    setHidden(this.#startButton, active);
+    setDisabled(this.#startButton, blocked || requesting || model.state.kind === "checking");
+    setText(this.#startButton, requesting ? "許可を待っています…" : startButtonLabel(model.state.kind));
+    setHidden(this.#stopButton, !active);
+    setHidden(this.#previewButton, !active);
+    setAttribute(this.#previewButton, "aria-pressed", String(model.previewVisible));
+    setText(this.#previewButton, model.previewVisible ? "プレビューを隠す" : "プレビューを表示");
+    if (this.#experimentProfileSelect.value !== model.experimentProfile.id) {
+      this.#experimentProfileSelect.value = model.experimentProfile.id;
+    }
+    setDisabled(this.#experimentProfileSelect, active || requesting);
+    this.#text.set("experiment-profile-purpose", model.experimentProfile.purpose);
 
-    this.#previewShell.dataset.active = String(active);
-    this.#previewShell.dataset.previewVisible = String(model.previewVisible);
+    setData(this.#previewShell, "active", String(active));
+    setData(this.#previewShell, "previewVisible", String(model.previewVisible));
+    this.#applyVideoAspect();
     // Keep the active video renderable so requestVideoFrameCallback continues
     // even when the raw preview is covered by the placeholder.
-    this.video.hidden = !active;
-    this.overlay.hidden = !active;
-    this.#cameraPlaceholder.hidden = active && model.previewVisible;
-    this.#cameraPlaceholder.textContent = active
+    setHidden(this.video, !active);
+    setHidden(this.overlay, !active);
+    setHidden(this.#cameraPlaceholder, active && model.previewVisible);
+    setText(this.#cameraPlaceholder, active
       ? "プレビューは非表示です。計測は継続しています。"
-      : "カメラ開始後、ここにインカメ映像を表示します。";
+      : "カメラ開始後、ここにインカメ映像を表示します。");
 
-    this.#orientationNotice.hidden = !isPortraitViewport();
-    this.#orientationMessage.textContent = model.orientationMessage;
+    setHidden(this.#orientationNotice, !portrait);
+    setText(this.#orientationMessage, model.orientationMessage);
     renderTrackingState(this.#trackingState, model.tracking, active);
 
-    renderRequestedSettings(this.#root, model.experimentProfile);
-    renderActualSettings(this.#root, model.session);
-    renderEnvironment(this.#root, model.support, model.metrics);
-    renderSupport(this.#root, model.support);
-    renderMetrics(this.#root, model.metrics);
-    renderTrackingMetrics(this.#root, model.tracking);
+    if (this.#profileId !== model.experimentProfile.id) {
+      this.#profileId = model.experimentProfile.id;
+      renderRequestedSettings(this.#text, model.experimentProfile);
+    }
+
+    // getSettings() queries the camera track, so the answer is kept until the session changes.
+    const sessionChanged = this.#session !== model.session;
+    if (sessionChanged) {
+      this.#session = model.session;
+      this.#sessionSettings = model.session?.track.getSettings() ?? null;
+    }
+    const stateChanged = this.#stateKind !== model.state.kind;
+    this.#stateKind = model.state.kind;
+    const due = nowMs - this.#diagnosticsWrittenAtMs >= DIAGNOSTIC_REWRITE_INTERVAL_MS;
+    if (!sessionChanged && !stateChanged && !due) return;
+    this.#diagnosticsWrittenAtMs = nowMs;
+    renderActualSettings(this.#text, model.session, this.#sessionSettings);
+    renderEnvironment(this.#text, model.support, model.metrics, viewportWidth, viewportHeight, portrait);
+    renderSupport(this.#text, model.support);
+    renderMetrics(this.#text, model.metrics);
+    renderTrackingMetrics(this.#text, model.tracking);
+  }
+
+  /** Matches the preview frame to the camera image, so nothing is cropped and no guide falls outside. */
+  #applyVideoAspect(): void {
+    const width = this.video.videoWidth;
+    const height = this.video.videoHeight;
+    const aspect = width > 0 && height > 0 ? (width / height).toFixed(4) : "";
+    if (this.#videoAspect === aspect) return;
+    this.#videoAspect = aspect;
+    if (aspect === "") this.#previewShell.style.removeProperty("--video-aspect");
+    else this.#previewShell.style.setProperty("--video-aspect", aspect);
   }
 }
 
@@ -216,56 +290,61 @@ function renderTrackingState(
     "performance-low": "追跡性能が低下しています · 計測値を確認してください",
     error: "手の追跡でエラーが発生しました · 詳細情報を確認してください",
   }[state];
-  element.textContent = copy;
-  element.dataset.state = state;
-  element.hidden = !active;
+  setText(element, copy);
+  setData(element, "state", state);
+  setHidden(element, !active);
 }
 
 function renderRequestedSettings(
-  root: HTMLElement,
+  text: TextWriter,
   profile: TrackingExperimentProfile,
 ): void {
-  setText(root, "requested-profile", profile.id);
-  setText(root, "requested-build", APP_BUILD_ID);
-  setText(root, "requested-facing", "インカメ");
-  setText(root, "requested-size", `${profile.camera.width} × ${profile.camera.height}`);
-  setText(root, "requested-fps", `${profile.camera.frameRateMin}–${profile.camera.frameRateIdeal} fps`);
-  setText(root, "requested-delegate", profile.tracking.preferredDelegate);
-  setText(root, "requested-model", profile.tracking.modelId);
-  setText(root, "requested-audio", "使用しない");
+  text.set("requested-profile", profile.id);
+  text.set("requested-build", APP_BUILD_ID);
+  text.set("requested-facing", "インカメ");
+  text.set("requested-size", `${profile.camera.width} × ${profile.camera.height}`);
+  text.set("requested-fps", `${profile.camera.frameRateMin}–${profile.camera.frameRateIdeal} fps`);
+  text.set("requested-delegate", profile.tracking.preferredDelegate);
+  text.set("requested-model", profile.tracking.modelId);
+  text.set("requested-audio", "使用しない");
 }
 
-function renderActualSettings(root: HTMLElement, session: CameraSession | null): void {
-  const settings = session?.track.getSettings() ?? null;
-  setText(root, "actual-facing", cameraFacingLabel(settings?.facingMode));
-  setText(
-    root,
+function renderActualSettings(
+  text: TextWriter,
+  session: CameraSession | null,
+  settings: MediaTrackSettings | null,
+): void {
+  text.set("actual-facing", cameraFacingLabel(settings?.facingMode));
+  text.set(
     "actual-size",
     settings?.width !== undefined && settings.height !== undefined
       ? `${settings.width} × ${settings.height}`
       : "—",
   );
-  setText(root, "actual-fps", formatValue(settings?.frameRate, 1, " fps"));
-  setText(root, "actual-label", session?.track.label || "—");
-  setText(root, "track-state", trackStateLabel(session?.track.readyState));
-  setText(root, "track-muted", session === null ? "—" : session.track.muted ? "はい" : "いいえ");
+  text.set("actual-fps", formatValue(settings?.frameRate, 1, " fps"));
+  text.set("actual-label", session?.track.label || "—");
+  text.set("track-state", trackStateLabel(session?.track.readyState));
+  text.set("track-muted", session === null ? "—" : session.track.muted ? "はい" : "いいえ");
 }
 
 function renderEnvironment(
-  root: HTMLElement,
+  text: TextWriter,
   support: CameraSupportSnapshot,
   metrics: FrameMetricsSnapshot | null,
+  viewportWidth: number,
+  viewportHeight: number,
+  portrait: boolean,
 ): void {
-  const orientation = screen.orientation?.type ?? (isPortraitViewport() ? "portrait" : "landscape");
-  setText(root, "environment-secure", support.secureContext ? "有効" : "無効");
-  setText(root, "environment-visibility", visibilityLabel(metrics?.pageVisible === false ? "hidden" : document.visibilityState));
-  setText(root, "environment-orientation", orientationLabel(orientation));
-  setText(root, "environment-viewport", `${window.innerWidth} × ${window.innerHeight}`);
-  setText(root, "environment-dpr", window.devicePixelRatio.toFixed(2));
-  setText(root, "environment-frame-source", frameSourceLabel(metrics?.source));
+  const orientation = screen.orientation?.type ?? (portrait ? "portrait" : "landscape");
+  text.set("environment-secure", support.secureContext ? "有効" : "無効");
+  text.set("environment-visibility", visibilityLabel(metrics?.pageVisible === false ? "hidden" : document.visibilityState));
+  text.set("environment-orientation", orientationLabel(orientation));
+  text.set("environment-viewport", `${viewportWidth} × ${viewportHeight}`);
+  text.set("environment-dpr", window.devicePixelRatio.toFixed(2));
+  text.set("environment-frame-source", frameSourceLabel(metrics?.source));
 }
 
-function renderSupport(root: HTMLElement, support: CameraSupportSnapshot): void {
+function renderSupport(text: TextWriter, support: CameraSupportSnapshot): void {
   const entries: ReadonlyArray<readonly [string, boolean]> = [
     ["support-media", support.getUserMedia],
     ["support-rvfc", support.requestVideoFrameCallback],
@@ -275,50 +354,50 @@ function renderSupport(root: HTMLElement, support: CameraSupportSnapshot): void 
   ];
 
   for (const [id, available] of entries) {
-    const element = requiredElement(root, `#${id}`, HTMLElement);
-    element.textContent = available ? "利用可能" : "利用不可";
-    element.dataset.available = String(available);
+    const element = text.element(id);
+    setText(element, available ? "利用可能" : "利用不可");
+    setData(element, "available", String(available));
   }
 }
 
-function renderMetrics(root: HTMLElement, metrics: FrameMetricsSnapshot | null): void {
-  setText(root, "metric-camera-fps", formatValue(metrics?.cameraFps, 1));
-  setText(root, "metric-frame-p50", formatValue(metrics?.frameIntervalP50, 1, " ms"));
-  setText(root, "metric-frame-p95", formatValue(metrics?.frameIntervalP95, 1, " ms"));
-  setText(root, "metric-display-fps", formatValue(metrics?.displayFps, 1));
-  setText(root, "metric-frame-count", metrics?.cameraFrames.toLocaleString("ja-JP") ?? "—");
-  setText(root, "metric-elapsed", formatDuration(metrics?.elapsedMs));
+function renderMetrics(text: TextWriter, metrics: FrameMetricsSnapshot | null): void {
+  text.set("metric-camera-fps", formatValue(metrics?.cameraFps, 1));
+  text.set("metric-frame-p50", formatValue(metrics?.frameIntervalP50, 1, " ms"));
+  text.set("metric-frame-p95", formatValue(metrics?.frameIntervalP95, 1, " ms"));
+  text.set("metric-display-fps", formatValue(metrics?.displayFps, 1));
+  text.set("metric-frame-count", metrics?.cameraFrames.toLocaleString("ja-JP") ?? "—");
+  text.set("metric-elapsed", formatDuration(metrics?.elapsedMs));
 }
 
-function renderTrackingMetrics(root: HTMLElement, tracking: TrackingMetricsSnapshot | null): void {
+function renderTrackingMetrics(text: TextWriter, tracking: TrackingMetricsSnapshot | null): void {
   const scheduler = tracking?.scheduler;
-  setText(root, "metric-tracking-hz", formatValue(tracking?.outputHz, 1));
-  setText(root, "metric-inference-p50", formatValue(tracking?.inferenceP50, 1, " ms"));
-  setText(root, "metric-inference-p95", formatValue(tracking?.inferenceP95, 1, " ms"));
-  setText(root, "metric-frame-age-p95", formatValue(tracking?.frameAgeP95, 1, " ms"));
-  setText(root, "tracking-init", initializationLabel(tracking?.initializationStatus));
-  setText(root, "tracking-init-time", formatValue(tracking?.initializationTimeMs, 1, " ms"));
-  setText(root, "tracking-delegate", tracking?.provider?.delegate ?? "—");
-  setText(root, "tracking-fallback", tracking?.provider?.fallbackReason ?? "—");
-  setText(root, "tracking-source", frameSourceLabel(tracking?.frameSource));
-  setText(root, "tracking-inflight", scheduler?.inFlight.toString() ?? "—");
-  setText(root, "tracking-pending", scheduler?.pending.toString() ?? "—");
-  setText(root, "tracking-counts", scheduler === undefined ? "—" : `${scheduler.captured} / ${scheduler.sent} / ${scheduler.completed}`);
-  setText(root, "tracking-replaced", scheduler?.replaced.toString() ?? "—");
-  setText(root, "tracking-errored", scheduler?.errored.toString() ?? "—");
-  setText(root, "tracking-callback-worker", formatValue(tracking?.callbackToWorkerP50, 1, " ms"));
-  setText(root, "tracking-worker-wait", formatValue(tracking?.workerWaitP50, 1, " ms"));
-  setText(root, "tracking-inference-max", formatValue(tracking?.inferenceMax, 1, " ms"));
-  setText(root, "tracking-frame-age-p50", formatValue(tracking?.frameAgeP50, 1, " ms"));
-  setText(root, "tracking-hands", tracking?.handCount?.toString() ?? "—");
-  setText(root, "tracking-first-acquisition", formatValue(tracking?.firstAcquisitionMs, 0, " ms"));
-  setText(root, "tracking-one-coverage", formatPercent(tracking?.oneHandCoverage));
-  setText(root, "tracking-two-coverage", formatPercent(tracking?.twoHandCoverage));
-  setText(root, "tracking-left-missing", formatValue(tracking?.leftMissingMs, 0, " ms"));
-  setText(root, "tracking-right-missing", formatValue(tracking?.rightMissingMs, 0, " ms"));
+  text.set("metric-tracking-hz", formatValue(tracking?.outputHz, 1));
+  text.set("metric-inference-p50", formatValue(tracking?.inferenceP50, 1, " ms"));
+  text.set("metric-inference-p95", formatValue(tracking?.inferenceP95, 1, " ms"));
+  text.set("metric-frame-age-p95", formatValue(tracking?.frameAgeP95, 1, " ms"));
+  text.set("tracking-init", initializationLabel(tracking?.initializationStatus));
+  text.set("tracking-init-time", formatValue(tracking?.initializationTimeMs, 1, " ms"));
+  text.set("tracking-delegate", tracking?.provider?.delegate ?? "—");
+  text.set("tracking-fallback", tracking?.provider?.fallbackReason ?? "—");
+  text.set("tracking-source", frameSourceLabel(tracking?.frameSource));
+  text.set("tracking-inflight", scheduler?.inFlight.toString() ?? "—");
+  text.set("tracking-pending", scheduler?.pending.toString() ?? "—");
+  text.set("tracking-counts", scheduler === undefined ? "—" : `${scheduler.captured} / ${scheduler.sent} / ${scheduler.completed}`);
+  text.set("tracking-replaced", scheduler?.replaced.toString() ?? "—");
+  text.set("tracking-errored", scheduler?.errored.toString() ?? "—");
+  text.set("tracking-callback-worker", formatValue(tracking?.callbackToWorkerP50, 1, " ms"));
+  text.set("tracking-worker-wait", formatValue(tracking?.workerWaitP50, 1, " ms"));
+  text.set("tracking-inference-max", formatValue(tracking?.inferenceMax, 1, " ms"));
+  text.set("tracking-frame-age-p50", formatValue(tracking?.frameAgeP50, 1, " ms"));
+  text.set("tracking-hands", tracking?.handCount?.toString() ?? "—");
+  text.set("tracking-first-acquisition", formatValue(tracking?.firstAcquisitionMs, 0, " ms"));
+  text.set("tracking-one-coverage", formatPercent(tracking?.oneHandCoverage));
+  text.set("tracking-two-coverage", formatPercent(tracking?.twoHandCoverage));
+  text.set("tracking-left-missing", formatValue(tracking?.leftMissingMs, 0, " ms"));
+  text.set("tracking-right-missing", formatValue(tracking?.rightMissingMs, 0, " ms"));
   const hands = tracking?.latestFrame?.hands ?? [];
-  setText(root, "tracking-handedness", hands.length === 0 ? "—" : hands.map((hand) => `${handednessLabel(hand.handedness)} ${hand.handednessScore.toFixed(2)}`).join(" · "));
-  setText(root, "tracking-error", tracking?.fatalError ?? "—");
+  text.set("tracking-handedness", hands.length === 0 ? "—" : hands.map((hand) => `${handednessLabel(hand.handedness)} ${hand.handednessScore.toFixed(2)}`).join(" · "));
+  text.set("tracking-error", tracking?.fatalError ?? "—");
 }
 
 function formatPercent(value: number | null | undefined): string {
@@ -414,12 +493,25 @@ function formatDuration(value: number | null | undefined): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-function setText(root: HTMLElement, id: string, value: string): void {
-  requiredElement(root, `#${id}`, HTMLElement).textContent = value;
+/** Writing the same value again would still invalidate style and announce the live region. */
+function setText(element: HTMLElement, value: string): void {
+  if (element.textContent !== value) element.textContent = value;
 }
 
-function isPortraitViewport(): boolean {
-  return window.innerHeight > window.innerWidth;
+function setData(element: HTMLElement, key: string, value: string): void {
+  if (element.dataset[key] !== value) element.dataset[key] = value;
+}
+
+function setHidden(element: HTMLElement, hidden: boolean): void {
+  if (element.hidden !== hidden) element.hidden = hidden;
+}
+
+function setDisabled(element: HTMLButtonElement | HTMLSelectElement, disabled: boolean): void {
+  if (element.disabled !== disabled) element.disabled = disabled;
+}
+
+function setAttribute(element: HTMLElement, name: string, value: string): void {
+  if (element.getAttribute(name) !== value) element.setAttribute(name, value);
 }
 
 function requiredElement<T extends Element>(

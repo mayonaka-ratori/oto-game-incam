@@ -31,6 +31,8 @@ import {
 import {
   createPhase1SessionDocument,
   type P1TrialDiagnosticRecord,
+  type P1TrialEnvironmentRecord,
+  type Phase1DocumentExtras,
   type Phase1SessionDocument,
   type Phase1TechnicalSummary,
 } from "./phase1-session";
@@ -45,6 +47,11 @@ type TrialMachine =
   | ClapBurstStateMachine;
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+
+/** What the screen contributes to a trial environment record; the engine adds the trial identity. */
+export type P1TrialEnvironmentInput = Omit<P1TrialEnvironmentRecord, "trialId" | "ordinal" | "attempt">;
+
+type DiagnosticOccurrence = Omit<P1TrialDiagnosticRecord, "count" | "lastTimeMs">;
 
 export interface Phase1LabSnapshot {
   readonly protocol: P1RunnerSnapshot;
@@ -73,7 +80,8 @@ export class Phase1LabEngine {
   readonly #pipeline = new HandFeaturePipeline();
   readonly #runner: Phase1ControlledRunner;
   readonly #events: GestureEvent[] = [];
-  readonly #diagnostics: P1TrialDiagnosticRecord[] = [];
+  readonly #diagnostics: Mutable<P1TrialDiagnosticRecord>[] = [];
+  readonly #trialEnvironments: P1TrialEnvironmentRecord[] = [];
   #session: LandmarkReplaySession | null = null;
   #recorder: LandmarkReplayRecorder | null = null;
   #machine: TrialMachine | null = null;
@@ -102,6 +110,7 @@ export class Phase1LabEngine {
     this.#runner.start();
     this.#events.length = 0;
     this.#diagnostics.length = 0;
+    this.#trialEnvironments.length = 0;
     this.#latestTrackedFrame = null;
     this.#latestEvaluation = null;
     this.#resetAttemptState();
@@ -240,7 +249,7 @@ export class Phase1LabEngine {
     const attempt = this.#runner.activeAttempt;
 
     if (tracked.identityConflictCount > 0) {
-      this.#diagnostics.push({
+      this.#pushDiagnostic({
         trialId: trial.id,
         ordinal: trial.ordinal,
         attempt,
@@ -256,7 +265,7 @@ export class Phase1LabEngine {
       this.#rejectionCount += 1;
       if (trackingLoss) this.#attemptTrackingLossCount += 1;
       else this.#attemptRejectionCount += 1;
-      this.#diagnostics.push({
+      this.#pushDiagnostic({
         trialId: trial.id,
         ordinal: trial.ordinal,
         attempt,
@@ -320,16 +329,34 @@ export class Phase1LabEngine {
     this.#runner.recordFalseTrigger(event);
   }
 
-  createDocument(technicalSummary: Phase1TechnicalSummary, technicalSnapshot: DeviceTechnicalSnapshot): Phase1SessionDocument {
+  /** Records what the screen looked like at the start of the attempt that just began. */
+  recordTrialEnvironment(environment: P1TrialEnvironmentInput): void {
+    const trial = this.#runner.activeTrial;
+    if (trial === null) return;
+    this.#trialEnvironments.push({
+      trialId: trial.id,
+      ordinal: trial.ordinal,
+      attempt: this.#runner.activeAttempt,
+      ...environment,
+    });
+  }
+
+  createDocument(
+    technicalSummary: Phase1TechnicalSummary,
+    technicalSnapshot: DeviceTechnicalSnapshot,
+    extras: Phase1DocumentExtras = { performance: null, environment: null },
+  ): Phase1SessionDocument {
     if (this.#recorder === null || this.#session === null) throw new Error("Start a P1 session before exporting.");
     return createPhase1SessionDocument(
       this.#session,
       this.#runner.snapshot,
       this.#events,
       this.#diagnostics,
-      this.#recorder.snapshot(),
+      // Counts only: the light result JSON must never deep-copy every recorded replay frame.
+      this.#recorder.counts(),
       { ...technicalSummary, idConflictCount: this.#idConflictCount },
       technicalSnapshot,
+      { extras, trialEnvironments: this.#trialEnvironments },
     );
   }
 
@@ -381,6 +408,26 @@ export class Phase1LabEngine {
     this.#resetAttemptState();
   }
 
+  /**
+   * A 10-second trial at 30fps could otherwise append 300 records. Consecutive occurrences that are
+   * identical (same attempt, kind, hands and reason codes) share one record with a count and the
+   * first and last time, so reason-code totals stay the same as one record per occurrence.
+   */
+  #pushDiagnostic(occurrence: DiagnosticOccurrence): void {
+    const previous = this.#diagnostics.at(-1);
+    if (previous !== undefined
+      && previous.trialId === occurrence.trialId
+      && previous.attempt === occurrence.attempt
+      && previous.kind === occurrence.kind
+      && sameStrings(previous.reasonCodes, occurrence.reasonCodes)
+      && sameStrings(previous.handIds, occurrence.handIds)) {
+      previous.count += 1;
+      previous.lastTimeMs = occurrence.timeMs;
+      return;
+    }
+    this.#diagnostics.push({ ...occurrence, count: 1, lastTimeMs: occurrence.timeMs });
+  }
+
   #resetAttemptState(): void {
     this.#latestReadiness = null;
     this.#pendingReadyAtMs = null;
@@ -415,6 +462,10 @@ export class Phase1LabEngine {
         : {}),
     };
   }
+}
+
+function sameStrings(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function emptyReadinessStats(): Mutable<P1ReadinessDiagnostic> {

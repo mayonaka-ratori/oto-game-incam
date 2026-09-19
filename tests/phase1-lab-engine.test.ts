@@ -58,7 +58,7 @@ describe("Phase1LabEngine", () => {
       trackingError: null,
     });
     expect(document.protocol.results[0]?.outcome).toBe("success");
-    expect(document.schemaVersion).toBe(5);
+    expect(document.schemaVersion).toBe(6);
     expect(document.gestureVocabulary).toEqual({
       thirdGesture: "bloom",
       gestures: ["air-tap", "ribbon-swipe", "bloom", "lift", "spotlight"],

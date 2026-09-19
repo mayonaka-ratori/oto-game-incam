@@ -1,11 +1,11 @@
 # Phase 1 AI先行実装結果
 
 - 実施日: 2026-07-19〜2026-07-24
-- 最終更新日: 2026-09-15
+- 最終更新日: 2026-09-19
 - 対象: **Phase 1 — Tracking & Latency Lab / Technical Stage T0**
-- ステータス: **履歴。3入力・30試行（旧clap）時点の先行実装記録。現行の試験条件（5動作・50試行、schema v5）と現在地は[資料ガイド](./README.md)と[POCテスト手順](./05_poc_test_protocol.md)の5章を見る**
+- ステータス: **履歴。3入力・30試行（旧clap）時点の先行実装記録。現行の試験条件（5動作・50試行、schema v6）と現在地は[資料ガイド](./README.md)と[POCテスト手順](./05_poc_test_protocol.md)の5章を見る**
 - 文書種別: 実装結果と引き継ぎ。仕様の正本ではない
-- 注記: 本文の「30試行」「クラップ」「schema version 2／3」「実機確認JSON schema 2.1」は2026-07時点の値である。現行は5動作・50試行、Bloom、P1結果schema v5、診断リプレイschema v3、実機確認JSON schema 2.3（[13](./13_p1_five_gesture_50_trial_revision_plan.md)の14章）
+- 注記: 本文の「30試行」「クラップ」「schema version 2／3」「実機確認JSON schema 2.1」は2026-07時点の値である。現行は5動作・50試行、Bloom、P1結果schema v6、診断リプレイschema v3、実機確認JSON schema 2.3（[13](./13_p1_five_gesture_50_trial_revision_plan.md)の14章）
 
 現在地、ゲート、試験条件は[資料ガイド](./README.md)、[ロードマップ](./03_mvp_definition_and_roadmap.md)、[POCテスト手順](./05_poc_test_protocol.md)を正本とする。本書は実機確認できない期間に先行した実装を記録するもので、P1-ControlledのPassを宣言しない。
 

@@ -356,7 +356,7 @@ export class DeviceChecklistController {
         if (imported.sessionId !== null) setFormValue(this.#form, "sessionId", imported.sessionId);
         if (imported.technical.appBuildId.length > 0) setFormValue(this.#form, "appVersion", imported.technical.appBuildId);
         this.#status.textContent = imported.thirdGesture === "bloom"
-          ? `P1セッションから3入力（Bloomを含む）とスマホの自動計測値を取り込みました。PCで記入してもスマホ値を保持します。${imported.schemaVersion === 5 ? "候補動作のLift／SpotlightはP1セッション比較で確認してください。" : ""}`
+          ? `P1セッションから3入力（Bloomを含む）とスマホの自動計測値を取り込みました。PCで記入してもスマホ値を保持します。${imported.schemaVersion >= 5 ? "候補動作のLift／SpotlightはP1セッション比較で確認してください。" : ""}`
           : "旧P1セッションからair-tap／ribbon-swipeを取り込み、Bloom行を空にしました。旧clap結果は比較画面でBloomと分けて扱います。";
       } else {
         // Device values of an earlier file must not stay attached to this file's results.
@@ -533,7 +533,7 @@ function controlledRowStatus(form: HTMLFormElement, label: string, prefix: strin
 }
 
 export interface P1ChecklistImport {
-  readonly schemaVersion: 2 | 3 | 4 | 5;
+  readonly schemaVersion: 2 | 3 | 4 | 5 | 6;
   readonly protocolId: string | null;
   readonly thirdGesture: "bloom" | "clap";
   readonly airTap: ControlledGestureResult;
@@ -551,7 +551,7 @@ export function readP1SessionForChecklist(value: unknown): P1ChecklistImport {
     throw new TypeError("P1-ControlledセッションJSONではありません。");
   }
   const schemaVersion = value.schemaVersion;
-  if (schemaVersion !== 2 && schemaVersion !== 3 && schemaVersion !== 4 && schemaVersion !== 5) {
+  if (schemaVersion !== 2 && schemaVersion !== 3 && schemaVersion !== 4 && schemaVersion !== 5 && schemaVersion !== 6) {
     throw new TypeError("対応していないP1 schema versionです。");
   }
   const byGesture = value.summary.byGesture;
@@ -570,7 +570,7 @@ export function readP1SessionForChecklist(value: unknown): P1ChecklistImport {
       : null;
   return {
     schemaVersion,
-    protocolId: schemaVersion === 5
+    protocolId: schemaVersion >= 5
       ? (isRecord(value.protocol) ? nullableString(value.protocol.id) : null)
       : P1_LEGACY_PROTOCOL_IDS[thirdGesture],
     thirdGesture,

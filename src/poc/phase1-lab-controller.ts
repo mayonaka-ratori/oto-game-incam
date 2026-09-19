@@ -15,7 +15,16 @@ import {
   type P1RunnerSnapshot,
   type P1TrialDefinition,
 } from "./phase1-protocol";
-import type { Phase1TechnicalSummary } from "./phase1-session";
+import type {
+  Phase1EnvironmentReport,
+  Phase1TechnicalSummary,
+} from "./phase1-session";
+import type { P1TrialEnvironmentInput } from "./phase1-lab-engine";
+import {
+  Phase1PerformanceRecorder,
+  type Phase1PerformanceInputs,
+} from "./phase1-performance-recorder";
+import { ScreenWakeLock } from "../app/screen-wake-lock";
 import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapshot";
 
 const RESULT_HOLD_MS = 1_000;
@@ -38,11 +47,23 @@ const AUDIO_RESUME_TIMEOUT_MS = 600;
 
 type BlockPanelState = "idle" | "running" | "rest" | "paused" | "complete";
 
+/** Values the lab screen already measures and the P1 session saves once per session. */
+export interface Phase1EnvironmentInputs {
+  readonly displayFps: number | null;
+  readonly cameraFrameSource: string | null;
+  readonly trackingFrameSource: string | null;
+  readonly firstAcquisitionMs: number | null;
+}
+
 export interface Phase1LabControllerOptions {
   readonly appBuildId: string;
   readonly getProvider: () => TrackingProviderInfo | null;
   readonly getTechnicalSummary: () => Phase1TechnicalSummary;
   readonly getTechnicalSnapshot: () => DeviceTechnicalSnapshot;
+  readonly getPerformanceInputs: () => Phase1PerformanceInputs;
+  readonly getEnvironmentInputs: () => Phase1EnvironmentInputs;
+  /** Real pixel size of the camera video, for checking a trial against the aspect ratio afterwards. */
+  readonly getVideoSize: () => { readonly width: number; readonly height: number } | null;
   readonly getPerformanceLow: () => boolean;
   readonly getCameraActive: () => boolean;
   readonly requestLandscape: () => Promise<void>;
@@ -54,6 +75,8 @@ export class Phase1LabController {
   readonly #options: Phase1LabControllerOptions;
   readonly #engine = new Phase1LabEngine();
   readonly #audio = new AudioClock();
+  readonly #performance: Phase1PerformanceRecorder;
+  readonly #wakeLock = new ScreenWakeLock();
   #boundAudioContext: AudioContext | null = null;
   #timeline: BeatTimeline | null = null;
   #metronome: Metronome | null = null;
@@ -80,6 +103,7 @@ export class Phase1LabController {
   constructor(root: HTMLElement, options: Phase1LabControllerOptions) {
     this.#root = root;
     this.#options = options;
+    this.#performance = new Phase1PerformanceRecorder(() => options.getPerformanceInputs());
     requiredButton(root, "#p1-enable-audio").addEventListener("click", () => void this.#enableAudio());
     requiredButton(root, "#p1-start-session").addEventListener("click", () => void this.#startTest());
     requiredButton(root, "#p1-start-block").addEventListener("click", () => void this.#startBlock());
@@ -109,7 +133,13 @@ export class Phase1LabController {
 
   processFrame(frame: HandTrackingFrame): void {
     if (!this.#sessionStarted || this.#disposed) return;
-    const before = this.#engine.snapshot.protocol.completed;
+    // One snapshot per frame: building it copies the results and blocks.
+    const previous = this.#engine.snapshot;
+    const before = previous.protocol.completed;
+    // Measured before the frame is judged, so a frame never lands in an already finished block.
+    // A finished block is closed in #handleTrialFinished, which every completed trial reaches.
+    this.#performance.syncBlocks(previous.protocol);
+    this.#performance.addResult(frame);
     let snapshot = this.#engine.processFrame(frame);
     if (snapshot.protocol.completed > before) {
       this.#handleTrialFinished(snapshot);
@@ -146,6 +176,8 @@ export class Phase1LabController {
     this.#renderTimer = null;
     this.#unlockTimer = null;
     document.removeEventListener("visibilitychange", this.#handleVisibilityChange);
+    this.#performance.stop();
+    this.#wakeLock.dispose();
     await this.#audio.close();
   }
 
@@ -214,6 +246,9 @@ export class Phase1LabController {
     this.#engine.startSession(sessionId, this.#options.getProvider(), {
       appVersion: this.#options.appBuildId,
     });
+    this.#performance.start();
+    // A trial can run 10 seconds without a touch, so the screen must not dim in the middle of one.
+    void this.#wakeLock.acquire();
     this.#sessionExperimentProfileId = this.#options.getTechnicalSnapshot().experimentProfileId;
     this.#sessionStarted = true;
     this.#audioNotice = null;
@@ -244,6 +279,7 @@ export class Phase1LabController {
     try {
       await this.#resumeAudio();
       if (!this.#blockActionCanContinue()) return;
+      void this.#wakeLock.acquire();
       if (this.#engine.startBlock(performance.now())) this.#beginNextTrial();
     } finally {
       this.#blockActionPending = false;
@@ -258,6 +294,7 @@ export class Phase1LabController {
     try {
       await this.#resumeAudio();
       if (!this.#blockActionCanContinue()) return;
+      void this.#wakeLock.acquire();
       if (this.#engine.resume(performance.now())) this.#beginNextTrial();
     } finally {
       this.#blockActionPending = false;
@@ -290,9 +327,25 @@ export class Phase1LabController {
     // Readiness-gated trials schedule the count-in only after the start position settles.
     const targetTimeMs = protocol.nextTrial?.requiresReadiness === true ? null : this.#scheduleTarget();
     const trial = this.#engine.beginNextTrial(targetTimeMs, preparedAtMs);
+    if (trial !== null) this.#engine.recordTrialEnvironment(this.#trialEnvironment(preparedAtMs));
     this.#options.onGuideChange(trial);
     this.#scheduleDeadline();
     this.#render();
+  }
+
+  /** Orientation and video size decide how the guide maps to the camera image, so each attempt records them. */
+  #trialEnvironment(startedAtMs: number): P1TrialEnvironmentInput {
+    const video = this.#options.getVideoSize();
+    const orientationType = typeof screen !== "undefined" ? screen.orientation?.type ?? null : null;
+    return {
+      startedAtMs,
+      orientation: window.innerWidth >= window.innerHeight ? "landscape" : "portrait",
+      orientationType,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      videoWidth: video === null || video.width === 0 ? null : video.width,
+      videoHeight: video === null || video.height === 0 ? null : video.height,
+    };
   }
 
   #startRecognition(): void {
@@ -361,6 +414,8 @@ export class Phase1LabController {
       this.#cancelCountIn();
       this.#options.onGuideChange(null);
       this.#revealBlockOnRender = true;
+      // No trial is running while paused, so the screen may sleep again until "再開".
+      void this.#wakeLock.release();
     }
     this.#render();
   }
@@ -370,11 +425,13 @@ export class Phase1LabController {
     this.#cancelCountIn();
     this.#options.onGuideChange(null);
     const protocol = snapshot.protocol;
+    this.#performance.syncBlocks(protocol);
     if (protocol.state === "complete" || protocol.awaitingBlockStart) {
       // A finished block waits for the tester; the rest time is recorded as restBeforeMs.
       this.#clearAutoAdvanceTimer();
       this.#autoAdvanceAtMs = null;
       this.#revealBlockOnRender = true;
+      if (protocol.state === "complete") void this.#wakeLock.release();
       return;
     }
     this.#autoAdvanceAtMs = performance.now() + RESULT_HOLD_MS;
@@ -476,9 +533,11 @@ export class Phase1LabController {
       }
       if (this.#engine.diagnosticFrameCount > 0) await this.#waitForDiagnosticPostRoll(status);
       if (this.#engine.sessionId !== sessionId) return;
+      this.#performance.syncBlocks(this.#engine.snapshot.protocol);
       const document = this.#engine.createDocument(
         this.#options.getTechnicalSummary(),
         this.#options.getTechnicalSnapshot(),
+        { performance: this.#performance.report(), environment: this.#environmentReport() },
       );
       downloadJson(document, `${document.session.sessionId}.json`);
       status.textContent = "軽量なP1結果JSONを保存しました。映像・音声・リプレイ用フレームは含みません。";
@@ -702,6 +761,25 @@ export class Phase1LabController {
     block.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
+  /** Audio latency, drawing fps, and the wake lock outcome were only on screen until schema v6. */
+  #environmentReport(): Phase1EnvironmentReport {
+    const audio = this.#audioSnapshot;
+    const inputs = this.#options.getEnvironmentInputs();
+    return {
+      audio: {
+        state: audio?.state ?? null,
+        source: audio?.source ?? null,
+        baseLatencySec: audio?.baseLatencySec ?? null,
+        outputLatencySec: audio?.outputLatencySec ?? null,
+      },
+      displayFps: inputs.displayFps,
+      cameraFrameSource: inputs.cameraFrameSource,
+      trackingFrameSource: inputs.trackingFrameSource,
+      firstAcquisitionMs: inputs.firstAcquisitionMs,
+      screenWakeLock: this.#wakeLock.status,
+    };
+  }
+
   #sessionProfileMatches(): boolean {
     return this.#sessionExperimentProfileId === null
       || this.#sessionExperimentProfileId === this.#options.getTechnicalSnapshot().experimentProfileId;
@@ -793,7 +871,7 @@ function instructionLabel(sessionStarted: boolean, snapshot: Phase1LabSnapshot):
     }
     return active.gesture === "lift"
       ? "両手を画面の下側、左右の枠に構えて止めてください。そろうと合図が始まります"
-      : "両手を中央の光の近くに構えて止めてください。そろうと合図が始まります";
+      : "両手を離して左右の丸印に合わせて止めてください。そろうと合図が始まります";
   }
   if (active === null && protocol.awaitingBlockStart) {
     return `次の動き: ${protocol.nextTrial?.instruction ?? "—"}`;
@@ -926,7 +1004,7 @@ function motionSampleCaption(trial: P1TrialDefinition): string {
   if (trial.gesture === "spotlight") {
     return `GOで${spotlightVariantLabel(trial.spotlightVariant ?? "left-up-right-down")}の位置へ動かし、約0.3秒止める`;
   }
-  return "両手を中央寄りに構え、左右斜め上へ開いて花を咲かせる";
+  return "両手を離して画面中央の左右の丸印に構え、GOで左右斜め上へ開く";
 }
 
 function resolutionLabel(resolution: string): string {

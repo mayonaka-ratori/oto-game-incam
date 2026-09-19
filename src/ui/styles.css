@@ -151,6 +151,10 @@ summary:focus-visible {
   align-items: start;
 }
 
+/*
+ * No backdrop-filter here: the camera panel sits over the live preview, so the blur was
+ * recomputed on every camera frame. A more opaque background keeps the same look.
+ */
 .camera-panel,
 .diagnostics-panel,
 .p1-panel,
@@ -159,9 +163,8 @@ summary:focus-visible {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(8, 17, 21, 0.82);
+  background: rgba(8, 17, 21, 0.94);
   box-shadow: 0 20px 70px rgba(0, 0, 0, 0.24);
-  backdrop-filter: blur(16px);
 }
 
 .camera-panel {
@@ -564,13 +567,21 @@ summary:focus-visible {
   opacity: 1;
 }
 
+/*
+ * The start positions match the Bloom judgment: BLOOM_DEFAULTS in
+ * src/gestures/bloom-state-machine.ts accepts a hand distance of 0.10 to 0.42 with the
+ * midpoint within 0.22 of the center. 37.5% and 62.5% give a distance of 0.25 around the
+ * center, which is the middle of the accepted range. The old 46% / 54% was 0.08 and fell
+ * below the minimum, so the sample showed a pose the judgment refuses to arm.
+ * tests/bloom-guide.test.ts checks these values against the exported constants.
+ */
 .p1-motion-sample[data-gesture="bloom"] .p1-motion-hand--left {
-  left: 46%;
+  left: 37.5%;
   animation: p1-bloom-left-sample 1.8s ease-in-out infinite;
 }
 
 .p1-motion-sample[data-gesture="bloom"] .p1-motion-hand--right {
-  left: 54%;
+  left: 62.5%;
   animation: p1-bloom-right-sample 1.8s ease-in-out infinite;
 }
 
@@ -634,11 +645,12 @@ summary:focus-visible {
   }
 }
 
+/* Start at 37.5% / 62.5% (distance 0.25), the same start pose the judgment accepts. */
 @keyframes p1-bloom-left-sample {
   0%,
   18% {
     top: 58%;
-    left: 46%;
+    left: 37.5%;
     opacity: 0.45;
   }
   62%,
@@ -649,7 +661,7 @@ summary:focus-visible {
   }
   100% {
     top: 58%;
-    left: 46%;
+    left: 37.5%;
     opacity: 0.25;
   }
 }
@@ -658,7 +670,7 @@ summary:focus-visible {
   0%,
   18% {
     top: 58%;
-    left: 54%;
+    left: 62.5%;
     opacity: 0.45;
   }
   62%,
@@ -669,7 +681,7 @@ summary:focus-visible {
   }
   100% {
     top: 58%;
-    left: 54%;
+    left: 62.5%;
     opacity: 0.25;
   }
 }
@@ -1349,11 +1361,23 @@ summary:focus-visible {
   flex: 0 0 auto;
 }
 
+/*
+ * The frame follows the camera image, so object-fit: cover never crops and the on-camera
+ * guide always stays inside the frame. lab-view.ts writes --video-aspect from
+ * videoWidth / videoHeight; 1.3333 (4:3) is the fallback before the camera reports a size.
+ * --preview-max-height caps the height per layout, and the width follows it to keep the ratio.
+ */
 .preview-shell {
+  --video-aspect: 1.3333;
+  --preview-max-height: min(46svh, 420px);
+
   position: relative;
   display: grid;
-  min-height: 340px;
+  width: min(100%, calc(var(--preview-max-height) * var(--video-aspect)));
+  max-height: var(--preview-max-height);
+  margin-inline: auto;
   overflow: hidden;
+  aspect-ratio: var(--video-aspect);
   place-items: center;
   border: 1px solid var(--line-strong);
   border-radius: 14px;
@@ -1382,8 +1406,13 @@ summary:focus-visible {
   transform: scaleX(-1);
 }
 
+/*
+ * Hiding the preview must not stop requestVideoFrameCallback, so the video keeps being
+ * rendered. opacity costs the compositor nothing, while a brightness filter was recomputed
+ * on every frame. display: none and visibility: hidden would stop the frame callbacks.
+ */
 .preview-shell[data-preview-visible="false"] video {
-  filter: brightness(0);
+  opacity: 0;
 }
 
 .tracking-overlay {
@@ -1825,7 +1854,7 @@ details[open] summary {
   }
 
   .preview-shell {
-    min-height: min(54vw, 480px);
+    --preview-max-height: min(64vw, 480px);
   }
 
   .p1-grid {
@@ -1882,8 +1911,9 @@ details[open] summary {
     text-align: left;
   }
 
+  /* Portrait phones: a 3:4 camera image is taller than it is wide, so the height is capped first. */
   .preview-shell {
-    min-height: 58vw;
+    --preview-max-height: min(54svh, 480px);
   }
 
   .state-card {
@@ -1966,9 +1996,9 @@ details[open] summary {
     margin-bottom: 8px;
   }
 
+  /* Short landscape windows: the height is fixed, so the width shrinks to keep the camera ratio. */
   .preview-shell {
-    min-height: 148px;
-    max-height: 148px;
+    --preview-max-height: 148px;
   }
 
   .state-card {
@@ -2039,12 +2069,11 @@ details[open] summary {
     display: none !important;
   }
 
+  /* The phone landscape play screen fills the height; the shared rule derives the width. */
   .preview-shell {
-    width: min(100%, calc(133.333svh - 32px));
+    --preview-max-height: calc(100svh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);
+
     height: auto;
-    min-height: 0;
-    max-height: calc(100svh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);
-    aspect-ratio: 4 / 3;
   }
 
   .preview-label {
@@ -2070,8 +2099,9 @@ details[open] summary {
     margin: 0;
     padding: 7px 8px;
     border-color: rgba(157, 216, 211, 0.3);
-    background: rgba(5, 12, 15, 0.86);
-    backdrop-filter: blur(10px);
+    /* No backdrop-filter: this card lies over the live camera image, so the blur was
+       recomputed on every frame. A more opaque background keeps the same look. */
+    background: rgba(5, 12, 15, 0.96);
   }
 
   .state-badge {

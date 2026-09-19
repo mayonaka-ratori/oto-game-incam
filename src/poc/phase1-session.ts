@@ -1,7 +1,7 @@
 import type { GestureEvent } from "../gestures/gesture-types";
 import {
   LANDMARK_REPLAY_SCHEMA_VERSION,
-  type LandmarkReplayDocumentV2,
+  type LandmarkReplayCounts,
   type LandmarkReplaySession,
 } from "../replay/landmark-replay";
 import {
@@ -11,10 +11,19 @@ import {
   type P1RunnerSnapshot,
 } from "./phase1-protocol";
 import { percentile } from "../metrics/statistics";
+import {
+  PERFORMANCE_HISTOGRAM_BUCKET_MS,
+  type PerformanceScopeSummary,
+} from "../metrics/session-performance";
+import { TRACKING_WINDOW_SAMPLES } from "../metrics/tracking-metrics";
 import type { DeviceTechnicalSnapshot } from "../metrics/device-technical-snapshot";
 
-/** v5: five-gesture protocol with blocks, readiness timing, and pause records. v2-v4 remain readable elsewhere. */
-export const P1_SESSION_SCHEMA_VERSION = 5 as const;
+/**
+ * v6: whole-session and per-block performance, per-trial orientation and video size, audio latency,
+ * long task and heap records, screen wake lock, and diagnostics that carry a repeat count.
+ * v5 and earlier stay readable in the comparison and device-check screens; their new items read as null.
+ */
+export const P1_SESSION_SCHEMA_VERSION = 6 as const;
 
 export interface Phase1TechnicalSummary {
   readonly inferenceP50Ms: number | null;
@@ -31,10 +40,80 @@ export interface P1TrialDiagnosticRecord {
   readonly ordinal: number;
   /** 1 for the first attempt; larger when a pause abandoned an earlier attempt of the same trial. */
   readonly attempt: number;
+  /** Time of the first occurrence. Unchanged meaning for a record that occurred once. */
   readonly timeMs: number;
+  /** v6: time of the last occurrence merged into this record. Equals timeMs when count is 1. */
+  readonly lastTimeMs: number;
+  /**
+   * v6: how many consecutive identical occurrences this record stands for. Reason-code totals
+   * multiply by it, so counts per reason match the earlier one-record-per-occurrence form.
+   */
+  readonly count: number;
   readonly kind: "rejection" | "tracking-gap" | "identity-conflict";
   readonly handIds: readonly string[];
   readonly reasonCodes: readonly string[];
+}
+
+/** v6: what the screen looked like when a trial started. The judgement never reads it. */
+export interface P1TrialEnvironmentRecord {
+  readonly trialId: string;
+  readonly ordinal: number;
+  readonly attempt: number;
+  readonly startedAtMs: number;
+  readonly orientation: "portrait" | "landscape";
+  /** screen.orientation.type when the browser exposes it. */
+  readonly orientationType: string | null;
+  readonly viewportWidth: number;
+  readonly viewportHeight: number;
+  readonly videoWidth: number | null;
+  readonly videoHeight: number | null;
+}
+
+export interface Phase1BlockPerformance extends PerformanceScopeSummary {
+  readonly blockIndex: number;
+  readonly blockId: string;
+  readonly gesture: P1Gesture;
+}
+
+/** v6: session-wide and per-block performance, measured from the session start instead of a recent window. */
+export interface Phase1PerformanceReport {
+  readonly histogramBucketMs: number;
+  readonly longTaskSupported: boolean;
+  readonly memorySupported: boolean;
+  readonly usedJsHeapSizeAtStartBytes: number | null;
+  readonly usedJsHeapSizeAtExportBytes: number | null;
+  readonly session: PerformanceScopeSummary;
+  readonly blocks: readonly Phase1BlockPerformance[];
+}
+
+export type P1ScreenWakeLockStatus = "not-requested" | "unsupported" | "acquired" | "denied";
+
+/** v6: values that were shown on screen but never saved. */
+export interface Phase1EnvironmentReport {
+  readonly audio: {
+    readonly state: string | null;
+    readonly source: string | null;
+    readonly baseLatencySec: number | null;
+    readonly outputLatencySec: number | null;
+  };
+  readonly displayFps: number | null;
+  readonly cameraFrameSource: string | null;
+  readonly trackingFrameSource: string | null;
+  readonly firstAcquisitionMs: number | null;
+  readonly screenWakeLock: P1ScreenWakeLockStatus;
+}
+
+export interface Phase1DocumentExtras {
+  readonly performance: Phase1PerformanceReport | null;
+  readonly environment: Phase1EnvironmentReport | null;
+}
+
+/** How to read the numbers in this document, so a later reader cannot confuse the two scopes. */
+export interface Phase1MeasurementNotes {
+  readonly technicalSummaryScope: "recent-window";
+  readonly technicalSummaryWindowSamples: number;
+  readonly performanceScope: "session-and-blocks";
+  readonly histogramBucketMs: number;
 }
 
 export interface Phase1SessionDocument {
@@ -68,6 +147,14 @@ export interface Phase1SessionDocument {
   };
   readonly technicalSummary: Phase1TechnicalSummary;
   readonly technicalSnapshot: DeviceTechnicalSnapshot;
+  /** v6. Null when the screen exported without a performance recorder (unit tests and replays). */
+  readonly performance: Phase1PerformanceReport | null;
+  /** v6. */
+  readonly environment: Phase1EnvironmentReport | null;
+  /** v6. Empty for a session recorded before this version. */
+  readonly trialEnvironments: readonly P1TrialEnvironmentRecord[];
+  /** v6. */
+  readonly measurementNotes: Phase1MeasurementNotes;
 }
 
 export interface Phase1GestureSummary {
@@ -111,11 +198,17 @@ export function createPhase1SessionDocument(
   protocol: P1RunnerSnapshot,
   events: readonly GestureEvent[],
   diagnostics: readonly P1TrialDiagnosticRecord[],
-  replay: LandmarkReplayDocumentV2,
+  replay: LandmarkReplayCounts,
   technicalSummary: Phase1TechnicalSummary,
   technicalSnapshot: DeviceTechnicalSnapshot,
-  now = new Date(),
+  options: {
+    readonly extras?: Phase1DocumentExtras;
+    readonly trialEnvironments?: readonly P1TrialEnvironmentRecord[];
+    readonly now?: Date;
+  } = {},
 ): Phase1SessionDocument {
+  const now = options.now ?? new Date();
+  const extras = options.extras ?? { performance: null, environment: null };
   const suggestedFilename = `${session.sessionId}-diagnostic-replay.json`;
   const gestures = [...protocol.gestures];
   return {
@@ -143,15 +236,24 @@ export function createPhase1SessionDocument(
       reasonCodes: [...record.reasonCodes],
     })),
     replay: {
-      available: replay.frames.length > 0,
+      available: replay.frameCount > 0,
       schema: "oto-motion-landmark-replay",
       schemaVersion: LANDMARK_REPLAY_SCHEMA_VERSION,
       suggestedFilename,
-      frameCount: replay.frames.length,
-      trialWindowCount: replay.trialWindows.length,
+      frameCount: replay.frameCount,
+      trialWindowCount: replay.trialWindowCount,
     },
     technicalSummary,
     technicalSnapshot,
+    performance: extras.performance,
+    environment: extras.environment,
+    trialEnvironments: (options.trialEnvironments ?? []).map((record) => ({ ...record })),
+    measurementNotes: {
+      technicalSummaryScope: "recent-window",
+      technicalSummaryWindowSamples: TRACKING_WINDOW_SAMPLES,
+      performanceScope: "session-and-blocks",
+      histogramBucketMs: PERFORMANCE_HISTOGRAM_BUCKET_MS,
+    },
   };
 }
 
@@ -226,10 +328,12 @@ function abandonedAttemptCounts(protocol: P1RunnerSnapshot): ReadonlyMap<string,
   return counts;
 }
 
+/** Consecutive identical occurrences share one record, so each reason counts record.count times. */
 function countReasons(diagnostics: readonly P1TrialDiagnosticRecord[]): Readonly<Record<string, number>> {
   const counts: Record<string, number> = {};
   for (const diagnostic of diagnostics) {
-    for (const reason of diagnostic.reasonCodes) counts[reason] = (counts[reason] ?? 0) + 1;
+    const occurrences = Math.max(1, diagnostic.count);
+    for (const reason of diagnostic.reasonCodes) counts[reason] = (counts[reason] ?? 0) + occurrences;
   }
   return counts;
 }

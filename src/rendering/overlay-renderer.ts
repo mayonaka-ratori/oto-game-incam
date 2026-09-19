@@ -1,6 +1,7 @@
 import { HAND_CONNECTIONS } from "../tracking/hand-connections";
 import type { P1TrialDefinition } from "../poc/phase1-protocol";
 import type { DetectedHand, HandTrackingFrame } from "../tracking/tracking-types";
+import { createBloomGuideGeometry } from "./bloom-guide";
 import { calculatePalmCursor } from "./palm-cursor";
 import {
   createVideoCoverTransform,
@@ -22,6 +23,12 @@ export const DEFAULT_OVERLAY_LAYERS: OverlayLayers = {
   labels: true,
 };
 
+/**
+ * A phone with devicePixelRatio 3 would make the overlay canvas nine times the CSS area.
+ * Two is enough for dashed guides and 3px landmark dots.
+ */
+const MAXIMUM_DEVICE_PIXEL_RATIO = 2;
+
 export class OverlayRenderer {
   readonly #video: HTMLVideoElement;
   readonly #canvas: HTMLCanvasElement;
@@ -30,7 +37,14 @@ export class OverlayRenderer {
   #guide: P1TrialDefinition | null = null;
   #layers: OverlayLayers = DEFAULT_OVERLAY_LAYERS;
   #rafId: number | null = null;
-  #visible = true;
+  #resizeObserver: ResizeObserver | null = null;
+  #cssWidth = 0;
+  #cssHeight = 0;
+  #pixelRatio = 0;
+  #videoWidth = 0;
+  #videoHeight = 0;
+  /** Nothing is drawn until something that changes the picture happens. */
+  #dirty = true;
 
   constructor(video: HTMLVideoElement, canvas: HTMLCanvasElement) {
     const context = canvas.getContext("2d");
@@ -38,42 +52,91 @@ export class OverlayRenderer {
     this.#video = video;
     this.#canvas = canvas;
     this.#context = context;
+    if (typeof ResizeObserver !== "undefined") {
+      // Reading clientWidth every frame forces a layout; the observer reports the size instead.
+      const observer = new ResizeObserver((entries) => {
+        const entry = entries[entries.length - 1];
+        if (entry === undefined) return;
+        this.#setCanvasSize(entry.contentRect.width, entry.contentRect.height);
+      });
+      observer.observe(canvas);
+      this.#resizeObserver = observer;
+    }
+    this.#measureCanvas();
     this.#rafId = requestAnimationFrame(this.#draw);
   }
 
   setFrame(frame: HandTrackingFrame | null): void {
-    if (frame === null || this.#frame === null || frame.frameId > this.#frame.frameId) this.#frame = frame;
+    if (!(frame === null || this.#frame === null || frame.frameId > this.#frame.frameId)) return;
+    if (frame === null && this.#frame === null) return;
+    this.#frame = frame;
+    this.#dirty = true;
   }
 
   setLayers(layers: OverlayLayers): void {
+    if (sameLayers(this.#layers, layers)) return;
     this.#layers = layers;
+    this.#dirty = true;
   }
 
   setP1Guide(guide: P1TrialDefinition | null): void {
+    if (this.#guide === guide) return;
     this.#guide = guide;
-  }
-
-  setVisible(visible: boolean): void {
-    this.#visible = visible;
-    this.#canvas.hidden = !visible;
+    this.#dirty = true;
   }
 
   dispose(): void {
     if (this.#rafId !== null) cancelAnimationFrame(this.#rafId);
     this.#rafId = null;
+    this.#resizeObserver?.disconnect();
+    this.#resizeObserver = null;
     this.#frame = null;
     this.#context.clearRect(0, 0, this.#canvas.width, this.#canvas.height);
   }
 
   readonly #draw = (): void => {
-    if (this.#visible) this.#renderFrame();
     this.#rafId = requestAnimationFrame(this.#draw);
+    if (this.#resizeObserver === null) this.#measureCanvas();
+    this.#syncPixelRatio();
+    this.#syncVideoSize();
+    if (!this.#dirty) return;
+    this.#dirty = false;
+    this.#renderFrame();
   };
 
+  /** Fallback for browsers without ResizeObserver, and the first size before the observer reports. */
+  #measureCanvas(): void {
+    this.#setCanvasSize(this.#canvas.clientWidth, this.#canvas.clientHeight);
+  }
+
+  #setCanvasSize(cssWidth: number, cssHeight: number): void {
+    if (this.#cssWidth === cssWidth && this.#cssHeight === cssHeight) return;
+    this.#cssWidth = cssWidth;
+    this.#cssHeight = cssHeight;
+    this.#dirty = true;
+  }
+
+  #syncPixelRatio(): void {
+    const ratio = Math.min(MAXIMUM_DEVICE_PIXEL_RATIO, window.devicePixelRatio || 1);
+    if (this.#pixelRatio === ratio) return;
+    this.#pixelRatio = ratio;
+    this.#dirty = true;
+  }
+
+  /** The camera can hand over a different size, and rotating the device swaps width and height. */
+  #syncVideoSize(): void {
+    const width = this.#video.videoWidth;
+    const height = this.#video.videoHeight;
+    if (this.#videoWidth === width && this.#videoHeight === height) return;
+    this.#videoWidth = width;
+    this.#videoHeight = height;
+    this.#dirty = true;
+  }
+
   #renderFrame(): void {
-    const cssWidth = this.#canvas.clientWidth;
-    const cssHeight = this.#canvas.clientHeight;
-    const dpr = window.devicePixelRatio || 1;
+    const cssWidth = this.#cssWidth;
+    const cssHeight = this.#cssHeight;
+    const dpr = this.#pixelRatio;
     const pixelWidth = Math.max(1, Math.round(cssWidth * dpr));
     const pixelHeight = Math.max(1, Math.round(cssHeight * dpr));
     if (this.#canvas.width !== pixelWidth || this.#canvas.height !== pixelHeight) {
@@ -83,8 +146,8 @@ export class OverlayRenderer {
     this.#context.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.#context.clearRect(0, 0, cssWidth, cssHeight);
     const transform = createVideoCoverTransform(
-      this.#video.videoWidth,
-      this.#video.videoHeight,
+      this.#videoWidth,
+      this.#videoHeight,
       cssWidth,
       cssHeight,
       true,
@@ -122,6 +185,8 @@ export class OverlayRenderer {
       this.#context.lineTo(end.x, end.y);
       this.#context.stroke();
       this.#drawArrowHead(start.x, start.y, end.x, end.y);
+    } else if (guide.gesture === "bloom") {
+      this.#drawBloomGuide(transform);
     } else if (guide.gesture === "lift") {
       for (const x of [0.28, 0.72]) {
         this.#strokeZone(transform, { x: x - 0.14, y: 0.6 }, { x: x + 0.14, y: 0.92 });
@@ -143,6 +208,7 @@ export class OverlayRenderer {
       this.#strokeZone(transform, { x: 0.06, y: leftZone.top }, { x: 0.46, y: leftZone.bottom });
       this.#strokeZone(transform, { x: 0.54, y: rightZone.top }, { x: 0.94, y: rightZone.bottom });
     } else {
+      // The legacy "clap" trials keep the older two-hands-to-the-center drawing.
       const left = mapPreviewLandmark(transform, { x: 0.3, y: 0.5 });
       const right = mapPreviewLandmark(transform, { x: 0.7, y: 0.5 });
       const center = mapPreviewLandmark(transform, { x: 0.5, y: 0.5 });
@@ -158,6 +224,34 @@ export class OverlayRenderer {
       this.#context.stroke();
     }
     this.#context.restore();
+  }
+
+  /**
+   * Bloom arms only from a settled two-hand start pose, so the guide shows both parts of that
+   * condition: the box the midpoint between the hands has to stay inside, and the two target
+   * circles whose distance sits in the middle of the accepted span.
+   */
+  #drawBloomGuide(
+    transform: NonNullable<ReturnType<typeof createVideoCoverTransform>>,
+  ): void {
+    const geometry = createBloomGuideGeometry();
+    const zone = geometry.midpointZone;
+    this.#strokeZone(transform, { x: zone.minX, y: zone.minY }, { x: zone.maxX, y: zone.maxY });
+    const left = mapPreviewLandmark(transform, geometry.leftTarget);
+    const right = mapPreviewLandmark(transform, geometry.rightTarget);
+    const span = Math.abs(right.x - left.x);
+    const radius = Math.max(10, Math.min(44, span / 4));
+    this.#context.setLineDash([]);
+    this.#context.beginPath();
+    this.#context.moveTo(left.x + radius, left.y);
+    this.#context.lineTo(right.x - radius, right.y);
+    this.#context.stroke();
+    for (const target of [left, right]) {
+      this.#context.beginPath();
+      this.#context.arc(target.x, target.y, radius, 0, Math.PI * 2);
+      this.#context.fill();
+      this.#context.stroke();
+    }
   }
 
   #strokeZone(
@@ -242,6 +336,13 @@ export class OverlayRenderer {
     }
     this.#context.globalAlpha = 1;
   }
+}
+
+function sameLayers(first: OverlayLayers, second: OverlayLayers): boolean {
+  return first.landmarks === second.landmarks
+    && first.connections === second.connections
+    && first.cursor === second.cursor
+    && first.labels === second.labels;
 }
 
 function swipeGuide(

@@ -67,6 +67,18 @@ export class LabController {
       getProvider: () => this.#tracking?.provider ?? null,
       getTechnicalSummary: () => this.#phase1TechnicalSummary(),
       getTechnicalSnapshot: () => this.#technicalSnapshot(),
+      getPerformanceInputs: () => ({
+        scheduler: this.#tracking?.scheduler ?? null,
+        cameraFrames: this.#metrics?.cameraFrames ?? null,
+        cameraElapsedMs: this.#metrics?.elapsedMs ?? null,
+      }),
+      getEnvironmentInputs: () => ({
+        displayFps: this.#metrics?.displayFps ?? null,
+        cameraFrameSource: this.#metrics?.source ?? null,
+        trackingFrameSource: this.#tracking?.frameSource ?? null,
+        firstAcquisitionMs: this.#tracking?.firstAcquisitionMs ?? null,
+      }),
+      getVideoSize: () => ({ width: this.#view.video.videoWidth, height: this.#view.video.videoHeight }),
       getPerformanceLow: () => this.#tracking?.state === "performance-low",
       getCameraActive: () => this.#state.kind === "active",
       requestLandscape: () => this.#requestLandscape(),

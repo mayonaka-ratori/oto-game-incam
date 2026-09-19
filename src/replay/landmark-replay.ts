@@ -58,6 +58,12 @@ export interface LandmarkReplayDocumentV2 {
 
 export type LandmarkReplayDocument = LandmarkReplayDocumentV1 | LandmarkReplayDocumentV2;
 
+/** What the P1 result JSON records about the replay. Reading it must not copy the frames. */
+export interface LandmarkReplayCounts {
+  readonly frameCount: number;
+  readonly trialWindowCount: number;
+}
+
 /** A trial window starts with recognition timing, or with a readiness phase that has no timing yet. */
 export type LandmarkReplayTrialStart =
   | {
@@ -177,6 +183,14 @@ export class LandmarkReplayRecorder {
     return this.#frames.length;
   }
 
+  /** Counts only, so exporting the light result JSON never deep-copies the recorded frames. */
+  counts(): LandmarkReplayCounts {
+    return {
+      frameCount: this.#frames.length,
+      trialWindowCount: this.#trialWindows.length + (this.#activeWindow === null ? 0 : 1),
+    };
+  }
+
   snapshot(): LandmarkReplayDocumentV2 {
     const windows = [...this.#trialWindows];
     const active = this.#activeWindow;
@@ -191,12 +205,17 @@ export class LandmarkReplayRecorder {
     };
   }
 
+  /**
+   * The compact frame was already copied once in addFrame and is never mutated afterwards, so the
+   * pre-roll buffer and the recorded list share it instead of copying it a second time per frame.
+   * snapshot() still copies on the way out.
+   */
   #appendFrame(frame: LandmarkReplayFrameV2): number {
     const key = frameKey(frame);
     const existing = this.#frameIndexByKey.get(key);
     if (existing !== undefined) return existing;
     const index = this.#frames.length;
-    this.#frames.push(cloneFrameV2(frame));
+    this.#frames.push(frame);
     this.#frameIndexByKey.set(key, index);
     return index;
   }

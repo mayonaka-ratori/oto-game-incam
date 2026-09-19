@@ -299,9 +299,23 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
     protocol: { completed: number; falseTriggers: unknown[]; results: Array<{ resolution: string }> };
     replay: { available: boolean; schemaVersion: number; frameCount: number };
     technicalSnapshot: { pageUrl: string; userAgent: string; viewport: string };
+    measurementNotes: Record<string, unknown>;
+    environment: { screenWakeLock: string; audio: Record<string, unknown> } | null;
+    performance: { session: { trackingResultCount: number } } | null;
+    trialEnvironments: Array<{ viewportWidth: number; orientation: string }>;
   };
   expect(report.schema).toBe("oto-motion-p1-controlled");
-  expect(report.schemaVersion).toBe(5);
+  expect(report.schemaVersion).toBe(6);
+  expect(report.measurementNotes).toEqual({
+    technicalSummaryScope: "recent-window",
+    technicalSummaryWindowSamples: 180,
+    performanceScope: "session-and-blocks",
+    histogramBucketMs: 1,
+  });
+  expect(report.performance?.session.trackingResultCount).toBeGreaterThan(0);
+  expect(typeof report.environment?.screenWakeLock).toBe("string");
+  expect(report.trialEnvironments.length).toBeGreaterThan(0);
+  expect(report.trialEnvironments[0]?.viewportWidth).toBeGreaterThan(0);
   expect(report.gestureVocabulary).toEqual({
     thirdGesture: "bloom",
     gestures: ["air-tap", "ribbon-swipe", "bloom", "lift", "spotlight"],
@@ -367,7 +381,7 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
     viewport: "844 × 390",
   });
   expect(finalReport.technicalSource.mode).toBe("p1-import");
-  expect(finalReport.technicalSource).toMatchObject({ p1SchemaVersion: 5, p1ProtocolId: "p1-five-gesture-50" });
+  expect(finalReport.technicalSource).toMatchObject({ p1SchemaVersion: 6, p1ProtocolId: "p1-five-gesture-50" });
 
   // A legacy clap session never leaves the earlier Bloom value in place.
   await expect(page.locator('[name="bloomSuccess"]')).toHaveValue("0");
@@ -450,8 +464,9 @@ test("times out and auto-advances all 50 trials in five blocks without double-fi
       blocks: Array<{ startedAtMs: number | null; finishedAtMs: number | null; restBeforeMs: number | null }>;
     };
     summary: { byGesture: Record<string, { readinessTimeout: number; recognitionTimeout: number }> };
+    performance: { blocks: Array<{ blockIndex: number; gesture: string; open: boolean }> } | null;
   };
-  expect(report.schemaVersion).toBe(5);
+  expect(report.schemaVersion).toBe(6);
   expect(report.protocol).toMatchObject({ id: "p1-five-gesture-50", total: 50 });
   expect(report.protocol.results).toHaveLength(50);
   expect(report.protocol.results.every(({ outcome, resolution }) => (
@@ -466,6 +481,15 @@ test("times out and auto-advances all 50 trials in five blocks without double-fi
     startedAtMs !== null && finishedAtMs !== null
   ))).toBe(true);
   expect(report.protocol.blocks.slice(1).every(({ restBeforeMs }) => restBeforeMs !== null)).toBe(true);
+  // Schema v6 measures each block on its own, and every finished block is closed.
+  expect(report.performance?.blocks.map(({ gesture }) => gesture)).toEqual([
+    "air-tap",
+    "ribbon-swipe",
+    "bloom",
+    "lift",
+    "spotlight",
+  ]);
+  expect(report.performance?.blocks.every(({ open }) => !open)).toBe(true);
 });
 
 test("pauses inside a block and repeats the abandoned attempt after resume", async ({ page }) => {

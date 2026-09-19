@@ -2,7 +2,7 @@ import { P1_FIVE_GESTURE_PROTOCOL_ID } from "../poc/phase1-protocol";
 
 type P1ComparisonGesture = "air-tap" | "ribbon-swipe" | "clap" | "bloom" | "lift" | "spotlight";
 type P1ThirdGesture = "clap" | "bloom";
-type P1SchemaVersion = 2 | 3 | 4 | 5;
+type P1SchemaVersion = 2 | 3 | 4 | 5 | 6;
 type FindingSeverity = "error" | "warning" | "info";
 
 export interface P1ComparisonFinding {
@@ -19,6 +19,22 @@ export interface P1ComparisonGestureSummary {
   readonly trackingLoss: number;
   readonly unclassified: number;
   readonly falseTrigger: number;
+}
+
+export interface P1ComparisonSessionWide {
+  readonly trackingHz: number | null;
+  readonly inferenceP50Ms: number | null;
+  readonly inferenceP95Ms: number | null;
+  readonly inferenceMaxMs: number | null;
+  readonly frameAgeP50Ms: number | null;
+  readonly frameAgeP95Ms: number | null;
+  readonly cameraFps: number | null;
+  readonly twoHandCoverage: number | null;
+  readonly durationMs: number | null;
+  readonly blockCount: number;
+  /** Null where the browser has no longtask entries (Safari). */
+  readonly longTaskCount: number | null;
+  readonly longTaskTotalMs: number | null;
 }
 
 export interface P1ComparisonSession {
@@ -44,10 +60,16 @@ export interface P1ComparisonSession {
   readonly completed: number;
   readonly total: number;
   readonly gestures: Readonly<Record<P1ComparisonGesture, P1ComparisonGestureSummary>>;
+  /** Values of the last few seconds before saving. Every schema version records them. */
   readonly trackingHz: number | null;
   readonly inferenceP95Ms: number | null;
   readonly frameAgeP95Ms: number | null;
   readonly twoHandCoverage: number | null;
+  /**
+   * Whole-session values, recorded from schema v6 on. Null means 記録なし, which is how
+   * every v5 and earlier file reads. They are shown for reference and never change the criterion.
+   */
+  readonly sessionWide: P1ComparisonSessionWide | null;
   readonly findings: readonly P1ComparisonFinding[];
   readonly dataComplete: boolean;
   readonly controlledCriterionCandidate: boolean;
@@ -99,7 +121,7 @@ export function parseP1SessionForComparison(
     throw new TypeError("P1-ControlledセッションJSONではありません。");
   }
   const schemaVersion = value.schemaVersion;
-  if (schemaVersion !== 2 && schemaVersion !== 3 && schemaVersion !== 4 && schemaVersion !== 5) {
+  if (schemaVersion !== 2 && schemaVersion !== 3 && schemaVersion !== 4 && schemaVersion !== 5 && schemaVersion !== 6) {
     throw new TypeError("対応していないP1 schema versionです。");
   }
   const findings: P1ComparisonFinding[] = [];
@@ -122,7 +144,7 @@ export function parseP1SessionForComparison(
   }
   const protocol = isRecord(value.protocol) ? value.protocol : {};
   const protocolId = parseProtocolId(schemaVersion, protocol, thirdGesture, findings);
-  if (schemaVersion === 5) validateFiveGestureRecords(protocol, protocolId, findings);
+  if (schemaVersion >= 5) validateFiveGestureRecords(protocol, protocolId, findings);
   const expectedTotal = sessionGestures.length * TRIALS_PER_GESTURE;
   const completed = finiteNumber(protocol.completed) ?? sumGesture(gestures, "completed", sessionGestures);
   const total = finiteNumber(protocol.total) ?? expectedTotal;
@@ -263,9 +285,32 @@ export function parseP1SessionForComparison(
     inferenceP95Ms,
     frameAgeP95Ms,
     twoHandCoverage,
+    sessionWide: parseSessionWide(value.performance),
     findings,
     dataComplete,
     controlledCriterionCandidate,
+  };
+}
+
+/** Reads the schema v6 whole-session block. Anything older, or a malformed block, reads as 記録なし. */
+function parseSessionWide(value: unknown): P1ComparisonSessionWide | null {
+  if (!isRecord(value) || !isRecord(value.session)) return null;
+  const session = value.session;
+  const longTask = isRecord(session.longTask) ? session.longTask : {};
+  const blocks: readonly unknown[] = Array.isArray(value.blocks) ? value.blocks : [];
+  return {
+    trackingHz: nullableFinite(session.trackingHz),
+    inferenceP50Ms: nullableFinite(session.inferenceP50Ms),
+    inferenceP95Ms: nullableFinite(session.inferenceP95Ms),
+    inferenceMaxMs: nullableFinite(session.inferenceMaxMs),
+    frameAgeP50Ms: nullableFinite(session.frameAgeP50Ms),
+    frameAgeP95Ms: nullableFinite(session.frameAgeP95Ms),
+    cameraFps: nullableFinite(session.cameraFps),
+    twoHandCoverage: nullableFinite(session.twoHandCoverage),
+    durationMs: nullableFinite(session.durationMs),
+    blockCount: blocks.length,
+    longTaskCount: longTask.supported === true ? nullableFinite(longTask.count) : null,
+    longTaskTotalMs: longTask.supported === true ? nullableFinite(longTask.totalMs) : null,
   };
 }
 
@@ -842,7 +887,7 @@ function parseCandidateGestures(
   schemaVersion: P1SchemaVersion,
   findings: P1ComparisonFinding[],
 ): readonly P1ComparisonGesture[] {
-  if (schemaVersion !== 5) return [];
+  if (schemaVersion < 5) return [];
   const vocabulary = isRecord(document.gestureVocabulary) ? document.gestureVocabulary : {};
   const listed: readonly unknown[] = Array.isArray(vocabulary.gestures) ? vocabulary.gestures : [];
   const candidates = CANDIDATE_GESTURES.filter((gesture) => listed.includes(gesture));
@@ -862,10 +907,10 @@ function parseProtocolId(
   thirdGesture: P1ThirdGesture,
   findings: P1ComparisonFinding[],
 ): string {
-  if (schemaVersion !== 5) return P1_LEGACY_PROTOCOL_IDS[thirdGesture];
+  if (schemaVersion < 5) return P1_LEGACY_PROTOCOL_IDS[thirdGesture];
   const id = stringValue(protocol.id);
   if (id.length === 0) {
-    findings.push(finding("protocol-id-missing", "error", "schema v5の試験手順ID（protocol.id）がありません。"));
+    findings.push(finding("protocol-id-missing", "error", "schema v5以降の試験手順ID（protocol.id）がありません。"));
     return "unknown";
   }
   return id;

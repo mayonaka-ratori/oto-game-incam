@@ -1,8 +1,8 @@
 # 空間ジェスチャー音楽ゲーム POCテスト手順
 
-- 更新日: 2026-09-15
+- 更新日: 2026-09-19
 - 文書種別: Phase 1 / Phase 2の実施手順・記録・合否定義
-- ステータス: v0.5（Phase 1を5動作・50試行へ拡張し、Bloom／Liftへ準備完了後の合図を追加。2026-09-14のコードレビュー後の修正を反映）
+- ステータス: v0.6（結果JSONをschema v6へ上げ、セッション全体とブロック別の性能値、試行ごとの向きと映像の実寸を記録項目へ追加。試験手順、閾値、合否は変えていない。v0.5: Phase 1を5動作・50試行へ拡張し、Bloom／Liftへ準備完了後の合図を追加）
 - 正本範囲: POCテストの条件、分類、記録、ゲート判定
 
 ## 1. 目的
@@ -120,6 +120,7 @@
 ### 5.3 Bloom 10回
 
 - 中央寄りの準備姿勢から開始し、両手をそれぞれ外側かつ斜め上へ開く。
+- 中央準備ゾーンは、正規化座標で両手の中点がx 0.28〜0.72、y 0.25〜0.75に入り、両手の間隔が0.10〜0.42であることとする（実測前の初期値。2026-09-14の実装から変えていない）。カメラ上の案内と動きの見本は、この値から描く。
 - 試行を表示した時点ではカウント音を予約しない。両手が中央準備ゾーンに入り、最初の位置から0.05を超えて動かずに約200ms安定した時点を準備完了（`readyAtMs`）とし、その後にカウント音と`GO`を予約する。準備中の動き、拒否、追跡喪失は試行結果へ加えない。
 - 準備が10秒以内に完了しない場合は`unclassified`、解決経路`trial-timeout`、reason `readiness-timeout`とする。recognition windowのtimeoutとは`timeoutPhase`（`readiness`／`recognition`）で区別する。
 - 準備位置で`GO`を待つ間は、Bloomの動作時間の上限（1.4秒）を消費しない。両手が待機位置から正規化座標で0.02以内にある間は待機中とみなし、上限はそこから動き出した時点から数える。待つ間に手が少しずれて止まった場合も、両手が約0.25秒のあいだ0.02以内にとどまり、中央準備ゾーンの中にあれば、その位置を新しい待機位置にする。0.25秒で0.02より大きく動く動き（毎秒約0.08以上）は待機とみなさない。距離・速度・同期幅の閾値は変えない。
@@ -170,7 +171,7 @@
 - 結果が1回以上ある状態で「テストを最初からやり直す」を押した場合は、結果を消してよいか確認する。
 - 結果JSONには、ブロックごとの開始・終了時刻、前のブロックからの休憩時間、中断の開始・再開時刻と理由、やり直した試行IDを残す。試行結果には何回目の試み（`attempt`）かを残す。
 
-旧clapを含むschema v2／v3の結果JSONと、3入力・30試行のschema v4の結果JSONは引き続き読み込める。現行の標準JSONはschema v5で、`protocol.id = "p1-five-gesture-50"`、`protocol.trialsPerGesture = 10`、`gestureVocabulary.gestures`（5動作）を明示する。旧clap、v4のBloom、v5の5動作は語彙とprotocol IDで区別し、同じ第三入力や同じ試験条件の結果へ混ぜない。
+旧clapを含むschema v2／v3の結果JSONと、3入力・30試行のschema v4の結果JSONは引き続き読み込める。現行の標準JSONはschema v6で、`protocol.id = "p1-five-gesture-50"`、`protocol.trialsPerGesture = 10`、`gestureVocabulary.gestures`（5動作）を明示する。旧clap、v4のBloom、v5以降の5動作は語彙とprotocol IDで区別し、同じ第三入力や同じ試験条件の結果へ混ぜない。schema v6はv5へ記録項目を足した版で、試験手順、閾値、合否の計算はv5と同じである。v5のファイルは、足した項目を「記録なし」として読み込み、v6と同じ5動作・50試行の結果として比較できる。
 
 ### 5.7 Phase 1の記録
 
@@ -180,7 +181,10 @@
 - false trigger
 - tracking loss
 - eventTimeと目標時刻の差
-- 推論p50 / p95、追跡出力Hz、frame age p95
+- 推論p50 / p95、追跡出力Hz、frame age p95。`technicalSummary`と`technicalSnapshot`の値は、保存直前の直近180サンプル（約6秒）の値である（`measurementNotes`に明記）
+- セッション全体と5ブロックそれぞれの性能値（`performance`、schema v6）: 追跡出力Hz、推論p50 / p95 / 最大、frame age p50 / p95 / 最大、camera fps、片手／二手カバレッジ、フレームの取得・完了・置換・エラー件数、カメラのコールバックからWorker受信までの時間のp50（`callbackToWorkerP50Ms`）、Worker内の待ち時間のp50（`workerWaitP50Ms`）、メインスレッドの長い処理（long task）の件数・合計・最大、セッション開始時・各ブロック終了時・保存時のJSヒープ使用量。p50 / p95は1ms刻みの集計から求める。ブロックの範囲は開始から終了までで、ブロック間の休憩は含めず、ブロック内の中断時間は含む。long taskとヒープ使用量は対応するブラウザ（Chrome系）だけで記録し、非対応（Safari）では`null`とする。long taskは対応の有無（`longTask.supported`）も残す
+- 試行ごとの画面の向き（`orientation`と、取得できる場合は`screen.orientation.type`の値`orientationType`）、viewportの幅と高さ、映像の実寸（`trialEnvironments`、schema v6）。判定の座標は映像の縦横比と向きに左右されるため、端末間の比較では同じ向きで実施したことをこの記録で確かめる
+- 音声の状態と時刻の対応方式、`baseLatency`と`outputLatency`、描画fps、手の初回取得時間、フレームの取得方式（カメラ計測用の`cameraFrameSource`と追跡用の`trackingFrameSource`）、画面を消さない仕組み（Screen Wake Lock）の取得結果（`environment`、schema v6）。`screenWakeLock`は`not-requested`／`unsupported`／`acquired`／`denied`のどれかで、セッション中に一度でも取得できた場合は`acquired`とする。保存時点で保持していたことは意味しない
 - ID swapと理由コード
 - 各試行の準備、準備完了（`readyAtMs`）、window開始、target、deadline、完了時刻
 - 準備のtimeoutとrecognitionのtimeoutの区別（`timeoutPhase`）、成立前の拒否件数（`rejectionCount`）、同じ区間の追跡喪失の件数（`trackingLossCount`）、試みの回数（`attempt`）
@@ -191,7 +195,7 @@
 - ブロックの開始・終了・休憩時間と中断の記録
 - Spotlightの左右variant、成立に採用したゾーン侵入時刻と保持完了時刻
 - 解決経路（gesture event、手動分類、手動スキップ、trial timeout）
-- 試行別の拒否理由とtracking gap
+- 試行別の拒否理由とtracking gap。schema v6では、同じ試行・同じ試み・同じ手・同じ理由の記録が連続した場合に1件へまとめ、回数（`count`）と最後の時刻（`lastTimeMs`）を持たせる。理由別の件数は`count`を足して数える
 - app build ID、実験profile ID、要求したカメラ／delegate／model設定
 - ブラウザが実際に選んだ解像度／fps／frame source／delegate／model
 
@@ -231,7 +235,7 @@
 
 `unclassified`を除外して成功率を良く見せない。手動スキップとtrial timeoutも各ジェスチャー10回の分母へ含め、件数、解決経路、原因をそのまま残す。成功、手動分類、手動スキップ、timeoutが競合した場合は、最初に確定した結果だけを一件記録する。
 
-複数P1 JSONの自動比較は、試験手順ごとの試行数（3入力版は30試行、5動作版は50試行）、各ジェスチャー10試行、分類合計、privacy、build／profile／protocol条件、技術値の不備を検出するために使う。同じsessionIdのファイルは、同じ試験を2回保存したものとして1件に数える。全セッションの端末情報（userAgent）が同じ場合と、手の認識処理が要求と違う処理（GPUからCPUなど）で動いた場合は、合否候補にしない。schema v5では、試験手順ID、各動作の試行数、5ブロックの記録、`attempt`、Spotlightの左右の割り当て（5回ずつ）も確かめ、合わない場合は合否候補にしない。3入力が8/10以上でも、自動比較だけで`Pass`を確定しない。Lift／Spotlightの成立率は候補動作の比較材料として表示し、P1-Controlledの合否候補には含めない。対象の端末／テスター組み合わせ、手動分類、同期感、観察記録を確認して最終判定する。
+複数P1 JSONの自動比較は、試験手順ごとの試行数（3入力版は30試行、5動作版は50試行）、各ジェスチャー10試行、分類合計、privacy、build／profile／protocol条件、技術値の不備を検出するために使う。同じsessionIdのファイルは、同じ試験を2回保存したものとして1件に数える。全セッションの端末情報（userAgent）が同じ場合と、手の認識処理が要求と違う処理（GPUからCPUなど）で動いた場合は、合否候補にしない。schema v5以降では、試験手順ID、各動作の試行数、5ブロックの記録、`attempt`、Spotlightの左右の割り当て（5回ずつ）も確かめ、合わない場合は合否候補にしない。3入力が8/10以上でも、自動比較だけで`Pass`を確定しない。Lift／Spotlightの成立率は候補動作の比較材料として表示し、P1-Controlledの合否候補には含めない。対象の端末／テスター組み合わせ、手動分類、同期感、観察記録を確認して最終判定する。
 
 ## 9. 主観質問
 

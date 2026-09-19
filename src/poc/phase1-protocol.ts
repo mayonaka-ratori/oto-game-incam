@@ -565,7 +565,7 @@ function buildFiveGestureTrials(): readonly P1TrialDefinition[] {
       id: `bloom-${index + 1}`,
       gesture: "bloom",
       requiresReadiness: true,
-      instruction: "両手を中央の光に構えて止め、GOで左右斜め上へ開いて花を咲かせる",
+      instruction: "両手を離して画面中央の左右の丸印に合わせて止め、GOで左右斜め上へ開く",
     });
   }
   for (let index = 0; index < P1_TRIALS_PER_GESTURE; index += 1) {
