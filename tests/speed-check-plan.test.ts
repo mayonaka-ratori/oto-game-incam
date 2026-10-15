@@ -5,45 +5,35 @@ import {
   resolveSpeedCheckMeasureOverrideMs,
   speedCheckSteps,
   totalSpeedCheckDurationMs,
-  SPEED_CHECK_MEASURE_MS,
   SPEED_CHECK_MEASURE_MS_MAX,
   SPEED_CHECK_MEASURE_MS_MIN,
-  SPEED_CHECK_REPEAT_MEASURE_MS,
   SPEED_CHECK_STEPS,
   SPEED_CHECK_STEP_SETUP_MS,
   SPEED_CHECK_WARMUP_MS,
   warmupMsForOverride,
+  type SpeedCheckStep,
 } from "../src/experiments/speed-check-plan";
 
 describe("speed check plan", () => {
-  it("measures the six comparisons in order and repeats the first one last", () => {
-    expect(SPEED_CHECK_STEPS.map((step) => ({
-      ordinal: step.ordinal,
-      id: step.id,
-      delegate: step.profile.tracking.preferredDelegate,
-      width: step.profile.camera.width,
-      height: step.profile.camera.height,
-      frameSourceOverride: step.frameSourceOverride,
-      pendingPolicy: step.pendingPolicy,
-      repeatOfOrdinal: step.repeatOfOrdinal,
-    }))).toEqual([
-      { ordinal: 1, id: "gpu-640-auto-hold", delegate: "GPU", width: 640, height: 480, frameSourceOverride: "auto", pendingPolicy: "hold", repeatOfOrdinal: null },
-      { ordinal: 2, id: "gpu-640-auto-drop", delegate: "GPU", width: 640, height: 480, frameSourceOverride: "auto", pendingPolicy: "drop", repeatOfOrdinal: null },
-      { ordinal: 3, id: "gpu-640-rvfc-hold", delegate: "GPU", width: 640, height: 480, frameSourceOverride: "rvfc", pendingPolicy: "hold", repeatOfOrdinal: null },
-      { ordinal: 4, id: "cpu-640-auto-hold", delegate: "CPU", width: 640, height: 480, frameSourceOverride: "auto", pendingPolicy: "hold", repeatOfOrdinal: null },
-      { ordinal: 5, id: "cpu-640-rvfc-hold", delegate: "CPU", width: 640, height: 480, frameSourceOverride: "rvfc", pendingPolicy: "hold", repeatOfOrdinal: null },
-      { ordinal: 6, id: "gpu-320-auto-hold", delegate: "GPU", width: 320, height: 240, frameSourceOverride: "auto", pendingPolicy: "hold", repeatOfOrdinal: null },
-      { ordinal: 7, id: "gpu-640-auto-hold-repeat", delegate: "GPU", width: 640, height: 480, frameSourceOverride: "auto", pendingPolicy: "hold", repeatOfOrdinal: 1 },
-    ]);
+  it("numbers the steps in order and repeats the first setting last", () => {
+    expect(SPEED_CHECK_STEPS.map(({ ordinal }) => ordinal))
+      .toEqual(Array.from({ length: SPEED_CHECK_STEPS.length }, (_, index) => index + 1));
     expect(new Set(SPEED_CHECK_STEPS.map((step) => step.id)).size).toBe(SPEED_CHECK_STEPS.length);
     expect(new Set(SPEED_CHECK_STEPS.map((step) => step.profile.tracking.modelId)).size).toBe(1);
+    // The repeat measures drift over the run, so it must use exactly the first step's settings.
+    const setting = (step: SpeedCheckStep) => ({
+      profile: step.profile.id,
+      frameSourceOverride: step.frameSourceOverride,
+      pendingPolicy: step.pendingPolicy,
+    });
+    const [first] = SPEED_CHECK_STEPS;
+    const last = SPEED_CHECK_STEPS.at(-1);
+    expect(last?.repeatOfOrdinal).toBe(1);
+    expect(setting(last!)).toEqual(setting(first!));
+    expect(SPEED_CHECK_STEPS.slice(0, -1).every(({ repeatOfOrdinal }) => repeatOfOrdinal === null)).toBe(true);
   });
 
-  it("keeps the repeat short and the whole run near two minutes", () => {
-    const last = SPEED_CHECK_STEPS.at(-1);
-    expect(last?.measureMs).toBe(SPEED_CHECK_REPEAT_MEASURE_MS);
-    expect(SPEED_CHECK_STEPS[0]?.measureMs).toBe(SPEED_CHECK_MEASURE_MS);
-    expect(SPEED_CHECK_STEPS[0]?.warmupMs).toBe(SPEED_CHECK_WARMUP_MS);
+  it("keeps the whole run near two minutes", () => {
     const totalMs = totalSpeedCheckDurationMs(SPEED_CHECK_STEPS);
     expect(totalMs).toBeGreaterThan(100_000);
     expect(totalMs).toBeLessThan(140_000);

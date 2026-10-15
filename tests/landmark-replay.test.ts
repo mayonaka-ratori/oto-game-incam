@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  LandmarkReplayCursor,
   LandmarkReplayRecorder,
   parseLandmarkReplay,
   parseLandmarkReplayImport,
   serializeLandmarkReplay,
+  toHandTrackingFrame,
 } from "../src/replay/landmark-replay";
 import { syntheticHand, trackingFrame } from "./helpers/tracking-fixtures";
 
@@ -34,19 +34,6 @@ describe("landmark replay", () => {
     expect(JSON.stringify(document)).not.toContain("data:image");
   });
 
-  it("replays deterministic cloned frames and can reset", () => {
-    const recorder = new LandmarkReplayRecorder(session);
-    beginTrialWindow(recorder);
-    recorder.addFrame(trackingFrame(1, 100, []));
-    recorder.addFrame(trackingFrame(2, 130, []));
-    const cursor = new LandmarkReplayCursor(recorder.snapshot());
-    expect(cursor.next()?.frameId).toBe(1);
-    expect(cursor.next()?.frameId).toBe(2);
-    expect(cursor.next()).toBeNull();
-    cursor.reset();
-    expect(cursor.next()?.frameId).toBe(1);
-  });
-
   it("imports replay data nested in an exported P1 session", () => {
     const recorder = new LandmarkReplayRecorder(session);
     beginTrialWindow(recorder);
@@ -61,7 +48,12 @@ describe("landmark replay", () => {
   });
 
   it("keeps version 1 replay import compatibility", () => {
-    const legacyFrame = trackingFrame(1, 100, [syntheticHand(0, "left", 0.3)]);
+    // Version 1 files stored world landmarks next to the image landmarks.
+    const hand = syntheticHand(0, "left", 0.3);
+    const legacyFrame = trackingFrame(1, 100, [{
+      ...hand,
+      landmarksWorld: hand.landmarks2D.map(({ x, y, zRelative }) => ({ x, y, z: zRelative })),
+    } as typeof hand]);
     const imported = parseLandmarkReplay(JSON.stringify({
       schema: "oto-motion-landmark-replay",
       schemaVersion: 1,
@@ -71,7 +63,10 @@ describe("landmark replay", () => {
     }));
 
     expect(imported.schemaVersion).toBe(1);
-    expect(new LandmarkReplayCursor(imported).next()?.hands[0]?.landmarksWorld).toHaveLength(21);
+    // The replay evaluation reads frames through this conversion; the world landmarks are dropped.
+    const read = toHandTrackingFrame(imported.frames[0]!).hands[0];
+    expect(read?.landmarks2D).toHaveLength(21);
+    expect(read).not.toHaveProperty("landmarksWorld");
   });
 
   it("records only trial windows with pre-roll and resolution metadata", () => {

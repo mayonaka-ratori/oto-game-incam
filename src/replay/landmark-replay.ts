@@ -1,4 +1,4 @@
-import type { DetectedHand, HandTrackingFrame, TrackingProviderInfo } from "../tracking/tracking-types";
+import type { HandTrackingFrame, TrackingProviderInfo } from "../tracking/tracking-types";
 import type { P1ActiveTrialTiming, P1ReadinessTiming, P1Resolution } from "../poc/phase1-protocol";
 
 /** v3: a trial window may hold only a readiness phase (timing null) or a discarded attempt. v1 and v2 stay readable. */
@@ -14,9 +14,8 @@ export interface LandmarkReplaySession {
   readonly notes: string;
 }
 
-export type LandmarkReplayFrameV2 = Omit<HandTrackingFrame, "hands"> & {
-  readonly hands: ReadonlyArray<Omit<DetectedHand, "landmarksWorld">>;
-};
+/** Live frames carry no world landmarks either, so a saved frame has the same shape as a live one. */
+export type LandmarkReplayFrameV2 = HandTrackingFrame;
 
 export interface LandmarkReplayTrialWindow {
   readonly trialId: string;
@@ -242,26 +241,6 @@ export class LandmarkReplayRecorder {
   }
 }
 
-export class LandmarkReplayCursor {
-  readonly #frames: readonly HandTrackingFrame[];
-  #index = 0;
-
-  constructor(document: LandmarkReplayDocument) {
-    this.#frames = document.frames.map(toHandTrackingFrame);
-  }
-
-  next(): HandTrackingFrame | null {
-    const frame = this.#frames[this.#index];
-    if (frame === undefined) return null;
-    this.#index += 1;
-    return cloneFrameV1(frame);
-  }
-
-  reset(): void {
-    this.#index = 0;
-  }
-}
-
 export function serializeLandmarkReplay(document: LandmarkReplayDocument): string {
   return JSON.stringify(document);
 }
@@ -284,9 +263,6 @@ export function toHandTrackingFrame(frame: HandTrackingFrame | LandmarkReplayFra
     hands: frame.hands.map((hand) => ({
       ...hand,
       landmarks2D: hand.landmarks2D.map((point) => ({ ...point })),
-      landmarksWorld: "landmarksWorld" in hand && Array.isArray(hand.landmarksWorld)
-        ? hand.landmarksWorld.map((point) => ({ ...point }))
-        : [],
     })),
   };
 }
@@ -357,9 +333,9 @@ function parseFrame(value: unknown, includeWorld: boolean): HandTrackingFrame | 
       handednessScore: hand.handednessScore,
       landmarks2D: hand.landmarks2D.map(parsePoint2D),
     };
-    return includeWorld
-      ? { ...base, landmarksWorld: (hand.landmarksWorld as unknown[]).map(parsePointWorld) }
-      : base;
+    // Version 1 files also stored world landmarks. They are still checked, then dropped: nothing reads them.
+    if (includeWorld) (hand.landmarksWorld as unknown[]).forEach(checkPointWorld);
+    return base;
   });
   return {
     frameId: value.frameId,
@@ -447,11 +423,10 @@ function parsePoint2D(value: unknown): { x: number; y: number; zRelative: number
   return { x: value.x, y: value.y, zRelative: value.zRelative };
 }
 
-function parsePointWorld(value: unknown): { x: number; y: number; z: number } {
+function checkPointWorld(value: unknown): void {
   if (!isRecord(value) || !finite(value.x) || !finite(value.y) || !finite(value.z)) {
     throw new TypeError("Invalid world landmark.");
   }
-  return { x: value.x, y: value.y, z: value.z };
 }
 
 function parseProvider(value: unknown): TrackingProviderInfo | null {
@@ -469,10 +444,6 @@ function parseProvider(value: unknown): TrackingProviderInfo | null {
     packageId: value.packageId,
     modelId: value.modelId,
   };
-}
-
-function cloneFrameV1(frame: HandTrackingFrame): HandTrackingFrame {
-  return toHandTrackingFrame(frame);
 }
 
 function cloneFrameV2(frame: HandTrackingFrame | LandmarkReplayFrameV2): LandmarkReplayFrameV2 {

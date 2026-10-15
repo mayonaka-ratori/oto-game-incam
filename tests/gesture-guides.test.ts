@@ -3,26 +3,13 @@ import { AIR_TAP_DEFAULTS, AirTapStateMachine } from "../src/gestures/air-tap-st
 import { BLOOM_DEFAULTS, BloomStateMachine } from "../src/gestures/bloom-state-machine";
 import { DIAGONAL_LIFT_DEFAULTS } from "../src/gestures/diagonal-lift-state-machine";
 import { LIFT_DEFAULTS, LiftStateMachine } from "../src/gestures/lift-state-machine";
-import {
-  RIBBON_SWIPE_CENTER,
-  RIBBON_SWIPE_DEFAULTS,
-  RibbonSwipeStateMachine,
-} from "../src/gestures/ribbon-swipe-state-machine";
+import { RIBBON_SWIPE_DEFAULTS, RibbonSwipeStateMachine } from "../src/gestures/ribbon-swipe-state-machine";
 import { SPOTLIGHT_DEFAULTS, SpotlightStateMachine } from "../src/gestures/spotlight-state-machine";
-import {
-  BLOOM_GUIDE_BOTTOM_MARGIN,
-  BLOOM_GUIDE_START_Y,
-  BLOOM_PREPARATION_CENTER,
-  createBloomGuideGeometry,
-  isBloomPreparationPose,
-} from "../src/rendering/bloom-guide";
 import {
   AIR_TAP_APPROACH_MARGIN,
   AIR_TAP_TRIAL_CENTER,
-  GUIDE_CIRCLE_SCALE,
   GUIDE_FRAME_MAXIMUM,
   GUIDE_FRAME_MINIMUM,
-  GUIDE_TARGET_MARGIN,
   anchorGuidePaths,
   createGestureGuide,
   guideDotPosition,
@@ -33,8 +20,7 @@ import {
 } from "../src/rendering/gesture-guides";
 import { Phase1LabEngine } from "../src/poc/phase1-lab-engine";
 import { createP1ProtocolDefinition, type P1TrialDefinition } from "../src/poc/phase1-protocol";
-import { calculatePalmCursor } from "../src/rendering/palm-cursor";
-import { syntheticHand, trackingFrame } from "./helpers/tracking-fixtures";
+import { handAtPreviewPoint, trackingFrame } from "./helpers/tracking-fixtures";
 import { trackedFrame, trackedHand } from "./helpers/gesture-fixtures";
 import type { TrackedHandFeatures } from "../src/tracking/derived-tracking-types";
 
@@ -59,39 +45,9 @@ function distance(first: GuidePoint, second: GuidePoint): number {
   return Math.hypot(first.x - second.x, first.y - second.y);
 }
 
+// Whether a hand that follows a guide is accepted is checked against the real judgment below;
+// these checks cover what that cannot see: the drawn marks match the judged areas and fit the image.
 describe("guide geometry follows the judgment constants", () => {
-  it("puts the bloom end rings one margin past the outward and upward thresholds", () => {
-    const geometry = createBloomGuideGeometry();
-    const guide = guideOf({ gesture: "bloom", requiresReadiness: true, instruction: "" });
-    const [left, right] = guide.paths;
-    expect(left?.start).toEqual(geometry.leftTarget);
-    expect(right?.start).toEqual(geometry.rightTarget);
-    expect(left!.start.x - left!.end.x).toBeCloseTo(BLOOM_DEFAULTS.minimumOutwardDistance + GUIDE_TARGET_MARGIN, 10);
-    expect(right!.end.x - right!.start.x).toBeCloseTo(BLOOM_DEFAULTS.minimumOutwardDistance + GUIDE_TARGET_MARGIN, 10);
-    for (const path of guide.paths) {
-      expect(path.start.y - path.end.y).toBeCloseTo(BLOOM_DEFAULTS.minimumUpwardDistance + GUIDE_TARGET_MARGIN, 10);
-    }
-  });
-
-  it("puts the ribbon-swipe start and end one margin outside the judged half distance", () => {
-    const guide = guideOf({ gesture: "ribbon-swipe", swipeDirection: "left-to-right", instruction: "" });
-    const path = guide.paths[0]!;
-    const reach = RIBBON_SWIPE_DEFAULTS.minimumDistance / 2 + GUIDE_TARGET_MARGIN;
-    expect(path.start).toEqual({ x: RIBBON_SWIPE_CENTER.x - reach, y: RIBBON_SWIPE_CENTER.y });
-    expect(path.end).toEqual({ x: RIBBON_SWIPE_CENTER.x + reach, y: RIBBON_SWIPE_CENTER.y });
-  });
-
-  it("puts the lift end rings one margin above the minimum upward distance", () => {
-    const guide = guideOf({ gesture: "lift", requiresReadiness: true, instruction: "" });
-    for (const path of guide.paths) {
-      expect(path.start.y).toBeCloseTo((LIFT_DEFAULTS.startZoneMinY + LIFT_DEFAULTS.startZoneMaxY) / 2, 10);
-      expect(path.start.y - path.end.y).toBeCloseTo(LIFT_DEFAULTS.minimumUpwardDistance + GUIDE_TARGET_MARGIN, 10);
-      expect(path.start.x).toBe(path.end.x);
-    }
-    expect(guide.paths[0]!.start.x).toBeCloseTo((LIFT_DEFAULTS.leftZoneMinX + LIFT_DEFAULTS.leftZoneMaxX) / 2, 10);
-    expect(guide.paths[1]!.start.x).toBeCloseTo((LIFT_DEFAULTS.rightZoneMinX + LIFT_DEFAULTS.rightZoneMaxX) / 2, 10);
-  });
-
   it("draws the air-tap ring at the judged radius and starts outside it", () => {
     const guide = guideOf({ gesture: "air-tap", airTapSide: "right", instruction: "" });
     const ring = guide.rings[0]!;
@@ -145,17 +101,6 @@ describe("guide geometry follows the judgment constants", () => {
     }
   });
 
-  it("waits for the Bloom hands low in the judged zone, not at its middle", () => {
-    const guide = guideOf({ gesture: "bloom", requiresReadiness: true, instruction: "" });
-    const lowestAcceptedMidpointY = BLOOM_PREPARATION_CENTER.y + BLOOM_DEFAULTS.preparationCenterToleranceY;
-    expect(BLOOM_GUIDE_START_Y).toBeCloseTo(lowestAcceptedMidpointY - BLOOM_GUIDE_BOTTOM_MARGIN, 10);
-    expect(BLOOM_GUIDE_START_Y).toBeGreaterThan(BLOOM_PREPARATION_CENTER.y);
-    for (const path of guide.paths) expect(path.start.y).toBeCloseTo(BLOOM_GUIDE_START_Y, 10);
-    const [left, right] = guide.paths;
-    // Lower, but still a pose the unchanged judgment arms from.
-    expect(isBloomPreparationPose(left!.start, right!.start)).toBe(true);
-  });
-
   it("lets the dot finish in half of the movement limit or less", () => {
     expect(guideOf({ gesture: "bloom", requiresReadiness: true, instruction: "" }).travelMs * 2)
       .toBeLessThanOrEqual(BLOOM_DEFAULTS.maximumDurationMs);
@@ -180,14 +125,7 @@ describe("the marks are large enough to aim at and do not run into each other", 
     { gesture: "diagonal-lift", diagonalLiftVariant: "up-left", requiresReadiness: true, instruction: "" },
   ];
 
-  it("draws the circles larger than the sizes they were derived from", () => {
-    const guide = guideOf({ gesture: "bloom", requiresReadiness: true, instruction: "" });
-    expect(GUIDE_CIRCLE_SCALE).toBeGreaterThan(1);
-    expect(guide.startRadius).toBeCloseTo(0.045 * GUIDE_CIRCLE_SCALE, 10);
-    expect(guide.endRadius).toBeCloseTo(0.055 * GUIDE_CIRCLE_SCALE, 10);
-  });
-
-  it("keeps the two start circles and the two end rings apart", () => {
+  it("keeps the circles of the two hands apart, and each start circle clear of its own end ring", () => {
     for (const definition of twoHanded) {
       const guide = guideOf(definition);
       const [left, right] = guide.paths;
@@ -195,12 +133,6 @@ describe("the marks are large enough to aim at and do not run into each other", 
         .toBeGreaterThan(guide.startRadius * 2);
       expect(distance(left!.end, right!.end), definition.gesture)
         .toBeGreaterThan(guide.endRadius * 2);
-    }
-  });
-
-  it("keeps each start circle clear of its own end ring", () => {
-    for (const definition of twoHanded) {
-      const guide = guideOf(definition);
       for (const path of guide.paths) {
         expect(distance(path.start, path.end), definition.gesture)
           .toBeGreaterThan(guide.startRadius + guide.endRadius);
@@ -249,7 +181,8 @@ describe("the guide follows the hands once the start position is confirmed", () 
 describe("the travelling dot is placed from the time", () => {
   const path = { start: { x: 0.2, y: 0.8 }, end: { x: 0.6, y: 0.4 } };
 
-  it("waits at the start until GO and stops at the end ring", () => {
+  it("waits at the start until GO, stands still without a GO time, and stops at the end ring", () => {
+    expect(guideDotProgress(5_000, null, 600)).toBe(0);
     expect(guideDotProgress(900, 1_000, 600)).toBe(0);
     expect(guideDotProgress(1_000, 1_000, 600)).toBe(0);
     expect(guideDotProgress(1_300, 1_000, 600)).toBeCloseTo(0.5, 10);
@@ -261,15 +194,6 @@ describe("the travelling dot is placed from the time", () => {
     expect(middle.y).toBeCloseTo(0.6, 10);
   });
 
-  it("gives the same position for the same time, however often it is asked", () => {
-    const first = guideDotPosition(path, guideDotProgress(1_234, 1_000, 600));
-    const second = guideDotPosition(path, guideDotProgress(1_234, 1_000, 600));
-    expect(second).toEqual(first);
-  });
-
-  it("stands still without a GO time", () => {
-    expect(guideDotProgress(5_000, null, 600)).toBe(0);
-  });
 });
 
 describe("a hand moved along the guide is accepted by the judgment", () => {
@@ -417,25 +341,4 @@ function runEngineAlongPath(definition: P1TrialDefinition, guide: GestureGuide):
     send(startedAtMs + 300 + elapsed, elapsed / guide.travelMs);
   }
   return engine.snapshot.protocol.results[0]?.outcome ?? "none";
-}
-
-/**
- * Places a synthetic hand so that the judged point (palm center or fingertip) lands on the
- * given mirrored-preview position. The engine mirrors x before judging, so the raw landmarks
- * are built from 1 - x.
- */
-function handAtPreviewPoint(
-  detectionIndex: number,
-  handedness: "left" | "right",
-  target: GuidePoint,
-  pointer: "palm" | "index-tip",
-): ReturnType<typeof syntheticHand> {
-  const probe = syntheticHand(detectionIndex, handedness, 0.5, 0.5);
-  const reference = pointer === "index-tip" ? probe.landmarks2D[8]! : calculatePalmCursor(probe.landmarks2D)!;
-  return syntheticHand(
-    detectionIndex,
-    handedness,
-    1 - target.x - (reference.x - 0.5),
-    target.y - (reference.y - 0.5),
-  );
 }

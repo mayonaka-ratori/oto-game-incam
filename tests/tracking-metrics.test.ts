@@ -89,7 +89,6 @@ function frame(
       handedness: side,
       handednessScore: 0.9,
       landmarks2D: [],
-      landmarksWorld: [],
     })),
   };
 }

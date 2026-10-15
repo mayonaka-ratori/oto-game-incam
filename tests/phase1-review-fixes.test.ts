@@ -1,76 +1,19 @@
 import { describe, expect, it } from "vitest";
-import type { GestureEvent } from "../src/gestures/gesture-types";
-import type { DeviceTechnicalSnapshot } from "../src/metrics/device-technical-snapshot";
 import { Phase1LabEngine } from "../src/poc/phase1-lab-engine";
 import {
   P1_CONTROLLED_TRIALS,
-  P1_LEGACY_CLAP_TRIALS,
   Phase1ControlledRunner,
   createP1ProtocolDefinition,
 } from "../src/poc/phase1-protocol";
 import { summarizeProtocol } from "../src/poc/phase1-session";
 import { parseLandmarkReplay, serializeLandmarkReplay } from "../src/replay/landmark-replay";
+import { gestureEvent as event, skipTrials } from "./helpers/p1-fixtures";
+import { TECHNICAL_SUMMARY, technicalSnapshot } from "./helpers/technical-snapshot";
 import { syntheticHand, trackingFrame } from "./helpers/tracking-fixtures";
 
+const TECHNICAL_SNAPSHOT = technicalSnapshot();
+
 // Scenarios from the 2026-09-14 code review of the five-gesture protocol.
-
-const TECHNICAL_SUMMARY = {
-  inferenceP50Ms: 10,
-  inferenceP95Ms: 12,
-  trackingHz: 30,
-  frameAgeP95Ms: 90,
-  oneHandCoverage: 1,
-  twoHandCoverage: 1,
-  idConflictCount: 0,
-};
-
-const TECHNICAL_SNAPSHOT: DeviceTechnicalSnapshot = {
-  appBuildId: "0.1.0-test",
-  experimentProfileId: "gpu-640x480-30",
-  requestedCameraWidth: 640,
-  requestedCameraHeight: 480,
-  requestedFrameRateIdeal: 30,
-  requestedFrameRateMin: 30,
-  requestedDelegate: "GPU",
-  requestedModelId: "model",
-  pageUrl: "https://example.test/",
-  userAgent: "test-agent",
-  viewport: "844 × 390",
-  devicePixelRatio: 3,
-  actualCameraWidth: 640,
-  actualCameraHeight: 480,
-  actualCameraFrameRate: 30,
-  actualFacingMode: "user",
-  cameraFps: 30,
-  trackingHz: 30,
-  inferenceP50Ms: 10,
-  inferenceP95Ms: 12,
-  frameAgeP95Ms: 90,
-  oneHandCoverage: 1,
-  twoHandCoverage: 1,
-  frameSource: "requestVideoFrameCallback",
-  delegate: "GPU",
-  packageId: "@mediapipe/tasks-vision@0.10.35",
-  modelId: "model",
-  capturedFrames: 1,
-  completedFrames: 1,
-  replacedFrames: 0,
-  erroredFrames: 0,
-  inFlightFrames: 0,
-  pendingFrames: 0,
-  trackingError: null,
-  device: null,
-  frameSourceOverride: "auto",
-  pendingPolicy: "hold",
-  droppedFrames: 0,
-};
-
-function skipTrials(engine: Phase1LabEngine, count: number): void {
-  for (let index = 0; index < count; index += 1) {
-    engine.beginNextTrial(null, index);
-    engine.recordOutcome("unclassified", [], index);
-  }
-}
 
 // Raw camera coordinates. The engine mirrors x, so raw 0.72 appears on the screen's left.
 function liftAt(frameId: number, timeMs: number, y: number) {
@@ -96,23 +39,6 @@ function readyBloom(engine: Phase1LabEngine, startMs: number): void {
   engine.processFrame(bloomStart(startMs + 2, startMs + 100));
   engine.processFrame(bloomStart(startMs + 3, startMs + 200));
   expect(engine.startRecognition(null)).toBe(true);
-}
-
-function event(
-  gestureType: GestureEvent["gestureType"],
-  eventTimeMs: number,
-  quality: GestureEvent["quality"] = {},
-): GestureEvent {
-  return {
-    id: `event-${gestureType}-${eventTimeMs}`,
-    gestureType,
-    eventTimeMs,
-    handIds: [],
-    confidence: 0.9,
-    quality,
-    trackingQuality: "observed",
-    reasonCodes: [],
-  };
 }
 
 describe("P1 records after the review fixes", () => {
@@ -295,31 +221,12 @@ describe("P1 records after the review fixes", () => {
     expect(gated.startRecognition(null)).toBe(true);
   });
 
-  it("records the legacy clap as the third gesture of a document rebuilt from clap trials", () => {
-    const engine = new Phase1LabEngine(P1_LEGACY_CLAP_TRIALS);
-    engine.startSession("legacy-clap", null);
-    skipTrials(engine, 10);
-
-    expect(engine.createDocument(TECHNICAL_SUMMARY, TECHNICAL_SNAPSHOT).gestureVocabulary).toEqual({
-      thirdGesture: "clap",
-      gestures: ["clap"],
-      candidateGestures: [],
-    });
-  });
-
   it("refuses trial lists with duplicated ordinals or a readiness check on a gesture without one", () => {
-    expect(() => createP1ProtocolDefinition([...P1_CONTROLLED_TRIALS.slice(0, 20), ...P1_LEGACY_CLAP_TRIALS]))
+    const copy = { ...P1_CONTROLLED_TRIALS[20]!, id: "copy-of-bloom-1", ordinal: 1 };
+    expect(() => createP1ProtocolDefinition([...P1_CONTROLLED_TRIALS.slice(0, 20), copy]))
       .toThrow(/ordinal is duplicated/);
     expect(() => new Phase1ControlledRunner([{ ...P1_CONTROLLED_TRIALS[0]!, requiresReadiness: true }]))
       .toThrow(/no readiness check/);
-  });
-
-  it("alternates air-tap sides and Spotlight diagonals exactly", () => {
-    const alternating = <T>(first: T, second: T): T[] => Array.from({ length: 10 }, (_, index) => (index % 2 === 0 ? first : second));
-
-    expect(P1_CONTROLLED_TRIALS.slice(0, 10).map(({ airTapSide }) => airTapSide)).toEqual(alternating("left", "right"));
-    expect(P1_CONTROLLED_TRIALS.slice(40).map(({ spotlightVariant }) => spotlightVariant))
-      .toEqual(alternating("left-up-right-down", "right-up-left-down"));
   });
 
   it("recognizes the right-side air-tap only through the right ring", () => {

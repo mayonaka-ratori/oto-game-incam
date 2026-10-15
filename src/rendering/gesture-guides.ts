@@ -95,7 +95,6 @@ export const GUIDE_TRAVEL_MS = {
   lift: 600,
   "diagonal-lift": 600,
   spotlight: 400,
-  clap: 400,
 } as const satisfies Record<P1Gesture, number>;
 
 /**
@@ -164,8 +163,6 @@ export function createGestureGuide(trial: P1TrialDefinition): GestureGuide | nul
       return diagonalLiftGuide(trial.diagonalLiftVariant ?? "up-right");
     case "spotlight":
       return spotlightGuide(trial);
-    case "clap":
-      return null;
   }
 }
 
@@ -205,8 +202,6 @@ export function guideInstruction(trial: P1TrialDefinition): string {
       return trial.spotlightVariant === "right-up-left-down"
         ? "右手を上・左手を下で 止める"
         : "左手を上・右手を下で 止める";
-    case "clap":
-      return "両手を中央で合わせる";
   }
 }
 

@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Phase1LabEngine } from "../src/poc/phase1-lab-engine";
+import { skipTrials } from "./helpers/p1-fixtures";
 import { syntheticHand, trackingFrame } from "./helpers/tracking-fixtures";
-
-function skipTrials(engine: Phase1LabEngine, count: number): void {
-  for (let index = 0; index < count; index += 1) {
-    engine.beginNextTrial(null, index);
-    engine.recordOutcome("unclassified", [], index);
-  }
-}
 
 // Raw camera coordinates; the engine mirrors x so the screen-left hand is the player left hand.
 function bloomStart(frameId: number, timeMs: number) {

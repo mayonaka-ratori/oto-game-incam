@@ -4,7 +4,6 @@ import type {
   RibbonSwipeDirection,
   SpotlightVariant,
 } from "../gestures/gesture-types";
-import type { ClapTrialDiagnostic } from "../gestures/clap-burst-state-machine";
 import type { BloomTrialDiagnostic } from "../gestures/bloom-state-machine";
 import type { DiagonalLiftTrialDiagnostic } from "../gestures/diagonal-lift-state-machine";
 import type { LiftTrialDiagnostic } from "../gestures/lift-state-machine";
@@ -16,8 +15,7 @@ export type P1Gesture =
   | "bloom"
   | "lift"
   | "spotlight"
-  | "diagonal-lift"
-  | "clap";
+  | "diagonal-lift";
 
 export const P1_TRIAL_TIMEOUT_MS = 10_000;
 /** Upper limit for settling into the start position of a readiness-gated trial. */
@@ -115,7 +113,6 @@ export interface P1TrialDefinition {
   readonly diagonalLiftVariant?: DiagonalLiftVariant;
   /** The count-in starts only after both hands settle in the start position. */
   readonly requiresReadiness?: boolean;
-  readonly clapMode?: "contact" | "near-clap";
 }
 
 export interface P1BlockDefinition {
@@ -158,7 +155,6 @@ export interface P1TrialExtras {
   readonly trackingLossCount?: number;
   readonly readinessReasonCodes?: readonly string[];
   readonly readinessDiagnostic?: P1ReadinessDiagnostic;
-  readonly clapDiagnostic?: ClapTrialDiagnostic;
   readonly bloomDiagnostic?: BloomTrialDiagnostic;
   readonly liftDiagnostic?: LiftTrialDiagnostic;
   readonly diagonalLiftDiagnostic?: DiagonalLiftTrialDiagnostic;
@@ -186,7 +182,6 @@ export interface P1TrialResult {
   readonly trackingLossCount: number;
   /** Readiness-gated trials: what the start-position check saw before the count-in. */
   readonly readinessDiagnostic?: P1ReadinessDiagnostic;
-  readonly clapDiagnostic?: ClapTrialDiagnostic;
   readonly bloomDiagnostic?: BloomTrialDiagnostic;
   readonly liftDiagnostic?: LiftTrialDiagnostic;
   readonly diagonalLiftDiagnostic?: DiagonalLiftTrialDiagnostic;
@@ -287,12 +282,6 @@ export function resolveP1ProtocolSelector(search: string): P1ProtocolSelector {
 export function resolveP1Protocol(search: string): P1ProtocolDefinition {
   return P1_PROTOCOLS_BY_SELECTOR[resolveP1ProtocolSelector(search)];
 }
-
-/**
- * Retained only for replaying and interpreting pre-Bloom P1 sessions.
- * It is deliberately not part of the current protocol.
- */
-export const P1_LEGACY_CLAP_TRIALS: readonly P1TrialDefinition[] = buildLegacyClapTrials();
 
 export class Phase1ControlledRunner {
   readonly #protocol: P1ProtocolDefinition;
@@ -543,7 +532,6 @@ export class Phase1ControlledRunner {
       rejectionCount: extras.rejectionCount ?? 0,
       trackingLossCount: extras.trackingLossCount ?? 0,
       ...(extras.readinessDiagnostic === undefined ? {} : { readinessDiagnostic: { ...extras.readinessDiagnostic } }),
-      ...(extras.clapDiagnostic === undefined ? {} : { clapDiagnostic: cloneClapDiagnostic(extras.clapDiagnostic) }),
       ...(extras.bloomDiagnostic === undefined ? {} : { bloomDiagnostic: cloneBloomDiagnostic(extras.bloomDiagnostic) }),
       ...(extras.liftDiagnostic === undefined ? {} : { liftDiagnostic: extras.liftDiagnostic }),
       ...(extras.diagonalLiftDiagnostic === undefined
@@ -599,12 +587,6 @@ export function eventMatchesTrial(event: GestureEvent, trial: P1TrialDefinition)
   }
   if (trial.gesture === "spotlight") {
     return event.gestureType === "spotlight" && event.quality.spotlightVariant === trial.spotlightVariant;
-  }
-  if (trial.gesture === "clap") {
-    if (event.gestureType !== "clap") return false;
-    return trial.clapMode === "contact"
-      ? event.quality.clapKind === "contact-like" || event.quality.clapKind === "occlusion-predicted"
-      : event.quality.clapKind === "near-clap";
   }
   if (event.gestureType !== trial.gesture) return false;
   if (trial.gesture === "ribbon-swipe") return event.quality.direction === trial.swipeDirection;
@@ -748,18 +730,6 @@ function buildRegressionTrials(): readonly P1TrialDefinition[] {
   ]);
 }
 
-function buildLegacyClapTrials(): readonly P1TrialDefinition[] {
-  return Array.from({ length: 10 }, (_, index) => ({
-    id: `legacy-clap-${index + 1}`,
-    ordinal: index + 1,
-    gesture: "clap" as const,
-    clapMode: index < 5 ? "contact" as const : "near-clap" as const,
-    instruction: index < 5
-      ? "両手を中央へ寄せ、手のひらをそっと合わせる（旧クラップ）"
-      : "両手を中央へ寄せ、光球を挟んで止める（旧ニアクラップ）",
-  }));
-}
-
 /** Trial ids and ordinals identify results and blocks, and only Bloom, Lift and ななめリフト wait for readiness. */
 function validateTrials(trials: readonly P1TrialDefinition[]): void {
   const ids = new Set<string>();
@@ -872,36 +842,3 @@ function cloneBloomDiagnostic(diagnostic: BloomTrialDiagnostic): BloomTrialDiagn
   };
 }
 
-function cloneClapDiagnostic(diagnostic: ClapTrialDiagnostic): ClapTrialDiagnostic {
-  return {
-    observationFrameCounts: { ...diagnostic.observationFrameCounts },
-    lastTwoHandObservedAtMs: diagnostic.lastTwoHandObservedAtMs,
-    minimumPalmDistance: diagnostic.minimumPalmDistance === null
-      ? null
-      : {
-        distance: diagnostic.minimumPalmDistance.distance,
-        atMs: diagnostic.minimumPalmDistance.atMs,
-        hands: diagnostic.minimumPalmDistance.hands.map((hand) => ({ ...hand })),
-      },
-    maximumConvergenceSpeed: diagnostic.maximumConvergenceSpeed,
-    convergenceSpeedAtTriggerDistance: diagnostic.convergenceSpeedAtTriggerDistance,
-    triggerDistanceReachedAtMs: diagnostic.triggerDistanceReachedAtMs,
-    contactLikeDistanceReachedAtMs: diagnostic.contactLikeDistanceReachedAtMs,
-    identityConflictCount: diagnostic.identityConflictCount,
-    identityConflictCountBeforeContact: diagnostic.identityConflictCountBeforeContact,
-    latestOcclusion: diagnostic.latestOcclusion === null
-      ? null
-      : {
-        lastTwoHandObservedAtMs: diagnostic.latestOcclusion.lastTwoHandObservedAtMs,
-        startedAtMs: diagnostic.latestOcclusion.startedAtMs,
-        reacquiredAtMs: diagnostic.latestOcclusion.reacquiredAtMs,
-        durationMs: diagnostic.latestOcclusion.durationMs,
-        before: diagnostic.latestOcclusion.before.map((hand) => ({ ...hand })),
-        after: diagnostic.latestOcclusion.after.map((hand) => ({ ...hand })),
-      },
-    occlusionPrediction: {
-      status: diagnostic.occlusionPrediction.status,
-      reasonCodes: [...diagnostic.occlusionPrediction.reasonCodes],
-    },
-  };
-}

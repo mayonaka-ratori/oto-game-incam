@@ -20,10 +20,16 @@ describe("test mode menu", () => {
 
   it("reads the chosen test the same way the app does", () => {
     expect(currentTestMode("?mode=speedcheck&protocol=five")).toBe("speed-check");
+    expect(currentTestMode("?mode=practice&protocol=five")).toBe("practice");
+    expect(testModeOptions("/", "").find(({ id }) => id === "practice")?.href).toBe("/?mode=practice");
     expect(currentTestMode("?protocol=regression")).toBe("regression");
     expect(currentTestMode("?protocol=remaining-two")).toBe("remaining-two");
     expect(currentTestMode("?protocol=five")).toBe("five");
     expect(currentTestMode("?protocol=unknown")).toBe("portrait-three");
+    // The app ignores case and surrounding spaces, so the menu has to as well.
+    expect(currentTestMode("?protocol=Five")).toBe("five");
+    expect(currentTestMode("?protocol=%20regression%20")).toBe("regression");
+    expect(currentTestMode("?protocol=portrait-three")).toBe("portrait-three");
   });
 
   it("opens the protocol the label promises", () => {
@@ -34,7 +40,7 @@ describe("test mode menu", () => {
       five: "p1-five-gesture-50",
     } as const;
     for (const option of testModeOptions("/", "")) {
-      if (option.id === "speed-check") continue;
+      if (option.id === "speed-check" || option.id === "practice") continue;
       const search = option.href.includes("?") ? option.href.slice(option.href.indexOf("?")) : "";
       expect(resolveP1Protocol(search).id, option.id).toBe(expected[option.id]);
     }

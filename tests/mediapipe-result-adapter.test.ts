@@ -22,7 +22,8 @@ describe("adaptMediaPipeResult", () => {
     expect(hands).toHaveLength(2);
     expect(hands[0]).toMatchObject({ detectionIndex: 0, handedness: "left", handednessScore: 0.93 });
     expect(hands[0]?.landmarks2D).toHaveLength(21);
-    expect(hands[1]?.landmarksWorld).toHaveLength(21);
+    // World landmarks stay in the Worker: nothing on the main thread uses them.
+    expect(hands[1]).not.toHaveProperty("landmarksWorld");
     expect(hands[0]).not.toHaveProperty("trackingConfidence");
     expect(hands[0]).not.toHaveProperty("trackId");
   });

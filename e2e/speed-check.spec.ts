@@ -1,5 +1,6 @@
-import { expect, test, type Download, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
+import { collectDownloads } from "./helpers";
 
 /** Short enough that the whole seven-step run fits in one browser test. */
 const MEASURE_MS = 1_500;
@@ -41,12 +42,6 @@ interface SpeedCheckReport {
   readonly fastestStep: { readonly ordinal: number; readonly trackingHz: number } | null;
 }
 
-function collectDownloads(page: Page): Download[] {
-  const downloads: Download[] = [];
-  page.on("download", (download) => downloads.push(download));
-  return downloads;
-}
-
 async function runWholeCheck(page: Page): Promise<void> {
   await page.goto(SPEED_CHECK_URL);
   await expect(page.getByRole("heading", { name: "端末の速さを自動で測ります" })).toBeVisible();
@@ -84,15 +79,7 @@ test("one tap measures every setting and saves one result file", async ({ page }
   expect(report.viewport.width).toBe(390);
   expect(report.appBuildId.length).toBeGreaterThan(0);
 
-  expect(report.steps.map((step) => [step.ordinal, step.id])).toEqual([
-    [1, "gpu-640-auto-hold"],
-    [2, "gpu-640-auto-drop"],
-    [3, "gpu-640-rvfc-hold"],
-    [4, "cpu-640-auto-hold"],
-    [5, "cpu-640-rvfc-hold"],
-    [6, "gpu-320-auto-hold"],
-    [7, "gpu-640-auto-hold-repeat"],
-  ]);
+  expect(report.steps.map(({ ordinal }) => ordinal)).toEqual([1, 2, 3, 4, 5, 6, 7]);
 
   for (const step of report.steps) {
     expect(step.error, `step ${step.ordinal} failed`).toBeNull();
@@ -139,11 +126,4 @@ test("やめる stops the run and still saves what was measured", async ({ page 
   expect(report.completion.plannedStepCount).toBe(7);
   expect(report.steps.length).toBeGreaterThanOrEqual(1);
   expect(report.steps.length).toBeLessThan(7);
-});
-
-test("the lab screen is unchanged without ?mode=speedcheck", async ({ page }) => {
-  await page.goto("/?tracking=mock&trackingScenario=none");
-  await expect(page.locator("#speed-check, #speed-start")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "はじめる" })).toBeVisible();
-  await expect(page.locator("#preview-shell")).toBeVisible();
 });

@@ -6,49 +6,16 @@ import {
   readP1SessionForChecklist,
   type ControlledGestureResult,
   type DeviceCheckFormValues,
-  type DeviceCheckTechnicalSnapshot,
 } from "../src/testing/device-checklist";
+import {
+  P1_FIVE_GESTURE_PROTOCOL,
+  P1_PORTRAIT_THREE_PROTOCOL,
+  P1_REMAINING_TWO_PROTOCOL,
+} from "../src/poc/phase1-protocol";
+import { sessionDocument } from "./helpers/p1-fixtures";
+import { deviceInfo, technicalSnapshot } from "./helpers/technical-snapshot";
 
-const technical: DeviceCheckTechnicalSnapshot = {
-  appBuildId: "0.1.0-test",
-  experimentProfileId: "baseline-gpu-640x480-60",
-  requestedCameraWidth: 640,
-  requestedCameraHeight: 480,
-  requestedFrameRateIdeal: 60,
-  requestedFrameRateMin: 30,
-  requestedDelegate: "GPU",
-  requestedModelId: "hand-landmarker-test",
-  pageUrl: "https://example.test/",
-  userAgent: "test-agent",
-  viewport: "844 × 390",
-  devicePixelRatio: 2,
-  actualCameraWidth: 640,
-  actualCameraHeight: 480,
-  actualCameraFrameRate: 30,
-  actualFacingMode: "user",
-  cameraFps: 30,
-  trackingHz: 25,
-  inferenceP50Ms: 16,
-  inferenceP95Ms: 22,
-  frameAgeP95Ms: 80,
-  oneHandCoverage: 0.99,
-  twoHandCoverage: 0.96,
-  frameSource: "requestVideoFrameCallback",
-  delegate: "GPU",
-  packageId: "@mediapipe/tasks-vision@0.10.35",
-  modelId: "hand-landmarker-test",
-  capturedFrames: 100,
-  completedFrames: 90,
-  replacedFrames: 9,
-  erroredFrames: 1,
-  inFlightFrames: 0,
-  pendingFrames: 0,
-  trackingError: null,
-  device: null,
-  frameSourceOverride: "auto",
-  pendingPolicy: "hold",
-  droppedFrames: 0,
-};
+const technical = technicalSnapshot();
 
 describe("P1 result import for the device check", () => {
   function gestureSummary(success: number): Record<string, number> {
@@ -84,29 +51,57 @@ describe("P1 result import for the device check", () => {
     };
   }
 
-  it("reads the three current inputs and the procedure of a five-gesture session", () => {
-    expect(readP1SessionForChecklist(p1Document(5))).toMatchObject({
-      schemaVersion: 5,
-      protocolId: "p1-five-gesture-50",
-      thirdGesture: "bloom",
-      airTap: { success: 9, offsetSummary: "p50 12ms / p95 30ms" },
-      ribbonSwipe: { success: 8 },
-      bloom: { success: 7 },
-      sessionId: "session-v5",
-      technical: null,
-    });
+  it("reads the three current inputs and the procedure of a schema v5 or v6 five-gesture session", () => {
+    for (const schemaVersion of [5, 6]) {
+      expect(readP1SessionForChecklist(p1Document(schemaVersion)), `v${schemaVersion}`).toMatchObject({
+        schemaVersion,
+        protocolId: "p1-five-gesture-50",
+        thirdGesture: "bloom",
+        airTap: { success: 9, offsetSummary: "p50 12ms / p95 30ms" },
+        ribbonSwipe: { success: 8 },
+        bloom: { success: 7 },
+        sessionId: `session-v${schemaVersion}`,
+        technical: null,
+      });
+    }
   });
 
-  it("reads a schema v6 session the same way, and keeps v5 readable", () => {
-    expect(readP1SessionForChecklist(p1Document(6))).toMatchObject({
-      schemaVersion: 6,
-      protocolId: "p1-five-gesture-50",
-      thirdGesture: "bloom",
-      airTap: { success: 9 },
-      bloom: { success: 7 },
-      sessionId: "session-v6",
+  it("fills only the rows the procedure ran when it imports a current session", () => {
+    const portrait = readP1SessionForChecklist(sessionDocument("portrait", P1_PORTRAIT_THREE_PROTOCOL));
+    expect(portrait).toMatchObject({
+      protocolId: "p1-portrait-three-30",
+      ranGestures: ["ribbon-swipe", "lift", "diagonal-lift"],
+      airTap: null,
+      bloom: null,
     });
-    expect(readP1SessionForChecklist(p1Document(5))).toMatchObject({ schemaVersion: 5, thirdGesture: "bloom" });
+    expect(portrait.ribbonSwipe).toMatchObject({ success: 10 });
+
+    const remaining = readP1SessionForChecklist(sessionDocument("remaining", P1_REMAINING_TWO_PROTOCOL));
+    expect(remaining).toMatchObject({
+      protocolId: "p1-remaining-two-20",
+      ranGestures: ["ribbon-swipe", "bloom"],
+      airTap: null,
+    });
+    expect(remaining.ribbonSwipe).toMatchObject({ success: 10 });
+    expect(remaining.bloom).toMatchObject({ success: 10 });
+  });
+
+  it("reads the v7 device record and pipeline settings back out of the imported snapshot", () => {
+    const imported = readP1SessionForChecklist(sessionDocument("device", P1_FIVE_GESTURE_PROTOCOL, {
+      technical: {
+        device: deviceInfo({ model: "Pixel 7", gpuRenderer: "Adreno (TM) 730" }),
+        frameSourceOverride: "timer",
+        pendingPolicy: "drop",
+        droppedFrames: 3,
+      },
+    }));
+
+    expect(imported.technical).toMatchObject({
+      frameSourceOverride: "timer",
+      pendingPolicy: "drop",
+      droppedFrames: 3,
+      device: { model: "Pixel 7", gpuRenderer: "Adreno (TM) 730" },
+    });
   });
 
   it("leaves the Bloom row empty for a legacy clap session and names its procedure", () => {
@@ -189,7 +184,7 @@ describe("device check report", () => {
     const parsed = parseDeviceCheckReport(JSON.stringify(legacy));
     expect(parsed.schemaVersion).toBe("2.4");
     expect(parsed.technicalSource).toMatchObject({ mode: "report-import", sessionId: "session-1" });
-    expect(parsed.technical.userAgent).toBe("test-agent");
+    expect(parsed.technical.userAgent).toBe(technical.userAgent);
   });
 
   it("keeps an older clap result separate when reading a 2.1 report", () => {

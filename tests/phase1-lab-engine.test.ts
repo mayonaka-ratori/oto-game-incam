@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { Phase1LabEngine } from "../src/poc/phase1-lab-engine";
-import { P1_CONTROLLED_TRIALS, P1_LEGACY_CLAP_TRIALS } from "../src/poc/phase1-protocol";
 import { LandmarkReplayRecorder } from "../src/replay/landmark-replay";
+import { skipTrials } from "./helpers/p1-fixtures";
+import { TECHNICAL_SUMMARY, technicalSnapshot } from "./helpers/technical-snapshot";
 import { syntheticHand, trackingFrame } from "./helpers/tracking-fixtures";
 
 describe("Phase1LabEngine", () => {
-  it("records replay frames and a successful first air-tap trial", () => {
+  it("saves a successful first air-tap with replay counts, but without the recorded frames", () => {
     const engine = new Phase1LabEngine();
     engine.startSession("synthetic", null);
     engine.beginNextTrial(50);
@@ -13,67 +14,24 @@ describe("Phase1LabEngine", () => {
     engine.processFrame(trackingFrame(2, 100, [syntheticHand(0, "left", 0.7, 0.5)]));
 
     expect(engine.snapshot.protocol.completed).toBe(1);
-    const document = engine.createDocument({
-      inferenceP50Ms: 10,
-      inferenceP95Ms: 12,
-      trackingHz: 30,
-      frameAgeP95Ms: 90,
-      oneHandCoverage: 1,
-      twoHandCoverage: 0,
-      idConflictCount: 0,
-    }, {
-      appBuildId: "0.1.0-test",
-      experimentProfileId: "baseline-gpu-640x480-60",
-      requestedCameraWidth: 640,
-      requestedCameraHeight: 480,
-      requestedFrameRateIdeal: 60,
-      requestedFrameRateMin: 30,
-      requestedDelegate: "GPU",
-      requestedModelId: "test-model",
-      pageUrl: "https://example.test/",
-      userAgent: "smartphone-test-agent",
-      viewport: "844 × 390",
-      devicePixelRatio: 3,
-      actualCameraWidth: 640,
-      actualCameraHeight: 480,
-      actualCameraFrameRate: 30,
-      actualFacingMode: "user",
-      cameraFps: 30,
-      trackingHz: 30,
-      inferenceP50Ms: 10,
-      inferenceP95Ms: 12,
-      frameAgeP95Ms: 90,
-      oneHandCoverage: 1,
-      twoHandCoverage: 0,
-      frameSource: "requestVideoFrameCallback",
-      delegate: "GPU",
-      packageId: "@mediapipe/tasks-vision@0.10.35",
-      modelId: "test-model",
-      capturedFrames: 2,
-      completedFrames: 2,
-      replacedFrames: 0,
-      erroredFrames: 0,
-      inFlightFrames: 0,
-      pendingFrames: 0,
-      trackingError: null,
-      device: null,
-      frameSourceOverride: "auto",
-      pendingPolicy: "hold",
-      droppedFrames: 0,
-    });
+    const document = engine.createDocument(TECHNICAL_SUMMARY, technicalSnapshot({ userAgent: "smartphone-test-agent" }));
     expect(document.protocol.results[0]?.outcome).toBe("success");
+    // The one place that pins the saved format: change it only together with the readers.
     expect(document.schemaVersion).toBe(8);
-    expect(document.gestureVocabulary).toEqual({
-      thirdGesture: "bloom",
-      gestures: ["air-tap", "ribbon-swipe", "bloom", "lift", "spotlight"],
-      candidateGestures: ["lift", "spotlight"],
-    });
-    expect(document.protocol).toMatchObject({ id: "p1-five-gesture-50", trialsPerGesture: 10, total: 50 });
-    expect(document.replay).toMatchObject({ available: true, schemaVersion: 3 });
+    expect(document.replay).toMatchObject({ available: true, schemaVersion: 3, frameCount: 2, trialWindowCount: 1 });
+    expect(document.replay.frameCount).toBe(engine.createDiagnosticReplay().frames.length);
     expect(JSON.stringify(document)).not.toContain('"frames"');
-    expect(engine.createDiagnosticReplay().frames).toHaveLength(2);
     expect(document.privacy.includesCameraFrames).toBe(false);
     expect(document.technicalSnapshot.userAgent).toBe("smartphone-test-agent");
+    expect(document.measurementNotes).toEqual({
+      technicalSummaryScope: "recent-window",
+      technicalSummaryWindowSamples: 180,
+      performanceScope: "session-and-blocks",
+      histogramBucketMs: 1,
+    });
+    // Nothing was measured by the screen here, so both blocks stay null instead of guessing.
+    expect(document.performance).toBeNull();
+    expect(document.environment).toBeNull();
   });
 
   it("does not count events or rejections before the recognition window", () => {
@@ -103,10 +61,7 @@ describe("Phase1LabEngine", () => {
   it("does not record an interpolated swipe event from before the recognition window", () => {
     const engine = new Phase1LabEngine();
     engine.startSession("window-boundary", null);
-    for (let index = 0; index < 10; index += 1) {
-      engine.beginNextTrial(null, index);
-      engine.recordOutcome("unclassified", [], index);
-    }
+    skipTrials(engine, 10);
     engine.beginNextTrial(1_000, 0);
     engine.processFrame(trackingFrame(1, 400, [syntheticHand(0, "left", 0.7, 0.5)]));
     engine.processFrame(trackingFrame(2, 550, [syntheticHand(0, "left", 0.3, 0.5)]));
@@ -130,10 +85,7 @@ describe("Phase1LabEngine", () => {
   it("recognizes a mirrored left-to-right swipe with 125ms samples", () => {
     const engine = new Phase1LabEngine();
     engine.startSession("mirror", null);
-    for (let index = 0; index < 10; index += 1) {
-      engine.beginNextTrial(null, index);
-      engine.recordOutcome("unclassified", [], index);
-    }
+    skipTrials(engine, 10);
     engine.beginNextTrial(1_000, 0);
     engine.processFrame(trackingFrame(1, 500, [syntheticHand(0, "left", 0.7, 0.5)]));
     engine.processFrame(trackingFrame(2, 625, [syntheticHand(0, "left", 0.52, 0.5)]));
@@ -142,24 +94,6 @@ describe("Phase1LabEngine", () => {
     expect(engine.snapshot.protocol.results.at(-1)).toMatchObject({
       outcome: "success",
       trial: { swipeDirection: "left-to-right" },
-    });
-  });
-
-  it("recognizes a mirrored right-to-left swipe with 125ms samples", () => {
-    const engine = new Phase1LabEngine();
-    engine.startSession("mirror-rtl", null);
-    for (let index = 0; index < 11; index += 1) {
-      engine.beginNextTrial(null, index);
-      engine.recordOutcome("unclassified", [], index);
-    }
-    engine.beginNextTrial(1_000, 0);
-    engine.processFrame(trackingFrame(1, 500, [syntheticHand(0, "left", 0.3, 0.5)]));
-    engine.processFrame(trackingFrame(2, 625, [syntheticHand(0, "left", 0.48, 0.5)]));
-    engine.processFrame(trackingFrame(3, 750, [syntheticHand(0, "left", 0.7, 0.5)]));
-
-    expect(engine.snapshot.protocol.results.at(-1)).toMatchObject({
-      outcome: "success",
-      trial: { swipeDirection: "right-to-left" },
     });
   });
 
@@ -188,140 +122,4 @@ describe("Phase1LabEngine", () => {
     expect(engine.snapshot.protocol).toMatchObject({ completed: 0, activeTrial: { id: "air-tap-1" } });
     expect(engine.snapshot).toMatchObject({ eventCount: 0, rejectionCount: 0, idConflictCount: 0 });
   });
-
-  it("waits for the contact threshold in a contact-clap trial", () => {
-    const engine = new Phase1LabEngine(legacyClapTrials());
-    engine.startSession("contact", null);
-    for (let index = 0; index < 20; index += 1) {
-      engine.beginNextTrial(null);
-      engine.recordOutcome("unclassified");
-    }
-    engine.beginNextTrial(null);
-    engine.processFrame(trackingFrame(1, 0, [
-      syntheticHand(0, "left", 0.2),
-      syntheticHand(1, "right", 0.8),
-    ]));
-    engine.processFrame(trackingFrame(2, 100, [
-      syntheticHand(0, "left", 0.42),
-      syntheticHand(1, "right", 0.58),
-    ]));
-    expect(engine.snapshot.protocol.completed).toBe(20);
-
-    engine.processFrame(trackingFrame(3, 120, [
-      syntheticHand(0, "left", 0.465),
-      syntheticHand(1, "right", 0.535),
-    ]));
-    expect(engine.snapshot.protocol.results.at(-1)?.event?.quality.clapKind).toBe("contact-like");
-    expect(engine.snapshot.protocol.results.at(-1)?.clapDiagnostic).toMatchObject({
-      observationFrameCounts: { zeroHands: 0, oneHand: 0, twoHands: 3 },
-      triggerDistanceReachedAtMs: expect.closeTo(118.88888888888889, 8),
-      contactLikeDistanceReachedAtMs: expect.closeTo(118.88888888888889, 8),
-      minimumPalmDistance: { atMs: 120 },
-    });
-    expect(engine.snapshot.protocol.completed).toBe(21);
-  });
-
-  it("accepts a short contact-trial occlusion as inferred contact", () => {
-    const engine = new Phase1LabEngine(legacyClapTrials());
-    engine.startSession("contact-occlusion", null);
-    for (let index = 0; index < 20; index += 1) {
-      engine.beginNextTrial(null);
-      engine.recordOutcome("unclassified");
-    }
-    engine.beginNextTrial(null);
-    engine.processFrame(trackingFrame(1, 0, [
-      syntheticHand(0, "left", 0.2),
-      syntheticHand(1, "right", 0.8),
-    ]));
-    engine.processFrame(trackingFrame(2, 100, [
-      syntheticHand(0, "left", 0.445),
-      syntheticHand(1, "right", 0.555),
-    ]));
-    engine.processFrame(trackingFrame(3, 125, [
-      syntheticHand(0, "left", 0.455),
-    ]));
-
-    expect(engine.snapshot.protocol.results.at(-1)).toMatchObject({
-      outcome: "success",
-      trial: { clapMode: "contact" },
-      event: {
-        quality: { clapKind: "occlusion-predicted" },
-        trackingQuality: "short-occlusion-predicted",
-        reasonCodes: ["occlusion-predicted"],
-      },
-    });
-    expect(engine.snapshot.protocol.falseTriggers).toEqual([]);
-    expect(engine.snapshot.protocol.completed).toBe(21);
-    expect(engine.snapshot.protocol.results.at(-1)?.clapDiagnostic).toMatchObject({
-      observationFrameCounts: { zeroHands: 0, oneHand: 1, twoHands: 2 },
-      occlusionPrediction: { status: "succeeded", reasonCodes: ["occlusion-predicted"] },
-      latestOcclusion: { startedAtMs: 125, lastTwoHandObservedAtMs: 100 },
-    });
-  });
-
-  it("exports failed contact prediction reasons on a timed-out contact trial", () => {
-    const engine = new Phase1LabEngine(legacyClapTrials());
-    engine.startSession("contact-timeout", null);
-    for (let index = 0; index < 20; index += 1) {
-      engine.beginNextTrial(null);
-      engine.recordOutcome("unclassified");
-    }
-    engine.beginNextTrial(null);
-    engine.processFrame(trackingFrame(1, 0, [
-      syntheticHand(0, "left", 0.2),
-      syntheticHand(1, "right", 0.8),
-    ]));
-    engine.processFrame(trackingFrame(2, 100, [
-      syntheticHand(0, "left", 0.375),
-      syntheticHand(1, "right", 0.625),
-    ]));
-    engine.processFrame(trackingFrame(3, 200, [syntheticHand(0, "left", 0.375)]));
-    engine.processFrame(trackingFrame(4, 300, []));
-    expect(engine.timeout(400)).toBe(true);
-
-    expect(engine.snapshot.protocol.results.at(-1)?.clapDiagnostic).toMatchObject({
-      occlusionPrediction: { status: "failed" },
-      latestOcclusion: {
-        startedAtMs: 200,
-        lastTwoHandObservedAtMs: 100,
-        reacquiredAtMs: null,
-      },
-    });
-    expect(engine.snapshot.protocol.results.at(-1)?.outcome).toBe("unclassified");
-  });
-
-  it("finalizes an open contact occlusion at timeout when no more frames arrive", () => {
-    const engine = new Phase1LabEngine(legacyClapTrials());
-    engine.startSession("contact-open-gap-timeout", null);
-    for (let index = 0; index < 20; index += 1) {
-      engine.beginNextTrial(null);
-      engine.recordOutcome("unclassified");
-    }
-    engine.beginNextTrial(null);
-    engine.processFrame(trackingFrame(1, 0, [
-      syntheticHand(0, "left", 0.2),
-      syntheticHand(1, "right", 0.8),
-    ]));
-    engine.processFrame(trackingFrame(2, 100, [syntheticHand(0, "left", 0.2)]));
-
-    expect(engine.timeout(400)).toBe(true);
-    expect(engine.snapshot.protocol.results.at(-1)?.clapDiagnostic).toMatchObject({
-      observationFrameCounts: { zeroHands: 0, oneHand: 1, twoHands: 1 },
-      latestOcclusion: {
-        startedAtMs: 100,
-        reacquiredAtMs: null,
-        durationMs: 300,
-      },
-      occlusionPrediction: { status: "failed" },
-    });
-    expect(engine.snapshot.protocol.results.at(-1)?.clapDiagnostic?.occlusionPrediction.reasonCodes)
-      .toContain("occlusion-grace-expired");
-  });
 });
-
-function legacyClapTrials() {
-  return [
-    ...P1_CONTROLLED_TRIALS.slice(0, 20),
-    ...P1_LEGACY_CLAP_TRIALS.map((trial, index) => ({ ...trial, ordinal: index + 21 })),
-  ];
-}

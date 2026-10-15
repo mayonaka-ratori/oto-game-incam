@@ -1,0 +1,116 @@
+.practice-page {
+  font-family: "Noto Sans JP", "Yu Gothic UI", "Yu Gothic", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+  color: #eaf3f1;
+  background: #0c171d;
+}
+
+.practice-page::before { display: none; }
+.practice-shell { width: min(1060px, 100%); margin: 0 auto; padding: 24px 32px 18px; }
+.practice-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 24px; }
+.practice-brand { display: flex; align-items: center; gap: 11px; font-size: 23px; font-weight: 700; }
+.practice-brand small { margin-left: 10px; color: #9cb4bb; font-size: 12px; font-weight: 500; }
+.practice-brand-mark { display: grid; place-items: center; width: 35px; height: 35px; color: #0c2729; background: #a0e5d3; border-radius: 12px; }
+.practice-badge { padding: 7px 12px; color: #bfdbd4; font-size: 12px; background: #183036; border: 1px solid #2c4a4e; border-radius: 24px; white-space: nowrap; }
+.practice-layout { display: grid; grid-template-columns: minmax(0, 1.28fr) minmax(280px, 0.9fr); gap: 28px; align-items: start; }
+.practice-guide-panel { overflow: hidden; padding: 25px 28px 22px; background: #12232b; border: 1px solid #28414a; border-radius: 24px; }
+.practice-instruction { min-height: 105px; text-align: center; }
+.practice-instruction p { margin: 0; color: #a1b8bf; font-size: 12px; line-height: 1.7; }
+.practice-instruction h1 { margin: 9px 0 6px; color: #f1f8f4; font-size: clamp(22px, 2.6vw, 29px); line-height: 1.45; letter-spacing: 0.02em; }
+.practice-stage { position: relative; max-width: 430px; margin: 0 auto; border-radius: 20px; background: radial-gradient(ellipse at 50% 45%, #1c3a42 0, transparent 68%); }
+.practice-stage svg { display: block; width: 100%; height: auto; overflow: visible; }
+.practice-countdown { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #eafaf4; background: #12232bdb; border-radius: 20px; }
+.practice-countdown span { font-size: 13px; }
+.practice-countdown strong { font-size: 80px; line-height: 1.2; }
+.practice-beats { display: flex; justify-content: center; gap: 8px; min-height: 35px; margin: 14px 0 20px; }
+.practice-beats span { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #35515c; border-radius: 50%; color: #a2b7be; font-size: 12px; font-variant-numeric: tabular-nums; }
+.practice-beats .is-past { color: #a9d6cd; background: #254441; border-color: #32584f; }
+.practice-beats .is-active { color: #0b2926; background: #a5ead9; border-color: #a5ead9; font-weight: 700; }
+.practice-next { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 46px; padding: 8px 12px; border-top: 1px solid #2b424b; }
+.practice-next > span { color: #92aeb5; font-size: 12px; }
+.practice-next strong { font-size: 15px; font-weight: 500; }
+.practice-controls { padding: 29px 0 0; }
+.practice-eyebrow { margin: 0 0 12px; color: #a3e3d2; font-size: 12px; letter-spacing: 0.06em; }
+.practice-controls h2 { margin: 0 0 21px; font-size: 29px; line-height: 1.65; letter-spacing: 0.025em; }
+.practice-controls p { line-height: 1.9; }
+.practice-intro > p:not(.practice-eyebrow) { color: #b4c6ca; font-size: 14px; }
+.practice-tips { display: flex; flex-wrap: wrap; gap: 7px; margin: 24px 0; }
+.practice-tips span { padding: 7px 10px; font-size: 11px; color: #d3dfe1; background: #192b32; border-radius: 6px; }
+.practice-page .practice-small { color: #95adb5; font-size: 12px; line-height: 1.8; }
+.practice-actions { margin-top: 28px; }
+.practice-volume { display: flex; align-items: center; gap: 12px; margin: 0 0 19px; color: #a5bdc3; font-size: 12px; }
+.practice-volume input { flex: 1; min-width: 60px; height: 24px; accent-color: #a5ead9; }
+.practice-volume output { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+.practice-page .practice-primary, .practice-page .practice-secondary { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 54px; padding: 12px 16px; border: 1px solid transparent; border-radius: 12px; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; }
+.practice-page .practice-primary { color: #0a2824; background: #a5ead9; }
+.practice-page .practice-primary:hover { background: #c2f4e6; }
+.practice-page .practice-secondary { color: #d3e4e5; background: #1b3039; border-color: #37525d; font-weight: 500; }
+.practice-page button:focus-visible, .practice-page input:focus-visible, .practice-page textarea:focus-visible, .practice-page a:focus-visible { outline: 3px solid #ffe1ad; outline-offset: 4px; }
+.practice-status { min-height: 42px; margin: 12px 0 0; color: #a4b9bf; font-size: 12px; text-align: center; }
+.practice-time { display: flex; align-items: baseline; justify-content: center; gap: 8px; margin: 0 0 16px; color: #acc5ca; font-size: 13px; }
+.practice-time strong { color: #ebf6f2; font-size: 67px; line-height: 1; font-variant-numeric: tabular-nums; font-weight: 500; }
+.practice-session progress { display: block; width: 100%; height: 5px; border: 0; border-radius: 6px; overflow: hidden; appearance: none; background: #263d46; accent-color: #a5ead9; }
+.practice-session progress::-webkit-progress-bar { background: #263d46; }
+.practice-session progress::-webkit-progress-value { background: #a5ead9; }
+.practice-session progress::-moz-progress-bar { background: #a5ead9; }
+.practice-session .practice-small { text-align: center; }
+.practice-feedback { margin-top: 28px; padding-top: 24px; border-top: 1px solid #2d454f; }
+.practice-feedback h3 { margin: 0 0 18px; font-size: 15px; }
+.practice-feedback fieldset { padding: 0; margin: 0 0 18px; border: 0; }
+.practice-feedback legend { padding: 0; margin-bottom: 9px; color: #d5e5e5; font-size: 13px; }
+.practice-feedback fieldset > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.practice-feedback fieldset label { position: relative; cursor: pointer; }
+.practice-feedback input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.practice-feedback fieldset span { display: block; padding: 9px 11px; color: #b7ccd1; border: 1px solid #38535e; border-radius: 8px; font-size: 12px; }
+.practice-feedback input:checked + span { color: #d5fff1; border-color: #a5ead9; background: #254b46; }
+.practice-feedback input:focus-visible + span { outline: 2px solid #ffe1ad; outline-offset: 3px; }
+.practice-comment { display: block; margin-bottom: 16px; font-size: 12px; color: #c4d6d9; }
+.practice-comment textarea { display: block; width: 100%; margin-top: 9px; padding: 10px; background: #12232b; color: #eaf3f1; border: 1px solid #38535e; border-radius: 8px; font: inherit; resize: vertical; }
+.practice-comment textarea::placeholder { color: #8aa4ae; }
+#practice-save-status { color: #a5ead9; font-size: 12px; }
+.practice-footer { display: flex; justify-content: space-between; gap: 15px; padding-top: 21px; color: #8ca6af; font-size: 11px; }
+.practice-footer a { color: #abc5c9; text-underline-offset: 4px; }
+
+@media (min-width: 720px) {
+  .practice-session { margin-top: 75px; }
+}
+
+@media (max-width: 719px) {
+  .practice-shell { max-width: 480px; padding: max(14px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
+  .practice-header { padding-bottom: 14px; }
+  .practice-brand { gap: 8px; font-size: 20px; }
+  .practice-brand small { font-size: 10px; margin-left: 5px; }
+  .practice-brand-mark { width: 29px; height: 29px; border-radius: 9px; }
+  .practice-badge { font-size: 10px; padding: 6px 9px; }
+  .practice-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .practice-guide-panel { padding: 17px 16px 9px; border-radius: 18px; }
+  .practice-instruction { min-height: 82px; }
+  .practice-instruction h1 { font-size: 23px; margin: 6px 0; }
+  .practice-instruction p { font-size: 10px; }
+  .practice-stage { max-width: 300px; }
+  .practice-beats { gap: 7px; min-height: 27px; margin: 6px 0 7px; }
+  .practice-beats span { width: 27px; height: 27px; font-size: 11px; }
+  .practice-next { min-height: 39px; padding-top: 6px; }
+  .practice-next strong { font-size: 13px; }
+  .practice-controls { padding: 0 3px; }
+  .practice-intro h2, .practice-intro .practice-eyebrow, .practice-tips, .practice-intro .practice-small { display: none; }
+  .practice-intro > p { margin: 0; text-align: center; }
+  .practice-intro > p:not(.practice-eyebrow) { font-size: 12px; line-height: 1.8; }
+  .practice-actions { margin-top: 12px; }
+  .practice-volume { margin-bottom: 10px; }
+  .practice-status { min-height: 20px; margin-top: 8px; font-size: 10px; }
+  .practice-page .practice-primary, .practice-page .practice-secondary { min-height: 48px; font-size: 14px; }
+  .practice-time { margin: 0 0 9px; }
+  .practice-time strong { font-size: 35px; }
+  .practice-session .practice-small { margin: 6px 0 0; font-size: 10px; }
+  .practice-controls h2 { margin: 0 0 5px; font-size: 23px; }
+  #practice-complete > p { margin: 5px 0; font-size: 12px; }
+  .practice-feedback { margin-top: 22px; }
+  .practice-footer { padding-top: 15px; font-size: 10px; }
+}
+
+@media (max-height: 740px) and (max-width: 719px) {
+  .practice-stage { max-width: 245px; }
+  .practice-instruction { min-height: 74px; }
+  .practice-instruction h1 { font-size: 21px; }
+  .practice-layout { gap: 10px; }
+}

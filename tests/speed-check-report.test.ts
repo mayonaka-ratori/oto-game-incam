@@ -8,8 +8,6 @@ import {
   handsVisibleEnough,
   HANDS_VISIBLE_MIN_TWO_HAND_COVERAGE,
   selectFastestSpeedCheckStep,
-  SPEED_CHECK_SCHEMA,
-  SPEED_CHECK_SCHEMA_VERSION,
   toSpeedCheckStepResult,
   type SpeedCheckActualSettings,
   type SpeedCheckMeasurement,
@@ -73,17 +71,18 @@ const [step1, step2, step3] = SPEED_CHECK_STEPS as readonly [SpeedCheckStep, Spe
 
 describe("speed check result rows", () => {
   it("keeps both the requested setting and what the browser actually did", () => {
-    const row = toSpeedCheckStepResult(measurement(step1));
+    // Step 2 asks for the drop policy, so a requested value that ignored the step would show.
+    const row = toSpeedCheckStepResult(measurement(step2));
     expect(row).toMatchObject({
-      ordinal: 1,
-      id: "gpu-640-auto-hold",
+      ordinal: step2.ordinal,
+      id: step2.id,
       requested: {
-        experimentProfileId: "gpu-640x480-30",
-        delegate: "GPU",
-        cameraWidth: 640,
-        frameSourceOverride: "auto",
-        pendingPolicy: "hold",
-        repeatOfOrdinal: null,
+        experimentProfileId: step2.profile.id,
+        delegate: step2.profile.tracking.preferredDelegate,
+        cameraWidth: step2.profile.camera.width,
+        frameSourceOverride: step2.frameSourceOverride,
+        pendingPolicy: step2.pendingPolicy,
+        repeatOfOrdinal: step2.repeatOfOrdinal,
       },
       actual: { delegate: "GPU", frameSource: "MediaStreamTrackProcessor", cameraWidth: 640 },
       trackingHz: 10,
@@ -155,7 +154,7 @@ describe("speed check report", () => {
     longTaskSupported: true,
   } as const;
 
-  it("names the schema, counts the steps and picks the fastest", () => {
+  it("counts the steps and picks the fastest", () => {
     const report = buildSpeedCheckReport({
       ...base,
       abortReason: null,
@@ -164,8 +163,6 @@ describe("speed check report", () => {
         measurement(step2, { trackingHz: 14.2 }),
       ],
     });
-    expect(report.schema).toBe(SPEED_CHECK_SCHEMA);
-    expect(report.schemaVersion).toBe(SPEED_CHECK_SCHEMA_VERSION);
     expect(report.completion).toEqual({
       status: "completed",
       abortReason: null,

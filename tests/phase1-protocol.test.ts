@@ -2,20 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   P1_CONTROLLED_TRIALS,
   P1_FIVE_GESTURE_PROTOCOL,
-  P1_LEGACY_CLAP_TRIALS,
   P1_READINESS_TIMEOUT_MS,
   P1_TRIAL_TIMEOUT_MS,
   Phase1ControlledRunner,
 } from "../src/poc/phase1-protocol";
-import type { GestureEvent } from "../src/gestures/gesture-types";
 import { summarizeProtocol } from "../src/poc/phase1-session";
+import { gestureEvent as event } from "./helpers/p1-fixtures";
 
 describe("P1 controlled protocol", () => {
-  it("limits each recognition window and each readiness phase to 10 seconds", () => {
-    expect(P1_TRIAL_TIMEOUT_MS).toBe(10_000);
-    expect(P1_READINESS_TIMEOUT_MS).toBe(10_000);
-  });
-
   it("encodes the canonical five-gesture 50-trial sequence in five blocks", () => {
     const order = ["air-tap", "ribbon-swipe", "bloom", "lift", "spotlight"];
     expect(P1_FIVE_GESTURE_PROTOCOL).toMatchObject({
@@ -40,12 +34,11 @@ describe("P1 controlled protocol", () => {
     ]);
     expect(P1_CONTROLLED_TRIALS.filter(({ requiresReadiness }) => requiresReadiness === true).map(({ gesture }) => gesture))
       .toEqual([...Array(10).fill("bloom"), ...Array(10).fill("lift")]);
-    const spotlight = P1_CONTROLLED_TRIALS.slice(40).map(({ spotlightVariant }) => spotlightVariant);
-    expect(spotlight.filter((variant) => variant === "left-up-right-down")).toHaveLength(5);
-    expect(spotlight.filter((variant) => variant === "right-up-left-down")).toHaveLength(5);
-    expect(spotlight.slice(0, 2)).toEqual(["left-up-right-down", "right-up-left-down"]);
-    expect(P1_LEGACY_CLAP_TRIALS.filter(({ clapMode }) => clapMode === "contact")).toHaveLength(5);
-    expect(P1_LEGACY_CLAP_TRIALS.filter(({ clapMode }) => clapMode === "near-clap")).toHaveLength(5);
+    // The sides alternate exactly, so every block starts on the left and splits five and five.
+    const alternating = <T>(first: T, second: T): T[] => Array.from({ length: 10 }, (_, index) => (index % 2 === 0 ? first : second));
+    expect(P1_CONTROLLED_TRIALS.slice(0, 10).map(({ airTapSide }) => airTapSide)).toEqual(alternating("left", "right"));
+    expect(P1_CONTROLLED_TRIALS.slice(40).map(({ spotlightVariant }) => spotlightVariant))
+      .toEqual(alternating("left-up-right-down", "right-up-left-down"));
   });
 
   it("records event offset separately from outcome and false triggers", () => {
@@ -61,41 +54,6 @@ describe("P1 controlled protocol", () => {
     expect(summarizeProtocol(runner.snapshot)).toMatchObject({
       byGesture: { "air-tap": { completed: 2, success: 1, trackingLoss: 1, offsetP50Ms: 25 } },
       falseTriggers: 0,
-    });
-  });
-
-  it("requires observed clap kinds to match the controlled trial mode", () => {
-    const runner = new Phase1ControlledRunner([
-      P1_LEGACY_CLAP_TRIALS[0]!,
-      P1_LEGACY_CLAP_TRIALS[5]!,
-    ]);
-    runner.start();
-    runner.beginNextTrial(null);
-    expect(runner.acceptEvent(event("clap", 100, { clapKind: "near-clap" }))).toBe(false);
-    expect(runner.acceptEvent(event("clap", 110, { clapKind: "contact-like" }))).toBe(true);
-    runner.beginNextTrial(null);
-    expect(runner.acceptEvent(event("clap", 200, { clapKind: "contact-like" }))).toBe(false);
-    expect(runner.acceptEvent(event("clap", 210, { clapKind: "near-clap" }))).toBe(true);
-    expect(runner.snapshot).toMatchObject({ completed: 2, falseTriggers: [{}, {}] });
-  });
-
-  it("accepts an occlusion-predicted clap as inferred contact without a false trigger", () => {
-    const runner = new Phase1ControlledRunner([P1_LEGACY_CLAP_TRIALS[0]!]);
-    runner.start();
-    runner.beginNextTrial(null);
-
-    expect(runner.acceptEvent(event("clap", 100, { clapKind: "occlusion-predicted" }))).toBe(true);
-    expect(runner.snapshot).toMatchObject({
-      state: "complete",
-      completed: 1,
-      falseTriggers: [],
-      results: [{
-        outcome: "success",
-        event: {
-          quality: { clapKind: "occlusion-predicted" },
-          reasonCodes: ["target-crossed"],
-        },
-      }],
     });
   });
 
@@ -282,20 +240,3 @@ describe("P1 controlled protocol", () => {
     expect(runner.snapshot.falseTriggers).toHaveLength(1);
   });
 });
-
-function event(
-  gestureType: GestureEvent["gestureType"],
-  eventTimeMs: number,
-  quality: GestureEvent["quality"] = {},
-): GestureEvent {
-  return {
-    id: "event-1",
-    gestureType,
-    eventTimeMs,
-    handIds: ["hand-1"],
-    confidence: 0.9,
-    quality,
-    trackingQuality: "observed",
-    reasonCodes: ["target-crossed"],
-  };
-}

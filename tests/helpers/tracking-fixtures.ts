@@ -1,3 +1,4 @@
+import { calculatePalmCursor } from "../../src/rendering/palm-cursor";
 import type { DetectedHand, HandTrackingFrame, Handedness } from "../../src/tracking/tracking-types";
 
 export function trackingFrame(
@@ -38,6 +39,26 @@ export function syntheticHand(
     handedness,
     handednessScore: 0.95,
     landmarks2D,
-    landmarksWorld: landmarks2D.map(({ x, y, zRelative }) => ({ x, y, z: zRelative })),
   };
+}
+
+/**
+ * Places a synthetic hand so that the judged point (palm center or fingertip) lands on the given
+ * mirrored-preview position. The engine mirrors x before judging, so the raw landmarks are built
+ * from 1 - x.
+ */
+export function handAtPreviewPoint(
+  detectionIndex: number,
+  handedness: Handedness,
+  target: { readonly x: number; readonly y: number },
+  pointer: "palm" | "index-tip" = "palm",
+): DetectedHand {
+  const probe = syntheticHand(detectionIndex, handedness, 0.5, 0.5);
+  const reference = pointer === "index-tip" ? probe.landmarks2D[8]! : calculatePalmCursor(probe.landmarks2D)!;
+  return syntheticHand(
+    detectionIndex,
+    handedness,
+    1 - target.x - (reference.x - 0.5),
+    target.y - (reference.y - 0.5),
+  );
 }

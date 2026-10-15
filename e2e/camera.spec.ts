@@ -1,5 +1,6 @@
-import { expect, test, type Download, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
+import { disableAudio, downloadJson, tapStage } from "./helpers";
 
 test("starts, measures, hides, and releases the camera", async ({ page }) => {
   await page.goto("/?view=analysis");
@@ -35,32 +36,6 @@ test("starts, measures, hides, and releases the camera", async ({ page }) => {
   await expect
     .poll(() => video.evaluate((element: HTMLVideoElement) => element.srcObject === null))
     .toBe(true);
-});
-
-test("offers one button and the camera image in a phone landscape viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 844, height: 390 });
-  await page.goto("/?tracking=mock");
-
-  const start = page.getByRole("button", { name: "はじめる" });
-  await expect(start).toBeInViewport({ ratio: 1 });
-  await expect(page.getByRole("button", { name: "テストを開始" })).toBeHidden();
-  await expect(page.getByRole("button", { name: "音を有効にする" })).toBeHidden();
-  await expect(page.getByRole("heading", { name: "リアルタイム計測値" })).toBeHidden();
-  await expect(page.locator("details.diagnostics-panel")).not.toHaveAttribute("open", "");
-  await expect(page.locator("#orientation-notice")).toBeHidden();
-  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-
-  await start.click();
-  await expect(page.locator("#stage-tap")).toBeVisible({ timeout: 20_000 });
-  const previewBox = await page.locator("#preview-shell").boundingBox();
-  expect(previewBox).not.toBeNull();
-  expect(previewBox!.width / previewBox!.height).toBeCloseTo(4 / 3, 1);
-  expect(previewBox!.y + previewBox!.height).toBeLessThanOrEqual(390);
-
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator("#orientation-notice")).toBeHidden();
-  await expect(page.locator("#stage-instruction")).toBeInViewport({ ratio: 1 });
-  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test("renders two mock hands and exposes tracking queue diagnostics", async ({ page }) => {
@@ -220,6 +195,10 @@ test("shows only the tester workflow on the standard URL", async ({ page }) => {
   await expect(page.getByRole("button", { name: "この動きを開始" })).toBeHidden();
   await expect(page.getByRole("heading", { name: "実機確認レポート" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "P1セッション比較" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "音を有効にする" })).toBeHidden();
+  await expect(page.locator("details.diagnostics-panel")).not.toHaveAttribute("open", "");
+  // The speed check is loaded only with ?mode=speedcheck.
+  await expect(page.locator("#speed-check, #speed-start")).toHaveCount(0);
 });
 
 test("manages, exports, and resumes the device check as JSON", async ({ page }) => {
@@ -295,33 +274,20 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
   const report = JSON.parse(await readFile(path!, "utf8")) as {
     schema: string;
     schemaVersion: number;
-    gestureVocabulary: { thirdGesture: string };
     privacy: { includesCameraFrames: boolean; includesAudio: boolean; includesReplayFrames: boolean };
     protocol: { completed: number; falseTriggers: unknown[]; results: Array<{ resolution: string }> };
     replay: { available: boolean; schemaVersion: number; frameCount: number };
     technicalSnapshot: { pageUrl: string; userAgent: string; viewport: string };
-    measurementNotes: Record<string, unknown>;
     environment: { screenWakeLock: string; audio: Record<string, unknown> } | null;
     performance: { session: { trackingResultCount: number } } | null;
     trialEnvironments: Array<{ viewportWidth: number; orientation: string }>;
   };
+  // The document's own format is checked in the unit tests; here only what the browser fills in.
   expect(report.schema).toBe("oto-motion-p1-controlled");
-  expect(report.schemaVersion).toBe(8);
-  expect(report.measurementNotes).toEqual({
-    technicalSummaryScope: "recent-window",
-    technicalSummaryWindowSamples: 180,
-    performanceScope: "session-and-blocks",
-    histogramBucketMs: 1,
-  });
   expect(report.performance?.session.trackingResultCount).toBeGreaterThan(0);
   expect(typeof report.environment?.screenWakeLock).toBe("string");
   expect(report.trialEnvironments.length).toBeGreaterThan(0);
   expect(report.trialEnvironments[0]?.viewportWidth).toBeGreaterThan(0);
-  expect(report.gestureVocabulary).toEqual({
-    thirdGesture: "bloom",
-    gestures: ["air-tap", "ribbon-swipe", "bloom", "lift", "spotlight"],
-    candidateGestures: ["lift", "spotlight"],
-  });
   expect(report.privacy).toEqual(expect.objectContaining({ includesCameraFrames: false, includesAudio: false }));
   expect(report.privacy.includesReplayFrames).toBe(false);
   expect(report.protocol.completed).toBe(1);
@@ -382,7 +348,10 @@ test("runs and exports a P1 controlled trial without raw media", async ({ page }
     viewport: "844 × 390",
   });
   expect(finalReport.technicalSource.mode).toBe("p1-import");
-  expect(finalReport.technicalSource).toMatchObject({ p1SchemaVersion: 8, p1ProtocolId: "p1-five-gesture-50" });
+  expect(finalReport.technicalSource).toMatchObject({
+    p1SchemaVersion: report.schemaVersion,
+    p1ProtocolId: "p1-five-gesture-50",
+  });
 
   // A legacy clap session never leaves the earlier Bloom value in place.
   await expect(page.locator('[name="bloomSuccess"]')).toHaveValue("0");
@@ -408,16 +377,14 @@ test("times out and advances all 50 trials in five blocks without double-finishi
   await expect(motionSample).toHaveAttribute("data-gesture", "air-tap");
   await expect(motionSample).toHaveAttribute("data-variant", "left");
   await expect(page.locator("#p1-motion-caption")).toContainText("リングの外から中へ");
-  await expect.poll(() => page.locator(".p1-motion-hand--single").evaluate(
-    (element) => getComputedStyle(element).animationName,
-  )).toBe("p1-air-tap-sample");
+  await expect(page.locator("#stage-instruction")).toHaveText("左手の指を 丸印からリングへ");
   await expect(page.locator("#p1-block-label")).toHaveText("ブロック 1 / 5");
 
-  const nextBlocks = new Map<number, { gesture: string; variant: string; hand: string; animation: string }>([
-    [10, { gesture: "ribbon-swipe", variant: "left-to-right", hand: ".p1-motion-hand--single", animation: "p1-swipe-sample" }],
-    [20, { gesture: "bloom", variant: "open-up", hand: ".p1-motion-hand--left", animation: "p1-bloom-left-sample" }],
-    [30, { gesture: "lift", variant: "raise", hand: ".p1-motion-hand--left", animation: "p1-lift-sample" }],
-    [40, { gesture: "spotlight", variant: "left-up-right-down", hand: ".p1-motion-hand--left", animation: "p1-spotlight-left-sample" }],
+  const nextBlocks = new Map<number, { gesture: string; variant: string; instruction: string }>([
+    [10, { gesture: "ribbon-swipe", variant: "left-to-right", instruction: "片手で 帯を左から右へ" }],
+    [20, { gesture: "bloom", variant: "open-up", instruction: "丸印から輪まで 両手を開く" }],
+    [30, { gesture: "lift", variant: "raise", instruction: "丸印から輪まで 両手を上げる" }],
+    [40, { gesture: "spotlight", variant: "left-up-right-down", instruction: "左手を上・右手を下で 止める" }],
   ]);
   for (let ordinal = 1; ordinal <= 50; ordinal += 1) {
     // The deadline timer waits 200ms for frames captured before the deadline.
@@ -435,9 +402,7 @@ test("times out and advances all 50 trials in five blocks without double-finishi
       await page.locator("#preview-shell").click({ force: true, position: { x: 12, y: 12 } });
       await expect(motionSample).toHaveAttribute("data-gesture", nextBlock.gesture);
       await expect(motionSample).toHaveAttribute("data-variant", nextBlock.variant);
-      await expect.poll(() => page.locator(nextBlock.hand).evaluate(
-        (element) => getComputedStyle(element).animationName,
-      )).toBe(nextBlock.animation);
+      await expect(page.locator("#stage-instruction")).toHaveText(nextBlock.instruction);
     }
     await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal + 1} / 50`);
   }
@@ -464,7 +429,6 @@ test("times out and advances all 50 trials in five blocks without double-finishi
     summary: { byGesture: Record<string, { readinessTimeout: number; recognitionTimeout: number }> };
     performance: { blocks: Array<{ blockIndex: number; gesture: string; open: boolean }> } | null;
   };
-  expect(report.schemaVersion).toBe(8);
   expect(report.protocol).toMatchObject({ id: "p1-five-gesture-50", total: 50 });
   expect(report.protocol.results).toHaveLength(50);
   expect(report.protocol.results.every(({ outcome, resolution }) => (
@@ -490,47 +454,24 @@ test("times out and advances all 50 trials in five blocks without double-finishi
   expect(report.performance?.blocks.every(({ open }) => !open)).toBe(true);
 });
 
-test("pauses inside a block and repeats the abandoned attempt after resume", async ({ page }) => {
-  await page.addInitScript(() => {
-    Object.defineProperty(window, "AudioContext", { value: undefined });
-  });
-  await openAndStartTest(page);
-
-  await page.getByRole("button", { name: "中断", exact: true }).click();
-  await expect(page.locator("#p1-state")).toHaveText("中断中");
-  await expect(page.locator("#p1-block")).toHaveAttribute("data-state", "paused");
-  await expect(page.locator("#p1-progress")).toHaveText("0 / 30");
-  await expect(page.locator("#p1-remaining")).toHaveText("—");
-  await page.getByRole("button", { name: "再開", exact: true }).click();
-  await expect(page.locator("#p1-trial-number")).toHaveText("1 / 30");
-  await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
-  await expect(page.locator("#p1-progress")).toHaveText("1 / 30");
-
-  await page.getByRole("button", { name: "中断", exact: true }).click();
-  const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "結果を保存" }).click();
-  const download = await downloadPromise;
-  const path = await download.path();
-  expect(path).not.toBeNull();
-  const report = JSON.parse(await readFile(path!, "utf8")) as {
-    protocol: {
-      results: Array<{ attempt: number; resolution: string }>;
-      blocks: Array<{ pauses: Array<{ reason: string; abandonedTrialId: string | null; resumedAtMs: number | null }> }>;
-    };
-  };
-  expect(report.protocol.results).toEqual([expect.objectContaining({ attempt: 2, resolution: "manual-skip" })]);
-  expect(report.protocol.blocks[0]?.pauses).toEqual([expect.objectContaining({
-    reason: "manual",
-    abandonedTrialId: "ribbon-swipe-1",
-    resumedAtMs: expect.any(Number),
-  }), expect.objectContaining({ reason: "manual", resumedAtMs: null })]);
-});
-
-test("waits for two-hand readiness before the Bloom count-in", async ({ page }) => {
+test("waits for two-hand readiness before the Bloom count-in and records when it came", async ({ page }) => {
   test.setTimeout(120_000);
-  // Real time keeps camera frames and readiness timing consistent. Without Web Audio, GO equals the ready time.
   await page.addInitScript(() => {
-    Object.defineProperty(window, "AudioContext", { value: undefined });
+    const store = window as unknown as { __clickTimes: number[]; __tapAt: number | null };
+    store.__clickTimes = [];
+    store.__tapAt = null;
+    // Captured before the app's own handler, in the same task as the tap that starts the trial, so
+    // the reference time cannot lag behind on a busy machine.
+    window.addEventListener("click", (event) => {
+      if (event.target instanceof Element && event.target.closest("#preview-shell") !== null) {
+        store.__tapAt = performance.now();
+      }
+    }, true);
+    const originalStart = OscillatorNode.prototype.start;
+    OscillatorNode.prototype.start = function start(this: OscillatorNode, when?: number) {
+      store.__clickTimes.push(performance.now());
+      return originalStart.call(this, when);
+    };
   });
   // Bloom is no longer in the default procedure, so this check asks for the 20-trial one.
   await openAndStartTest(page, "?tracking=mock&protocol=remaining-two", 20);
@@ -544,17 +485,18 @@ test("waits for two-hand readiness before the Bloom count-in", async ({ page }) 
   await expect(page.locator("#p1-gesture")).toHaveText("Bloom");
   await expect(page.locator("#stage-instruction")).toHaveText("丸印から輪まで 両手を開く");
   await expect(page.locator("#p1-state")).toHaveText(/準備OK|カウント|^[12]$|GO|判定中/, { timeout: 15_000 });
+  const { tapAt, clickTimes } = await page.evaluate(() => {
+    const store = window as unknown as { __clickTimes: number[]; __tapAt: number | null };
+    return { tapAt: store.__tapAt ?? Number.NaN, clickTimes: store.__clickTimes.filter((time) => time >= (store.__tapAt ?? 0)) };
+  });
+  expect(clickTimes).toHaveLength(3);
+  // Readiness needs about 200ms of settled hands, so nothing can be scheduled when the trial appears.
+  expect(Math.min(...clickTimes) - tapAt).toBeGreaterThanOrEqual(200);
+
   await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
   await expect(page.locator("#p1-progress")).toHaveText("11 / 20");
-
   await page.getByRole("button", { name: "中断", exact: true }).click();
-
-  const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "結果を保存" }).click();
-  const download = await downloadPromise;
-  const path = await download.path();
-  expect(path).not.toBeNull();
-  const report = JSON.parse(await readFile(path!, "utf8")) as {
+  const report = await downloadJson(page, () => page.getByRole("button", { name: "結果を保存" }).click()) as {
     protocol: {
       results: Array<{
         resolution: string;
@@ -570,30 +512,30 @@ test("waits for two-hand readiness before the Bloom count-in", async ({ page }) 
   });
 });
 
-test("compares multiple complete P1 sessions without declaring an automatic pass", async ({ page }) => {
+test("compares sessions without declaring an automatic pass, counts a session saved twice once, and clears", async ({ page }) => {
   await page.goto("/?view=analysis");
   await page.locator("#p1-comparison-import").setInputFiles([
-    {
-      name: "android.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(JSON.stringify(comparisonDocument("android", "android-agent"))),
-    },
-    {
-      name: "iphone.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(JSON.stringify(comparisonDocument("iphone", "iphone-agent"))),
-    },
+    jsonFile("android.json", fiveGestureComparisonDocument("android", "android-agent")),
+    jsonFile("iphone.json", fiveGestureComparisonDocument("iphone", "iphone-agent")),
+    jsonFile("android (1).json", fiveGestureComparisonDocument("android", "android-agent", "2026-09-14T02:00:00.000Z")),
   ]);
 
   await expect(page.locator("#p1-comparison-status")).toHaveText("2セッション · 完全 2 · 8/10候補 2");
-  await expect(page.locator("#p1-comparison-body tr")).toHaveCount(2);
-  await expect(page.locator("#p1-comparison-findings")).toContainText("最終判定");
-  await expect(page.locator("#p1-comparison-findings")).toContainText("合格／要改善／方針転換");
-  await expect(page.locator("#p1-comparison-findings")).not.toContainText("自動Pass");
+  const rows = page.locator("#p1-comparison-body tr");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first().locator("td").nth(3)).toHaveText("50/50");
+  await expect(rows.first().locator("td").nth(7)).toHaveText("8/10");
+  await expect(rows.first().locator("td").nth(8)).toHaveText("8/10");
+  const findings = page.locator("#p1-comparison-findings");
+  await expect(findings).toContainText("読込済み");
+  await expect(findings).toContainText("Lift／Spotlight／ななめリフトは候補動作");
+  await expect(findings).toContainText("最終判定");
+  await expect(findings).toContainText("合格／要改善／方針転換");
+  await expect(findings).not.toContainText("自動Pass");
 
   await page.getByRole("button", { name: "比較をクリア" }).click();
   await expect(page.locator("#p1-comparison-status")).toHaveText("0セッション");
-  await expect(page.locator("#p1-comparison-body tr")).toHaveCount(0);
+  await expect(rows).toHaveCount(0);
 });
 
 test("waits for a tap at a movement change and asks before a restart", async ({ page }) => {
@@ -752,37 +694,6 @@ test("runs a trial without a count-in while the audio clock is suspended and bri
   await expect(page.locator("#p1-block-message")).not.toContainText("カウント音なし");
 });
 
-test("schedules the Bloom count-in only after the start position settles", async ({ page }) => {
-  test.setTimeout(120_000);
-  await page.addInitScript(() => {
-    const store = window as unknown as { __clickTimes: number[] };
-    store.__clickTimes = [];
-    const originalStart = OscillatorNode.prototype.start;
-    OscillatorNode.prototype.start = function start(this: OscillatorNode, when?: number) {
-      store.__clickTimes.push(performance.now());
-      return originalStart.call(this, when);
-    };
-  });
-  // Bloom is no longer in the default procedure, so this check asks for the 20-trial one.
-  await openAndStartTest(page, "?tracking=mock&protocol=remaining-two", 20);
-  for (let ordinal = 1; ordinal <= 10; ordinal += 1) {
-    await expect(page.locator("#p1-trial-number")).toHaveText(`${ordinal} / 20`);
-    await page.getByRole("button", { name: "反応しなかったので次へ" }).click();
-    await expect(page.locator("#p1-progress")).toHaveText(`${ordinal} / 20`);
-  }
-  await tapStage(page);
-  const blockStartedAt = await page.evaluate(() => {
-    (window as unknown as { __clickTimes: number[] }).__clickTimes.length = 0;
-    return performance.now();
-  });
-  await expect(page.locator("#p1-state")).toHaveText(/準備OK|カウント|^[12]$|GO|判定中/, { timeout: 15_000 });
-  const clickTimes = await page.evaluate(() => (window as unknown as { __clickTimes: number[] }).__clickTimes);
-
-  expect(clickTimes).toHaveLength(3);
-  // Readiness needs about 200ms of settled hands, so nothing can be scheduled when the trial appears.
-  expect(Math.min(...clickTimes) - blockStartedAt).toBeGreaterThanOrEqual(200);
-});
-
 test("keeps the buttons on screen in landscape when the performance warning appears", async ({ page }) => {
   await disableAudio(page);
   await page.setViewportSize({ width: 844, height: 390 });
@@ -826,41 +737,6 @@ test("does not undo a pause with the second click of a double click", async ({ p
   expect(report.protocol.blocks[0]?.pauses).toEqual([expect.objectContaining({ resumedAtMs: null })]);
 });
 
-test("compares five-gesture sessions and counts a session saved twice once", async ({ page }) => {
-  await page.goto("/?view=analysis");
-  await page.locator("#p1-comparison-import").setInputFiles([
-    jsonFile("android.json", fiveGestureComparisonDocument("android", "android-agent")),
-    jsonFile("iphone.json", fiveGestureComparisonDocument("iphone", "iphone-agent")),
-    jsonFile("android (1).json", fiveGestureComparisonDocument("android", "android-agent", "2026-09-14T02:00:00.000Z")),
-  ]);
-
-  await expect(page.locator("#p1-comparison-status")).toHaveText("2セッション · 完全 2 · 8/10候補 2");
-  const rows = page.locator("#p1-comparison-body tr");
-  await expect(rows).toHaveCount(2);
-  await expect(rows.first().locator("td").nth(3)).toHaveText("50/50");
-  await expect(rows.first().locator("td").nth(7)).toHaveText("8/10");
-  await expect(rows.first().locator("td").nth(8)).toHaveText("8/10");
-  await expect(page.locator("#p1-comparison-findings")).toContainText("読込済み");
-  await expect(page.locator("#p1-comparison-findings")).toContainText("Lift／Spotlight／ななめリフトは候補動作");
-});
-
-async function disableAudio(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    Object.defineProperty(window, "AudioContext", { value: undefined });
-  });
-}
-
-/**
- * The tester screen starts with one press and then waits for a tap on the camera image.
- * The prompt ignores presses for 400ms, so the tap comes after that.
- */
-async function tapStage(page: Page): Promise<void> {
-  await expect(page.locator("#stage-tap")).toBeVisible({ timeout: 20_000 });
-  await page.waitForTimeout(450);
-  await page.locator("#preview-shell").click({ force: true, position: { x: 12, y: 12 } });
-}
-
-/** `total` follows the procedure the query asks for: 30 by default, 20 with ?protocol=remaining-two. */
 async function openAndStartTest(
   page: Page,
   query = "?tracking=mock&trackingScenario=none",
@@ -891,15 +767,6 @@ async function expectTopmost(page: Page, selector: string): Promise<void> {
     if (hit !== null && (hit === element || element.contains(hit))) return "topmost";
     return hit === null ? "off-screen" : `${hit.tagName}#${hit.id}.${hit.className}`;
   }, selector)).toBe("topmost");
-}
-
-async function downloadJson(page: Page, trigger: () => Promise<unknown>): Promise<unknown> {
-  const downloadPromise = page.waitForEvent("download");
-  await trigger();
-  const download: Download = await downloadPromise;
-  const path = await download.path();
-  expect(path).not.toBeNull();
-  return JSON.parse(await readFile(path!, "utf8"));
 }
 
 function jsonFile(name: string, document: unknown): { name: string; mimeType: string; buffer: Buffer } {

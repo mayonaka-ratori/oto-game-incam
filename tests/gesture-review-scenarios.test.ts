@@ -280,18 +280,6 @@ describe("Bloom review scenarios", () => {
     expect(opened.events).toHaveLength(1);
     expect(machine.diagnostic.identitySwapCount).toBe(1);
   });
-
-  it("restarts the readiness timer when a hand disappears", () => {
-    const machine = new BloomStateMachine();
-    const centered = (): TrackedHandFeatures[] => pair(0.42, 0.56, 0.58, 0.56);
-    machine.observeReadiness(trackedFrame(0, centered()));
-    machine.observeReadiness(trackedFrame(100, [trackedHand("L", 0.42, 0.56)]));
-    machine.observeReadiness(trackedFrame(150, centered()));
-
-    // Without the restart, 290ms after the first frame would already count as 200ms of stability.
-    expect(machine.observeReadiness(trackedFrame(290, centered()))).toMatchObject({ ready: false, stableMs: 140 });
-    expect(machine.observeReadiness(trackedFrame(350, centered()))).toMatchObject({ ready: true, readyAtMs: 350 });
-  });
 });
 
 describe("Spotlight review scenarios", () => {

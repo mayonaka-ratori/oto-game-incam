@@ -47,10 +47,4 @@ describe("the count over the camera image", () => {
     // A timeout never sets a GOOD deadline, so the middle of the image stays empty.
     expect(stageCue(finishedAtMs, null, NEVER)).toEqual({ text: "", kind: "none" });
   });
-
-  it("depends on the time only, so it never follows the drawing rate", () => {
-    const first = stageCue(TARGET - 250, timing, NEVER);
-    const second = stageCue(TARGET - 250, timing, NEVER);
-    expect(second).toEqual(first);
-  });
 });

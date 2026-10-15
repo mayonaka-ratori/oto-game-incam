@@ -1,24 +1,11 @@
 import { describe, expect, it } from "vitest";
-import {
-  DIAGONAL_LIFT_DEFAULTS,
-  DIAGONAL_LIFT_DIRECTIONS,
-  DIAGONAL_LIFT_MINIMUM_HORIZONTAL_DISTANCE,
-  DiagonalLiftStateMachine,
-} from "../src/gestures/diagonal-lift-state-machine";
-import { LIFT_DEFAULTS, LiftStateMachine } from "../src/gestures/lift-state-machine";
+import { DiagonalLiftStateMachine } from "../src/gestures/diagonal-lift-state-machine";
 import type { DiagonalLiftVariant } from "../src/gestures/gesture-types";
-import {
-  DIAGONAL_LIFT_GUIDE_START_X,
-  GUIDE_TARGET_MARGIN,
-  createGestureGuide,
-  guideDotPosition,
-  type GuidePoint,
-} from "../src/rendering/gesture-guides";
+import { createGestureGuide, guideDotPosition, type GuidePoint } from "../src/rendering/gesture-guides";
 import { Phase1LabEngine } from "../src/poc/phase1-lab-engine";
 import { createP1ProtocolDefinition, type P1TrialDefinition } from "../src/poc/phase1-protocol";
-import { calculatePalmCursor } from "../src/rendering/palm-cursor";
 import { trackedFrame, trackedHand } from "./helpers/gesture-fixtures";
-import { syntheticHand, trackingFrame } from "./helpers/tracking-fixtures";
+import { handAtPreviewPoint, trackingFrame } from "./helpers/tracking-fixtures";
 
 function diagonalTrial(variant: DiagonalLiftVariant): P1TrialDefinition {
   return {
@@ -66,42 +53,20 @@ function runAlongPaths(
 }
 
 describe("DiagonalLiftStateMachine", () => {
-  it("keeps the shared values of Lift and only changes the three it has to", () => {
-    expect(DIAGONAL_LIFT_DEFAULTS).toMatchObject({
-      startZoneMinY: LIFT_DEFAULTS.startZoneMinY,
-      startZoneMaxY: LIFT_DEFAULTS.startZoneMaxY,
-      leftZoneMinX: LIFT_DEFAULTS.leftZoneMinX,
-      rightZoneMaxX: LIFT_DEFAULTS.rightZoneMaxX,
-      minimumHandSeparation: LIFT_DEFAULTS.minimumHandSeparation,
-      readinessStableMs: LIFT_DEFAULTS.readinessStableMs,
-      settleMs: LIFT_DEFAULTS.settleMs,
-      maximumSyncWindowMs: LIFT_DEFAULTS.maximumSyncWindowMs,
-      maximumDurationMs: LIFT_DEFAULTS.maximumDurationMs,
-      maximumTrackingGapMs: LIFT_DEFAULTS.maximumTrackingGapMs,
-      minimumUpwardDistance: 0.18,
-      maximumSidewaysDistance: 0.12,
-      downwardTolerance: 0.025,
-    });
-    expect(DIAGONAL_LIFT_DIRECTIONS["up-right"]).toEqual([0.6, -0.8]);
-    expect(DIAGONAL_LIFT_DIRECTIONS["up-left"]).toEqual([-0.6, -0.8]);
-    expect(DIAGONAL_LIFT_MINIMUM_HORIZONTAL_DISTANCE).toBe(0.06);
-  });
-
+  // 100ms frames are the coarse case (about ten a second on Android); the engine checks below run at 50ms.
   for (const variant of ["up-right", "up-left"] as const) {
-    for (const stepMs of [100, 33]) {
-      it(`fires for ${variant} when both hands follow the guide at ${stepMs}ms frames`, () => {
-        const machine = new DiagonalLiftStateMachine({ variant });
-        const { events } = runAlongPaths(machine, guidePaths(variant), stepMs);
+    it(`fires for ${variant} when both hands follow the guide at 100ms frames`, () => {
+      const machine = new DiagonalLiftStateMachine({ variant });
+      const { events } = runAlongPaths(machine, guidePaths(variant), 100);
 
-        expect(events).toHaveLength(1);
-        expect(events[0]).toMatchObject({
-          gestureType: "diagonal-lift",
-          reasonCodes: ["diagonal-lift-raised"],
-          handIds: ["left-hand", "right-hand"],
-          quality: { diagonalLiftVariant: variant },
-        });
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        gestureType: "diagonal-lift",
+        reasonCodes: ["diagonal-lift-raised"],
+        handIds: ["left-hand", "right-hand"],
+        quality: { diagonalLiftVariant: variant },
       });
-    }
+    });
   }
 
   it("does not fire when the hands go straight up instead", () => {
@@ -148,31 +113,6 @@ describe("DiagonalLiftStateMachine", () => {
   });
 });
 
-describe("Lift is unchanged by ななめリフト", () => {
-  it("still accepts a diagonal raise whose height exceeds its sideways travel", () => {
-    // Recorded as it is today, not as a new rule: Lift's sideways check only refuses a drift
-    // that is both over its tolerance and larger than the raise (LIFT_DEFAULTS unchanged).
-    const machine = new LiftStateMachine();
-    const { events } = runAlongPaths(machine, guidePaths("up-right"), 100);
-
-    expect(LIFT_DEFAULTS.maximumSidewaysDistance).toBe(0.14);
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ gestureType: "lift", reasonCodes: ["lift-raised"] });
-  });
-
-  it("still refuses a sideways move that outgrows the raise", () => {
-    const machine = new LiftStateMachine();
-    const paths = [
-      { start: { x: 0.28, y: 0.775 }, end: { x: 0.52, y: 0.72 } },
-      { start: { x: 0.72, y: 0.775 }, end: { x: 0.96, y: 0.72 } },
-    ];
-    const { events, rejections } = runAlongPaths(machine, paths, 100);
-
-    expect(events).toEqual([]);
-    expect(rejections).toContainEqual(expect.objectContaining({ reasonCodes: ["lift-not-upward"] }));
-  });
-});
-
 describe("the ななめリフト guide matches the trial the engine really judges", () => {
   for (const variant of ["up-right", "up-left"] as const) {
     it(`accepts a ${variant} movement driven along the guide, mirrored preview included`, () => {
@@ -204,43 +144,4 @@ describe("the ななめリフト guide matches the trial the engine really judge
       });
     });
   }
-
-  it("puts the start circles inside the Lift start zones and the end rings inside the image", () => {
-    for (const variant of ["up-right", "up-left"] as const) {
-      const paths = guidePaths(variant);
-      const [left, right] = paths;
-      const startX = DIAGONAL_LIFT_GUIDE_START_X[variant];
-      const startY = (LIFT_DEFAULTS.startZoneMinY + LIFT_DEFAULTS.startZoneMaxY) / 2;
-      expect(left!.start.x).toBeCloseTo(startX.left, 10);
-      expect(right!.start.x).toBeCloseTo(startX.right, 10);
-      for (const path of paths) expect(path.start.y).toBeCloseTo(startY, 10);
-      for (const path of paths) {
-        const travel = Math.hypot(path.end.x - path.start.x, path.end.y - path.start.y);
-        expect(travel, variant).toBeCloseTo(DIAGONAL_LIFT_DEFAULTS.minimumUpwardDistance + GUIDE_TARGET_MARGIN, 10);
-      }
-      expect(left!.start.x).toBeGreaterThanOrEqual(LIFT_DEFAULTS.leftZoneMinX);
-      expect(left!.start.x).toBeLessThanOrEqual(LIFT_DEFAULTS.leftZoneMaxX);
-      expect(right!.start.x).toBeGreaterThanOrEqual(LIFT_DEFAULTS.rightZoneMinX);
-      expect(right!.start.x).toBeLessThanOrEqual(LIFT_DEFAULTS.rightZoneMaxX);
-    }
-  });
 });
-
-/**
- * Places a synthetic hand so that its palm center lands on the given mirrored-preview position.
- * The engine mirrors x before judging, so the raw landmarks are built from 1 - x.
- */
-function handAtPreviewPoint(
-  detectionIndex: number,
-  handedness: "left" | "right",
-  target: GuidePoint,
-): ReturnType<typeof syntheticHand> {
-  const probe = syntheticHand(detectionIndex, handedness, 0.5, 0.5);
-  const reference = calculatePalmCursor(probe.landmarks2D)!;
-  return syntheticHand(
-    detectionIndex,
-    handedness,
-    1 - target.x - (reference.x - 0.5),
-    target.y - (reference.y - 0.5),
-  );
-}

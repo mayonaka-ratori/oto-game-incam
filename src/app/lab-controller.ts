@@ -78,6 +78,7 @@ export class LabController {
       getProvider: () => this.#tracking?.provider ?? null,
       getTechnicalSummary: () => this.#phase1TechnicalSummary(),
       getTechnicalSnapshot: () => this.#technicalSnapshot(),
+      getExperimentProfileId: () => this.#experimentProfile.id,
       getPerformanceInputs: () => ({
         scheduler: this.#tracking?.scheduler ?? null,
         cameraFrames: this.#metrics?.cameraFrames ?? null,

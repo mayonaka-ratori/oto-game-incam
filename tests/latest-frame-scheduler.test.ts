@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  LatestFrameScheduler,
-  type ScheduledFrame,
-} from "../src/camera/latest-frame-scheduler";
+import { LatestFrameScheduler } from "../src/camera/latest-frame-scheduler";
 
 class FakeFrame {
   closeCount = 0;
@@ -30,32 +27,6 @@ describe("LatestFrameScheduler", () => {
     scheduler.complete(1);
     expect(sent).toEqual([1, 3]);
     expect(scheduler.snapshot).toMatchObject({ inFlight: 1, pending: 0, completed: 1 });
-  });
-
-  it("keeps only one in-flight and one pending frame during a long synthetic burst", () => {
-    const sent: Array<ScheduledFrame<FakeFrame>> = [];
-    const scheduler = new LatestFrameScheduler<FakeFrame>((frame) => sent.push(frame));
-    const frames = Array.from({ length: 10_000 }, () => new FakeFrame());
-
-    for (const frame of frames) {
-      scheduler.offer(frame, timestamp);
-      expect(scheduler.snapshot.inFlight).toBe(1);
-      expect(scheduler.snapshot.pending).toBeLessThanOrEqual(1);
-    }
-
-    scheduler.complete(sent[0]!.frameId);
-    const finalSent = sent[1]!;
-    scheduler.complete(finalSent.frameId);
-
-    expect(scheduler.snapshot).toMatchObject({
-      captured: 10_000,
-      sent: 2,
-      completed: 2,
-      replaced: 9_998,
-      inFlight: 0,
-      pending: 0,
-    });
-    expect(frames.filter((frame) => frame.closeCount === 1).length).toBe(9_998);
   });
 
   it("holds no pending frame under the drop policy and counts what it threw away", () => {
@@ -94,8 +65,9 @@ describe("LatestFrameScheduler", () => {
   it("keeps in-flight and pending at one or less under both policies during a burst", () => {
     for (const policy of ["hold", "drop"] as const) {
       const scheduler = new LatestFrameScheduler<FakeFrame>(() => undefined, policy);
-      for (let index = 0; index < 1_000; index += 1) {
-        scheduler.offer(new FakeFrame(), timestamp);
+      const frames = Array.from({ length: 1_000 }, () => new FakeFrame());
+      for (const frame of frames) {
+        scheduler.offer(frame, timestamp);
         expect(scheduler.snapshot.inFlight, policy).toBeLessThanOrEqual(1);
         expect(scheduler.snapshot.pending, policy).toBeLessThanOrEqual(1);
       }
@@ -104,6 +76,10 @@ describe("LatestFrameScheduler", () => {
       // Every captured frame is either sent, held for later, replaced, or dropped. None leak.
       expect(snapshot.sent + snapshot.pending + snapshot.replaced + snapshot.dropped, policy).toBe(1_000);
       expect(policy === "drop" ? snapshot.replaced : snapshot.dropped, policy).toBe(0);
+      // Each frame that was thrown away is closed exactly once; the sent and the held one stay open.
+      expect(frames.filter(({ closeCount }) => closeCount === 1), policy)
+        .toHaveLength(snapshot.replaced + snapshot.dropped);
+      expect(frames.every(({ closeCount }) => closeCount <= 1), policy).toBe(true);
     }
   });
 

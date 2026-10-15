@@ -30,9 +30,11 @@ describe("BloomStateMachine readiness gate", () => {
       ready: false,
     });
     machine.observeReadiness(trackedFrame(150, centered()));
-    expect(machine.observeReadiness(trackedFrame(300, shifted()))).toMatchObject({ inZone: true, ready: false, stableMs: 0 });
-    expect(machine.observeReadiness(trackedFrame(450, shifted()))).toMatchObject({ ready: false, stableMs: 150 });
-    expect(machine.observeReadiness(trackedFrame(500, shifted()))).toMatchObject({ ready: true, readyAtMs: 500 });
+    // Without the restart, 290ms after the first frame would already count as 200ms of stability.
+    expect(machine.observeReadiness(trackedFrame(290, centered()))).toMatchObject({ ready: false, stableMs: 140 });
+    expect(machine.observeReadiness(trackedFrame(350, shifted()))).toMatchObject({ inZone: true, ready: false, stableMs: 0 });
+    expect(machine.observeReadiness(trackedFrame(500, shifted()))).toMatchObject({ ready: false, stableMs: 150 });
+    expect(machine.observeReadiness(trackedFrame(550, shifted()))).toMatchObject({ ready: true, readyAtMs: 550 });
   });
 
   it("does not treat widely separated hands as the central start position", () => {

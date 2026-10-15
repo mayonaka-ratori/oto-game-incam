@@ -54,7 +54,6 @@ function frame(frameId: number, captureTimeMs: number, inferenceMs: number, hand
       handedness: detectionIndex === 0 ? "left" as const : "right" as const,
       handednessScore: 0.9,
       landmarks2D: [],
-      landmarksWorld: [],
     })),
   };
 }

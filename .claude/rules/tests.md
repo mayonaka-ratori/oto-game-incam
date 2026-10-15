@@ -10,6 +10,7 @@ paths:
 
 - 単体テストはVitest、環境は `node`。`tests/**/*.test.ts` に置き、ブラウザAPIが要る部分はモックにする。
 - 合成入力は `tests/helpers/tracking-fixtures.ts` と `tests/helpers/gesture-fixtures.ts` を再利用する。フレーム時刻は単調増加にする。
+- 端末の技術値、P1の結果JSON、試行の読み飛ばしは `tests/helpers/technical-snapshot.ts` と `tests/helpers/p1-fixtures.ts`、e2eの共通手順は `e2e/helpers.ts` を使い、テストファイルへ複製しない。結果JSONのschema versionの数値を確かめるのは `tests/phase1-lab-engine.test.ts` の1か所だけにする。
 - `Phase1LabEngine` へ合成フレームを流すテストでは、フレーム間隔を50〜100msにする。間隔が空くと `HandFeaturePipeline` がtrackIdを振り直し、準備完了や再武装が成立しないままテストが落ちる。
 - e2eはPlaywright（Chromium、偽カメラ）。`npm run test:e2e` が事前にbuildして `vite preview` を `127.0.0.1:4173` で起動する。
 - e2eのセレクタは日本語のUI文言（見出し、ボタン名）に依存する。文言を変えたらspecを同時に直す。

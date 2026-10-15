@@ -1,6 +1,5 @@
 import { AirTapStateMachine } from "../gestures/air-tap-state-machine";
 import { BloomStateMachine } from "../gestures/bloom-state-machine";
-import { ClapBurstStateMachine } from "../gestures/clap-burst-state-machine";
 import { DiagonalLiftStateMachine } from "../gestures/diagonal-lift-state-machine";
 import type { GestureEvaluation, GestureEvent, GestureReadinessObservation } from "../gestures/gesture-types";
 import { LiftStateMachine } from "../gestures/lift-state-machine";
@@ -45,8 +44,7 @@ type TrialMachine =
   | RibbonSwipeStateMachine
   | LiftStateMachine
   | DiagonalLiftStateMachine
-  | SpotlightStateMachine
-  | ClapBurstStateMachine;
+  | SpotlightStateMachine;
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
@@ -455,7 +453,7 @@ export class Phase1LabEngine {
     const recognitionStarted = this.#runner.activeTiming !== null;
     return {
       // A gesture diagnostic is saved only when the recognition window opened; otherwise it would be all zeros.
-      ...(trial === null || machine === null || !recognitionStarted ? {} : machineDiagnostics(machine, trial, finishedAtMs)),
+      ...(trial === null || machine === null || !recognitionStarted ? {} : machineDiagnostics(machine, finishedAtMs)),
       rejectionCount: this.#attemptRejectionCount,
       trackingLossCount: this.#attemptTrackingLossCount,
       ...(trial?.requiresReadiness === true ? { readinessDiagnostic: { ...this.#readinessStats } } : {}),
@@ -513,10 +511,6 @@ function createMachine(trial: P1TrialDefinition): TrialMachine {
       });
     case "spotlight":
       return new SpotlightStateMachine({ variant: trial.spotlightVariant ?? "left-up-right-down" });
-    case "clap":
-      return new ClapBurstStateMachine(trial.clapMode === "contact"
-        ? { triggerDistance: 0.075, contactLikeDistance: 0.075 }
-        : undefined);
   }
 }
 
@@ -544,13 +538,8 @@ function preparesBeforeWindow(
 
 function machineDiagnostics(
   machine: TrialMachine,
-  trial: P1TrialDefinition,
   finishedAtMs: number | undefined,
 ): P1TrialExtras {
-  if (machine instanceof ClapBurstStateMachine) {
-    if (trial.gesture !== "clap" || trial.clapMode !== "contact") return {};
-    return { clapDiagnostic: finishedAtMs === undefined ? machine.diagnostic : machine.diagnosticAt(finishedAtMs) };
-  }
   if (machine instanceof BloomStateMachine) {
     return { bloomDiagnostic: finishedAtMs === undefined ? machine.diagnostic : machine.diagnosticAt(finishedAtMs) };
   }

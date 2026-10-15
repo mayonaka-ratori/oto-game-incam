@@ -124,6 +124,5 @@ function syntheticHand(detectionIndex: number, handedness: Handedness, centerX: 
     handedness,
     handednessScore: 0.98,
     landmarks2D,
-    landmarksWorld: landmarks2D.map((point) => ({ x: point.x, y: point.y, z: point.zRelative })),
   };
 }

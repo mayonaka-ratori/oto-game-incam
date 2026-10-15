@@ -70,6 +70,8 @@ export interface Phase1LabControllerOptions {
   readonly getProvider: () => TrackingProviderInfo | null;
   readonly getTechnicalSummary: () => Phase1TechnicalSummary;
   readonly getTechnicalSnapshot: () => DeviceTechnicalSnapshot;
+  /** The selected experiment profile. Cheap, so the per-frame render can compare it; the full snapshot is for export. */
+  readonly getExperimentProfileId: () => string;
   readonly getPerformanceInputs: () => Phase1PerformanceInputs;
   readonly getEnvironmentInputs: () => Phase1EnvironmentInputs;
   /** Real pixel size of the camera video, for checking a trial against the aspect ratio afterwards. */
@@ -329,7 +331,7 @@ export class Phase1LabController {
     this.#performance.start();
     // A trial can run 10 seconds without a touch, so the screen must not dim in the middle of one.
     void this.#wakeLock.acquire();
-    this.#sessionExperimentProfileId = this.#options.getTechnicalSnapshot().experimentProfileId;
+    this.#sessionExperimentProfileId = this.#options.getExperimentProfileId();
     this.#sessionStarted = true;
     this.#audioNotice = null;
     this.#exportNotice = null;
@@ -1089,7 +1091,7 @@ export class Phase1LabController {
 
   #sessionProfileMatches(): boolean {
     return this.#sessionExperimentProfileId === null
-      || this.#sessionExperimentProfileId === this.#options.getTechnicalSnapshot().experimentProfileId;
+      || this.#sessionExperimentProfileId === this.#options.getExperimentProfileId();
   }
 
   #renderAudio(): void {
@@ -1260,7 +1262,6 @@ function gestureLabel(gesture: string | null | undefined): string {
     lift: "Lift",
     spotlight: "Spotlight",
     "diagonal-lift": "ななめリフト",
-    clap: "旧クラップ",
   }[gesture ?? ""] ?? "—";
 }
 

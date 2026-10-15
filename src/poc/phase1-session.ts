@@ -134,11 +134,10 @@ export interface Phase1SessionDocument {
   readonly createdAtIso: string;
   readonly gestureVocabulary: {
     /**
-     * "clap" only for documents rebuilt from the legacy clap trials. A procedure that runs no
-     * Bloom trials at all still records "bloom" here, for the older readers; what was really
-     * run is in `gestures`.
+     * Always "bloom", for the older readers: schema v2 and v3 files said "clap" here. A procedure
+     * that runs no Bloom trials at all still records "bloom"; what was really run is in `gestures`.
      */
-    readonly thirdGesture: "bloom" | "clap";
+    readonly thirdGesture: "bloom";
     readonly gestures: readonly P1Gesture[];
     readonly candidateGestures: readonly P1Gesture[];
   };
@@ -232,7 +231,7 @@ export function createPhase1SessionDocument(
     schemaVersion: P1_SESSION_SCHEMA_VERSION,
     createdAtIso: now.toISOString(),
     gestureVocabulary: {
-      thirdGesture: gestures.includes("clap") && !gestures.includes("bloom") ? "clap" : "bloom",
+      thirdGesture: "bloom",
       gestures,
       candidateGestures: gestures.filter((gesture) => P1_CANDIDATE_GESTURES.includes(gesture)),
     },

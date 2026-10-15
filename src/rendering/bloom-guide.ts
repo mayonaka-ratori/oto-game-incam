@@ -63,17 +63,3 @@ export function createBloomGuideGeometry(): BloomGuideGeometry {
     rightTarget: { x: BLOOM_PREPARATION_CENTER.x + targetSpan / 2, y: BLOOM_GUIDE_START_Y },
   };
 }
-
-/** The same check the state machine makes on the starting pose, for a pair of positions. */
-export function isBloomPreparationPose(left: BloomGuidePoint, right: BloomGuidePoint): boolean {
-  const geometry = createBloomGuideGeometry();
-  const span = right.x - left.x;
-  const midX = (left.x + right.x) / 2;
-  const midY = (left.y + right.y) / 2;
-  return span >= geometry.spanRange.minimum
-    && span <= geometry.spanRange.maximum
-    && midX >= geometry.midpointZone.minX
-    && midX <= geometry.midpointZone.maxX
-    && midY >= geometry.midpointZone.minY
-    && midY <= geometry.midpointZone.maxY;
-}

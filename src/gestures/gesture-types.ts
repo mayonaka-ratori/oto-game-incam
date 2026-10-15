@@ -6,9 +6,7 @@ export type GestureType =
   | "bloom"
   | "lift"
   | "spotlight"
-  | "diagonal-lift"
-  | "clap"
-  | "burst";
+  | "diagonal-lift";
 
 export type GestureReasonCode =
   | "target-crossed"
@@ -16,10 +14,6 @@ export type GestureReasonCode =
   | "bloom-opened"
   | "lift-raised"
   | "spotlight-held"
-  | "near-clap-distance"
-  | "contact-like-distance"
-  | "occlusion-predicted"
-  | "two-hand-release"
   | "cooldown-active"
   | "movement-too-slow"
   | "wrong-direction"
@@ -70,7 +64,6 @@ export interface GestureQuality {
   readonly spotlightVariant?: SpotlightVariant;
   readonly diagonalLiftVariant?: DiagonalLiftVariant;
   readonly direction?: RibbonSwipeDirection;
-  readonly clapKind?: "contact-like" | "near-clap" | "occlusion-predicted";
 }
 
 export interface GestureEvent {
@@ -80,7 +73,7 @@ export interface GestureEvent {
   readonly handIds: readonly string[];
   readonly confidence: number;
   readonly quality: GestureQuality;
-  readonly trackingQuality: "observed" | "short-occlusion-predicted";
+  readonly trackingQuality: "observed";
   readonly reasonCodes: readonly GestureReasonCode[];
 }
 

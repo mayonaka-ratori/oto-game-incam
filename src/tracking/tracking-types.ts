@@ -19,19 +19,16 @@ export interface Landmark2D {
   readonly zRelative: number;
 }
 
-export interface LandmarkWorld {
-  readonly x: number;
-  readonly y: number;
-  readonly z: number;
-}
-
 export interface DetectedHand {
   /** Frame-local index. This is deliberately not a stable track id. */
   readonly detectionIndex: number;
   readonly handedness: Handedness;
   readonly handednessScore: number;
+  /**
+   * Image landmarks only. MediaPipe's world landmarks are left in the Worker: no judgment and no
+   * saved replay uses them, and sending them doubled the landmark data of every result.
+   */
   readonly landmarks2D: readonly Landmark2D[];
-  readonly landmarksWorld: readonly LandmarkWorld[];
 }
 
 export interface HandTrackingFrame {

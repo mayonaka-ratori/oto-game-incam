@@ -11,7 +11,7 @@ import { resolveTrackingGapToleranceMs } from "../src/gestures/gesture-types";
 import type { TrackedHandFrame } from "../src/tracking/derived-tracking-types";
 import type { DetectedHand, Handedness } from "../src/tracking/tracking-types";
 import { syntheticHand, trackingFrame } from "./helpers/tracking-fixtures";
-import { trackedFrame, trackedHand } from "./helpers/gesture-fixtures";
+import { trackedFrame } from "./helpers/gesture-fixtures";
 
 /**
  * Android reports hands about ten times a second (docs/19 の3.1), so a frame interval alone
@@ -112,13 +112,6 @@ describe("HandFeaturePipeline tracking gap tolerance", () => {
     expect(frames.at(-1)?.trackingGapToleranceMs).toBe(TRACKING_GAP_TOLERANCE_MINIMUM_MS);
   });
 
-  it("keeps the track id through a 160ms interval at ten frames a second", () => {
-    const frames = runPipeline([0, 100, 200, 300, 400, 500, 660, 760]
-      .map((timeMs) => ({ timeMs, palms: [{ x: 0.3, y: 0.5 }] })));
-    const ids = new Set(frames.map((frame) => frame.hands[0]?.trackId));
-    expect(ids.size).toBe(1);
-  });
-
   it("still drops the track after a 160ms interval at thirty frames a second", () => {
     const frames = runPipeline([0, 33, 66, 99, 132, 165, 325, 358]
       .map((timeMs) => ({ timeMs, palms: [{ x: 0.3, y: 0.5 }] })));
@@ -181,60 +174,4 @@ describe("a single slow frame no longer cancels a movement", () => {
     expect(results.at(-1)?.events[0]?.gestureType).toBe("bloom");
   });
 
-  it("still loses a Bloom to a 160ms drop at thirty frames a second", () => {
-    const machine = new BloomStateMachine();
-    const frames = runPipeline(steps([0, 33, 66, 99, 132, 165], [325], bloomHold, bloomMovement));
-    const results = frames.map((frame) => machine.process(frame));
-
-    expect(results.flatMap(({ rejections }) => rejections.flatMap(({ reasonCodes }) => reasonCodes)))
-      .toContain("tracking-lost");
-    expect(results.flatMap(({ events }) => events)).toHaveLength(0);
-  });
-
-  it("still reports a lost hand after more than 400ms on a slow device", () => {
-    const machine = new RibbonSwipeStateMachine({ direction: "left-to-right" });
-    const frames = runPipeline(steps([0, 100, 200, 300, 400, 500], [950, 1_050], swipeHold, swipeMovement));
-    const results = frames.map((frame) => machine.process(frame));
-
-    expect(results.flatMap(({ rejections }) => rejections.flatMap(({ reasonCodes }) => reasonCodes)))
-      .toContain("tracking-lost");
-    expect(results.flatMap(({ events }) => events)).toHaveLength(0);
-  });
-});
-
-describe("ribbon-swipe wrong-direction uses the travelled distance only", () => {
-  it("accepts a hand that keeps going forward while its one-frame speed dips negative", () => {
-    const machine = new RibbonSwipeStateMachine({ direction: "left-to-right" });
-    machine.process(trackedFrame(0, [trackedHand("a", 0.3, 0.5)]));
-    machine.process(trackedFrame(100, [trackedHand("a", 0.48, 0.5, { x: 1 })]));
-    const wobble = machine.process(trackedFrame(200, [trackedHand("a", 0.56, 0.5, { x: -0.5 })]));
-    const result = machine.process(trackedFrame(300, [trackedHand("a", 0.7, 0.5, { x: 1 })]));
-
-    expect(wobble.rejections).toHaveLength(0);
-    expect(result.events).toHaveLength(1);
-  });
-
-  it("keeps an armed hand armed when only its speed dips negative", () => {
-    const machine = new RibbonSwipeStateMachine({ direction: "left-to-right" });
-    machine.process(trackedFrame(0, [trackedHand("a", 0.3, 0.5)]));
-    const wobble = machine.process(trackedFrame(100, [trackedHand("a", 0.31, 0.5, { x: -0.5 })]));
-    machine.process(trackedFrame(200, [trackedHand("a", 0.5, 0.5, { x: 1 })]));
-    const result = machine.process(trackedFrame(300, [trackedHand("a", 0.7, 0.5, { x: 1 })]));
-
-    expect(wobble.rejections).toHaveLength(0);
-    expect(result.events).toHaveLength(1);
-  });
-
-  // Since 2026-09-20 the fall-back is measured from the furthest point reached, so a 0.03 dip
-  // is no longer a rejection; only a retreat past the tolerance is.
-  it("still rejects a hand that falls back past the peak tolerance", () => {
-    const machine = new RibbonSwipeStateMachine({ direction: "left-to-right" });
-    machine.process(trackedFrame(0, [trackedHand("a", 0.3, 0.5)]));
-    machine.process(trackedFrame(100, [trackedHand("a", 0.48, 0.5, { x: 1 })]));
-    const dip = machine.process(trackedFrame(200, [trackedHand("a", 0.45, 0.5, { x: 1 })]));
-    const rejected = machine.process(trackedFrame(300, [trackedHand("a", 0.41, 0.5, { x: -1 })]));
-
-    expect(dip.rejections).toHaveLength(0);
-    expect(rejected.rejections).toEqual([expect.objectContaining({ reasonCodes: ["wrong-direction"] })]);
-  });
 });

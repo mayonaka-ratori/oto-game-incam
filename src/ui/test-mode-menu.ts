@@ -1,9 +1,11 @@
+import { resolveP1ProtocolSelector } from "../poc/phase1-protocol";
+
 /**
  * The start screen lists the tests a tester may be asked to run, so nobody has to type a query
  * string. Choosing one reloads the page with that test's query; the rest of the query is kept.
  */
 
-export type TestModeId = "portrait-three" | "speed-check" | "regression" | "remaining-two" | "five";
+export type TestModeId = "portrait-three" | "speed-check" | "regression" | "remaining-two" | "five" | "practice";
 
 export interface TestModeOption {
   readonly id: TestModeId;
@@ -26,6 +28,14 @@ interface TestModeDefinition {
 }
 
 const DEFINITIONS: readonly TestModeDefinition[] = [
+  {
+    id: "practice",
+    label: "カメラなしの30秒版",
+    detail: "曲とお手本に合わせて、座って動く練習",
+    group: "main",
+    mode: "practice",
+    protocol: null,
+  },
   {
     id: "portrait-three",
     label: "いつものテスト",
@@ -68,13 +78,14 @@ const DEFINITIONS: readonly TestModeDefinition[] = [
   },
 ];
 
-/** Which test the given query string opens. Unknown values fall back to the usual test. */
+/**
+ * Which test the given query string opens. The protocol is read by the app's own resolver, so
+ * the marked test is the one that runs, whatever the case or spacing of the value.
+ */
 export function currentTestMode(search: string): TestModeId {
-  const parameters = new URLSearchParams(search);
-  if (parameters.get("mode") === "speedcheck") return "speed-check";
-  const protocol = parameters.get("protocol");
-  return DEFINITIONS.find((definition) => definition.mode === null && definition.protocol === protocol)?.id
-    ?? "portrait-three";
+  if (new URLSearchParams(search).get("mode") === "practice") return "practice";
+  if (new URLSearchParams(search).get("mode") === "speedcheck") return "speed-check";
+  return resolveP1ProtocolSelector(search);
 }
 
 export function testModeOptions(pathname: string, search: string): readonly TestModeOption[] {

@@ -13,11 +13,6 @@ export function adaptMediaPipeResult(result: HandLandmarkerResult): readonly Det
         y: landmark.y,
         zRelative: landmark.z,
       })),
-      landmarksWorld: (result.worldLandmarks[detectionIndex] ?? []).map((landmark) => ({
-        x: landmark.x,
-        y: landmark.y,
-        z: landmark.z,
-      })),
     };
   });
 }

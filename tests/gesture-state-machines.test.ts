@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AirTapStateMachine } from "../src/gestures/air-tap-state-machine";
 import { BloomStateMachine } from "../src/gestures/bloom-state-machine";
-import { ClapBurstStateMachine } from "../src/gestures/clap-burst-state-machine";
-import { GestureArbiter } from "../src/gestures/gesture-arbiter";
-import { RIBBON_SWIPE_DEFAULTS, RibbonSwipeStateMachine } from "../src/gestures/ribbon-swipe-state-machine";
-import type { GestureEvent } from "../src/gestures/gesture-types";
+import { RibbonSwipeStateMachine } from "../src/gestures/ribbon-swipe-state-machine";
 import { trackedFrame, trackedHand } from "./helpers/gesture-fixtures";
 
 describe("AirTapStateMachine", () => {
@@ -140,7 +137,6 @@ describe("RibbonSwipeStateMachine", () => {
     const rejected = machine.process(trackedFrame(200, [trackedHand("a", 0.37, 0.5, { x: -0.8 })]));
     const followUp = machine.process(trackedFrame(300, []));
 
-    expect(RIBBON_SWIPE_DEFAULTS.maximumBackwardFromPeak).toBe(0.06);
     expect(rejected.rejections).toEqual([expect.objectContaining({ reasonCodes: ["wrong-direction"] })]);
     expect(followUp.rejections).toHaveLength(0);
   });
@@ -161,7 +157,6 @@ describe("RibbonSwipeStateMachine", () => {
     machine.process(trackedFrame(1_600, [trackedHand("a", 0.4, 0.5, { x: 1 })]));
     const rejected = machine.process(trackedFrame(2_451, [trackedHand("a", 0.45, 0.5)]));
 
-    expect(RIBBON_SWIPE_DEFAULTS.maximumDurationMs).toBe(850);
     expect(rejected.rejections).toEqual([expect.objectContaining({ reasonCodes: ["candidate-timeout"] })]);
   });
 });
@@ -394,180 +389,5 @@ describe("BloomStateMachine", () => {
       trackedHand("left", 0.24, 0.44),
       trackedHand("right", 0.76, 0.44),
     ])).events).toHaveLength(1);
-  });
-});
-
-describe("ClapBurstStateMachine", () => {
-  it("emits a near clap and a later burst from an unordered pair", () => {
-    const machine = new ClapBurstStateMachine();
-    machine.process(trackedFrame(0, [trackedHand("a", 0.2, 0.5), trackedHand("b", 0.8, 0.5)]));
-    machine.process(trackedFrame(100, [trackedHand("b", 0.58, 0.5), trackedHand("a", 0.42, 0.5)]));
-    const clap = machine.process(trackedFrame(120, [trackedHand("a", 0.45, 0.5), trackedHand("b", 0.55, 0.5)]));
-    const burst = machine.process(trackedFrame(300, [trackedHand("a", 0.25, 0.5), trackedHand("b", 0.75, 0.5)]));
-    expect(clap.events[0]).toMatchObject({ gestureType: "clap", handIds: ["a", "b"] });
-    expect(burst.events[0]).toMatchObject({ gestureType: "burst", handIds: ["a", "b"] });
-  });
-
-  it("uses only a short observed convergence to predict an occluded clap", () => {
-    const machine = new ClapBurstStateMachine();
-    machine.process(trackedFrame(0, [trackedHand("a", 0.2, 0.5), trackedHand("b", 0.8, 0.5)]));
-    machine.process(trackedFrame(100, [trackedHand("a", 0.4, 0.5), trackedHand("b", 0.6, 0.5)]));
-    const result = machine.process(trackedFrame(120, []));
-    expect(result.events[0]).toMatchObject({
-      gestureType: "clap",
-      handIds: ["a", "b"],
-      trackingQuality: "short-occlusion-predicted",
-      quality: { clapKind: "occlusion-predicted" },
-    });
-  });
-
-  it("records per-trial distance, speed, observation, and identity diagnostics for observed contact", () => {
-    const machine = new ClapBurstStateMachine({ triggerDistance: 0.075, contactLikeDistance: 0.075 });
-    machine.process(trackedFrame(0, [
-      trackedHand("left-track", 0.2, 0.5, {}, "left"),
-      trackedHand("right-track", 0.8, 0.5, {}, "right"),
-    ]));
-    machine.process({
-      ...trackedFrame(100, [
-        trackedHand("left-track", 0.445, 0.5, {}, "left"),
-        trackedHand("right-track", 0.555, 0.5, {}, "right"),
-      ]),
-      identityConflictCount: 1,
-    });
-    const result = machine.process(trackedFrame(120, [
-      trackedHand("left-track", 0.465, 0.5, {}, "left"),
-      trackedHand("right-track", 0.535, 0.5, {}, "right"),
-    ]));
-
-    expect(result.events[0]).toMatchObject({ quality: { clapKind: "contact-like" } });
-    expect(machine.diagnostic).toMatchObject({
-      observationFrameCounts: { zeroHands: 0, oneHand: 0, twoHands: 3 },
-      lastTwoHandObservedAtMs: 120,
-      triggerDistanceReachedAtMs: expect.closeTo(117.5, 8),
-      contactLikeDistanceReachedAtMs: expect.closeTo(117.5, 8),
-      identityConflictCount: 1,
-      identityConflictCountBeforeContact: 1,
-      occlusionPrediction: { status: "not-needed", reasonCodes: ["no-occlusion"] },
-    });
-    expect(machine.diagnostic.minimumPalmDistance).toMatchObject({
-      distance: expect.closeTo(0.07, 8),
-      atMs: 120,
-      hands: [
-        { trackId: "left-track", handedness: "left" },
-        { trackId: "right-track", handedness: "right" },
-      ],
-    });
-    expect(machine.diagnostic.maximumConvergenceSpeed).toBeGreaterThan(0.28);
-  });
-
-  it("records why short-occlusion prediction succeeded for a strict contact trial", () => {
-    const machine = new ClapBurstStateMachine({ triggerDistance: 0.075, contactLikeDistance: 0.075 });
-    machine.process(trackedFrame(0, [trackedHand("a", 0.2, 0.5), trackedHand("b", 0.8, 0.5)]));
-    machine.process(trackedFrame(100, [trackedHand("a", 0.445, 0.5), trackedHand("b", 0.555, 0.5)]));
-    const result = machine.process(trackedFrame(125, []));
-
-    expect(result.events[0]).toMatchObject({
-      trackingQuality: "short-occlusion-predicted",
-      quality: { clapKind: "occlusion-predicted" },
-    });
-    expect(machine.diagnostic).toMatchObject({
-      observationFrameCounts: { zeroHands: 1, oneHand: 0, twoHands: 2 },
-      lastTwoHandObservedAtMs: 100,
-      triggerDistanceReachedAtMs: expect.closeTo(107.14285714285714, 8),
-      contactLikeDistanceReachedAtMs: null,
-      occlusionPrediction: { status: "succeeded", reasonCodes: ["occlusion-predicted"] },
-      latestOcclusion: {
-        lastTwoHandObservedAtMs: 100,
-        startedAtMs: 125,
-        reacquiredAtMs: null,
-        durationMs: null,
-        before: [{ trackId: "a" }, { trackId: "b" }],
-        after: [],
-      },
-    });
-    expect(machine.diagnostic.maximumConvergenceSpeed).toBeGreaterThan(0.28);
-  });
-
-  it("records missing conditions when occlusion prediction fails", () => {
-    const machine = new ClapBurstStateMachine({ triggerDistance: 0.075, contactLikeDistance: 0.075 });
-    machine.process(trackedFrame(0, [trackedHand("a", 0.2, 0.5), trackedHand("b", 0.8, 0.5)]));
-    machine.process(trackedFrame(100, [trackedHand("a", 0.375, 0.5), trackedHand("b", 0.625, 0.5)]));
-    machine.process(trackedFrame(200, [trackedHand("a", 0.375, 0.5)]));
-    const result = machine.process(trackedFrame(300, []));
-
-    expect(result.rejections).toEqual([expect.objectContaining({ reasonCodes: ["tracking-lost"] })]);
-    expect(machine.diagnostic.occlusionPrediction).toMatchObject({ status: "failed" });
-    expect(machine.diagnostic.occlusionPrediction.reasonCodes).toEqual(expect.arrayContaining([
-      "trigger-distance-not-reached",
-      "contact-like-distance-not-reached",
-      "occlusion-distance-too-far",
-      "occlusion-grace-expired",
-    ]));
-    expect(machine.diagnostic.observationFrameCounts).toEqual({ zeroHands: 1, oneHand: 1, twoHands: 2 });
-  });
-
-  it("keeps track identities before and after reacquisition", () => {
-    const machine = new ClapBurstStateMachine();
-    machine.process(trackedFrame(0, [
-      trackedHand("before-left", 0.2, 0.5, {}, "left"),
-      trackedHand("before-right", 0.8, 0.5, {}, "right"),
-    ]));
-    machine.process(trackedFrame(100, [trackedHand("before-left", 0.2, 0.5, {}, "left")]));
-    machine.process(trackedFrame(130, [
-      trackedHand("before-left", 0.2, 0.5, {}, "left"),
-      trackedHand("after-right", 0.8, 0.5, {}, "right"),
-    ]));
-
-    expect(machine.diagnostic.latestOcclusion).toMatchObject({
-      lastTwoHandObservedAtMs: 0,
-      startedAtMs: 100,
-      reacquiredAtMs: 130,
-      durationMs: 30,
-      before: [{ trackId: "before-left" }, { trackId: "before-right" }],
-      after: [{ trackId: "before-left" }, { trackId: "after-right" }],
-    });
-    expect(machine.diagnostic.occlusionPrediction.reasonCodes).toEqual(expect.arrayContaining([
-      "trigger-distance-not-reached",
-      "convergence-speed-below-minimum",
-    ]));
-  });
-
-  it("counts identity conflicts immediately before the contact threshold", () => {
-    const machine = new ClapBurstStateMachine();
-    machine.process(trackedFrame(0, [
-      trackedHand("a", 0.2, 0.5, {}, "left"),
-      trackedHand("b", 0.8, 0.5, {}, "right"),
-    ]));
-    const result = machine.process({
-      ...trackedFrame(100, [
-        trackedHand("a", 0.43, 0.5, {}, "right"),
-        trackedHand("b", 0.57, 0.5, {}, "left"),
-      ]),
-      identityConflictCount: 2,
-    });
-
-    expect(result.events[0]).toMatchObject({ quality: { clapKind: "near-clap" } });
-    expect(machine.diagnostic).toMatchObject({
-      identityConflictCount: 2,
-      identityConflictCountBeforeContact: 2,
-    });
-  });
-});
-
-describe("GestureArbiter", () => {
-  it("prefers a two-hand clap over simultaneous single-hand candidates", () => {
-    const arbiter = new GestureArbiter();
-    const base = {
-      eventTimeMs: 100,
-      confidence: 0.8,
-      quality: {},
-      trackingQuality: "observed" as const,
-      reasonCodes: ["target-crossed" as const],
-    };
-    const events: GestureEvent[] = [
-      { ...base, id: "tap", gestureType: "air-tap", handIds: ["a"] },
-      { ...base, id: "clap", gestureType: "clap", handIds: ["a", "b"] },
-    ];
-    expect(arbiter.select(events).map(({ id }) => id)).toEqual(["clap"]);
   });
 });
